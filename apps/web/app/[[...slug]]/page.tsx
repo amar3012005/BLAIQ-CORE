@@ -1,4 +1,5 @@
 import { ClientApp } from './client-app';
+import ProtectedRoute from '../../src/auth/ProtectedRoute';
 
 // The whole product is a client-driven SPA: project IDs and file paths are
 // unbounded user input, so we route every URL through this single optional
@@ -14,5 +15,9 @@ export function generateStaticParams() {
 }
 
 export default function Page() {
-  return <ClientApp />;
+  return (
+    <ProtectedRoute>
+      <ClientApp />
+    </ProtectedRoute>
+  );
 }

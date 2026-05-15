@@ -48,11 +48,29 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   } = ctx.critique;
   const { validateBaseUrl } = ctx.validation;
   const isDaemonShuttingDown = ctx.lifecycle?.isDaemonShuttingDown ?? (() => false);
-  app.post('/api/runs', (req, res) => {
+  app.post('/api/runs', async (req, res) => {
     if (isDaemonShuttingDown()) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
+    let releaseSlot = () => {};
+    const tenantId = req.tenantId || req.user?.tenantId;
+    if (tenantId && process.env.OD_SESSION_SECRET) {
+      try {
+        const { runForTenant } = await import('./db/tenant-context.js');
+        const { acquireRunSlot, assertTokenBudget, QuotaExceededError } = await import(
+          './auth/tenant-quota.js'
+        );
+        const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
+        releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
+      } catch (err) {
+        if (err && err.name === 'QuotaExceededError') {
+          return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
+        }
+        throw err;
+      }
+    }
     const run = design.runs.create(req.body || {});
+    run._releaseSlot = releaseSlot;
     const declared = String(req.get('x-od-client') ?? '').toLowerCase();
     if (declared === 'desktop' || declared === 'web') {
       run.clientType = declared;
@@ -63,7 +81,13 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     /** @type {import('@open-design/contracts').ChatRunCreateResponse} */
     const body = { runId: run.id };
     res.status(202).json(body);
-    design.runs.start(run, () => startChatRun(req.body || {}, run));
+    design.runs.start(run, async () => {
+      try {
+        await startChatRun(req.body || {}, run);
+      } finally {
+        run._releaseSlot?.();
+      }
+    });
     reconcileAssistantMessageOnRunEnd(db, design.runs, run);
 
     // Analytics: emit run_created (daemon-side, authoritative) and
@@ -219,13 +243,38 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     res.json(body);
   });
 
-  app.post('/api/chat', (req, res) => {
+  app.post('/api/chat', async (req, res) => {
     if (isDaemonShuttingDown()) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
+    // Multi-tenant quota gate. Only active when cookie-session auth is
+    // wired (OD_SESSION_SECRET set); otherwise legacy single-user mode.
+    let releaseSlot = () => {};
+    const tenantId = req.tenantId || req.user?.tenantId;
+    if (tenantId && process.env.OD_SESSION_SECRET) {
+      try {
+        const { runForTenant } = await import('./db/tenant-context.js');
+        const { acquireRunSlot, assertTokenBudget, QuotaExceededError } = await import(
+          './auth/tenant-quota.js'
+        );
+        const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
+        releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
+      } catch (err) {
+        if (err && err.name === 'QuotaExceededError') {
+          return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
+        }
+        throw err;
+      }
+    }
     const run = design.runs.create();
     design.runs.stream(run, req, res);
-    design.runs.start(run, () => startChatRun(req.body || {}, run));
+    design.runs.start(run, async () => {
+      try {
+        await startChatRun(req.body || {}, run);
+      } finally {
+        releaseSlot();
+      }
+    });
   });
 
   // ---- Connection tests (single-shot JSON; no SSE) ------------------------

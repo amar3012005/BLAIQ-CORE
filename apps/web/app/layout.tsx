@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { I18nProvider } from '../src/i18n';
 import { AnalyticsProvider } from '../src/analytics/provider';
+import { AuthProvider } from '../src/auth/AuthProvider';
 import '../src/index.css';
 
 export const metadata: Metadata = {
@@ -39,7 +40,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body suppressHydrationWarning>
         <I18nProvider>
-          <AnalyticsProvider>{children}</AnalyticsProvider>
+          <AuthProvider>
+            <AnalyticsProvider>{children}</AnalyticsProvider>
+          </AuthProvider>
         </I18nProvider>
       </body>
     </html>

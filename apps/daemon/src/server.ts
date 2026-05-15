@@ -2170,6 +2170,17 @@ export async function startServer({
   const app = express();
   app.use(express.json({ limit: '4mb' }));
 
+  // Multi-tenant cookie session auth (HIVEMIND-style). Active when
+  // OD_SESSION_SECRET is configured; otherwise the daemon runs in
+  // legacy single-user local mode and the middleware is skipped.
+  if (process.env.OD_SESSION_SECRET) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { requireSession } = await import('./auth/cookie-middleware.js');
+    const { registerAuthRoutes } = await import('./auth/routes.js');
+    registerAuthRoutes(app);
+    app.use(requireSession());
+  }
+
   // Multi-directory scanning shared by every skill / template surface. The
   // helpers delegate to listSkills(roots) which walks roots in priority
   // order, tags each entry with the SkillSource ('user' for the user

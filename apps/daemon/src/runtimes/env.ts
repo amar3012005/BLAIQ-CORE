@@ -1,4 +1,5 @@
 import { expandConfiguredEnv } from './paths.js';
+import { buildSandboxedSpawnEnv } from '../agents/sandboxed-spawn.js';
 
 type RuntimeEnvMap = NodeJS.ProcessEnv | Record<string, string>;
 
@@ -29,6 +30,36 @@ export function spawnEnvForAgent(
     ...baseEnv,
     ...expandConfiguredEnv(configuredEnv),
   };
+  applyClaudeAuthHandling(agentId, env);
+  return env;
+}
+
+/**
+ * Multi-tenant spawn env builder. Replaces spawnEnvForAgent when the
+ * daemon runs in hosted mode. Forces a sandboxed env scoped to the
+ * tenant + project so one tenant's spawn cannot read another tenant's
+ * env, CWD, or HOME.
+ *
+ * Callers (runs.ts) MUST use this variant in multi-tenant mode. Any
+ * call site that still goes through spawnEnvForAgent leaks the daemon
+ * env to the child and is a security bug.
+ */
+export function spawnEnvForTenantAgent(
+  agentId: string,
+  tenantId: string,
+  projectId: string,
+  configuredEnv: unknown = {},
+): { env: NodeJS.ProcessEnv; cwd: string } {
+  const { env, cwd } = buildSandboxedSpawnEnv({
+    tenantId,
+    projectId,
+    extraValues: expandConfiguredEnv(configuredEnv) as Record<string, string | undefined>,
+  });
+  applyClaudeAuthHandling(agentId, env);
+  return { env, cwd };
+}
+
+function applyClaudeAuthHandling(agentId: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (agentId !== 'claude') return env;
   const hasCustomBaseUrl = Object.keys(env).some(
     (k) =>

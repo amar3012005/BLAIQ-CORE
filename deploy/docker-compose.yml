@@ -1,6 +1,43 @@
 name: open-design
 
+# Multi-tenant production deploy. Used by Coolify.
+# All secrets come from Coolify env vars or a sibling .env.production file
+# (gitignored). Never commit real credentials.
+#
+# Required env vars (see deploy/.env.example for the full list):
+#   POSTGRES_PASSWORD       - random strong secret
+#   DATABASE_URL            - postgres://open_design:${POSTGRES_PASSWORD}@postgres:5432/open_design
+#   SUPABASE_URL            - https://<project>.supabase.co
+#   SUPABASE_JWT_SECRET     - HS256 secret OR set SUPABASE_JWKS_URL
+#   OD_ALLOWED_ORIGINS      - https://app.<your-domain> (strict, comma-separated)
+#   ANTHROPIC_API_KEY       - shared key used by all tenants
+#   OPENAI_API_KEY          - shared key used by all tenants
+#   APP_DOMAIN              - app.<your-domain>
+#   API_DOMAIN              - api.<your-domain>
+
 services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: open-design-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-open_design}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:-open_design}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - open_design_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-open_design} -d ${POSTGRES_DB:-open_design}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    # Postgres is not exposed to the public; the daemon talks to it on
+    # the internal compose network only.
+
   open-design:
     container_name: open-design
     image: ${OPEN_DESIGN_IMAGE:-docker.io/vanjayak/open-design:latest}
@@ -8,24 +45,40 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=512}
       OD_BIND_HOST: 0.0.0.0
-      OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-}
       OD_PORT: 7456
-      OD_WEB_PORT: ${OPEN_DESIGN_PORT:-7456}
+      OD_DATA_DIR: /data
+      OD_ALLOWED_ORIGINS: ${OD_ALLOWED_ORIGINS:?OD_ALLOWED_ORIGINS required}
+      OD_PG_SSL: ${OD_PG_SSL:-disable}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL required}
+      OD_SESSION_SECRET: ${OD_SESSION_SECRET:?OD_SESSION_SECRET required (32+ random bytes)}
+      OD_COOKIE_INSECURE: ${OD_COOKIE_INSECURE:-}
+      OD_SIGNUP_ENABLED: ${OD_SIGNUP_ENABLED:-0}
+      OD_SEED_ADMIN_EMAIL: ${OD_SEED_ADMIN_EMAIL:-}
+      OD_SEED_ADMIN_PASSWORD: ${OD_SEED_ADMIN_PASSWORD:-}
+      OD_SEED_ADMIN_DISPLAY_NAME: ${OD_SEED_ADMIN_DISPLAY_NAME:-}
+      OD_SEED_TENANT_NAME: ${OD_SEED_TENANT_NAME:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_DOMAIN: ${APP_DOMAIN:-}
+      API_DOMAIN: ${API_DOMAIN:-}
+      OD_RUN_MIGRATIONS: "1"
     ports:
-      - "127.0.0.1:${OPEN_DESIGN_PORT:-7456}:7456"
+      - "${OPEN_DESIGN_PORT:-7456}:7456"
     volumes:
-      - open_design_data:/app/.od
-    read_only: true
+      - open_design_data:/data
     tmpfs:
       - /tmp
     security_opt:
       - no-new-privileges:true
-    mem_limit: ${OPEN_DESIGN_MEM_LIMIT:-384m}
-    pids_limit: 256
+    mem_limit: ${OPEN_DESIGN_MEM_LIMIT:-1g}
+    pids_limit: 512
     healthcheck:
       test:
         [
@@ -37,7 +90,8 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
 volumes:
+  open_design_pg:
   open_design_data:

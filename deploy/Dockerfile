@@ -68,12 +68,23 @@ RUN pnpm --filter @open-design/daemon build && \
 
 FROM ${RUNTIME_IMAGE}
 
-RUN apk add --no-cache tini && \
+# tini for PID 1 signal handling, plus agent CLIs that the daemon spawns
+# at runtime. The CLIs ship as npm packages so we install them globally
+# inside the runtime image. Pin versions explicitly so the image stays
+# reproducible.
+RUN apk add --no-cache tini git ca-certificates && \
     addgroup -S -g 1001 open-design && \
-    adduser -S -D -H -u 1001 -G open-design open-design
+    adduser -S -D -H -u 1001 -G open-design open-design && \
+    npm install --omit=dev -g \
+      @anthropic-ai/claude-code \
+      @openai/codex \
+    || echo "[deploy] agent CLI install soft-failed; install via runtime hook if needed"
 
 WORKDIR /app
 COPY --from=build --chown=open-design:open-design /app/deploy/daemon ./apps/daemon
+# Migrations live next to dist/db/. The TS compile step does not move
+# .sql files, so copy them in explicitly.
+COPY --from=build --chown=open-design:open-design /app/apps/daemon/src/db/migrations ./apps/daemon/dist/db/migrations
 COPY --from=build --chown=open-design:open-design /app/apps/web/out ./apps/web/out
 COPY --chown=open-design:open-design skills ./skills
 COPY --chown=open-design:open-design design-systems ./design-systems
@@ -82,13 +93,15 @@ COPY --chown=open-design:open-design prompt-templates ./prompt-templates
 COPY --chown=open-design:open-design assets/frames ./assets/frames
 COPY --chown=open-design:open-design assets/community-pets ./assets/community-pets
 
-RUN mkdir -p /app/.od && \
-    chown -R open-design:open-design /app
+RUN mkdir -p /data && \
+    chown -R open-design:open-design /app /data
 
 ENV NODE_ENV=production
-ENV NODE_OPTIONS=--max-old-space-size=192
+ENV NODE_OPTIONS=--max-old-space-size=512
 ENV OD_BIND_HOST=0.0.0.0
 ENV OD_PORT=7456
+ENV OD_DATA_DIR=/data
+ENV OD_RUN_MIGRATIONS=1
 
 EXPOSE 7456
 

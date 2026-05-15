@@ -137,7 +137,25 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
-startServer({ port, host, returnServer: true }).then((started) => {
+async function maybeRunMigrations() {
+  if (process.env.OD_RUN_MIGRATIONS !== '1') return;
+  const { runMigrations } = await import('./db/pool.js');
+  // eslint-disable-next-line no-console
+  console.log('[od] running Postgres migrations');
+  await runMigrations();
+  // eslint-disable-next-line no-console
+  console.log('[od] migrations complete');
+  const { seedAdminIfRequested } = await import('./auth/seed-admin.js');
+  await seedAdminIfRequested();
+}
+
+maybeRunMigrations()
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[od] migration failed', err);
+    process.exit(1);
+  })
+  .then(() => startServer({ port, host, returnServer: true })).then((started) => {
   const { url, server, shutdown } = started;
   const closeTimeoutMs = 5_000;
   const closeServer = () => new Promise((resolve) => {
