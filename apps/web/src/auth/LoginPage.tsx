@@ -48,7 +48,7 @@ export default function LoginPage(): JSX.Element {
 
   const fillSeededCredentials = (): void => {
     setAuthMethod('google');
-    setEmail('admin@open-design.local');
+    setEmail('admin@blaiq.ai');
     setPassword('admin123');
     setError('');
   };
@@ -151,7 +151,7 @@ export default function LoginPage(): JSX.Element {
         }}
       >
         <div className="blaiq-fade blaiq-mono" style={{ fontSize: 11, letterSpacing: '0.28em', color: PALETTE.sub }}>
-          OPEN DESIGN &nbsp;№&nbsp; 01 &nbsp;/&nbsp; 2026 &nbsp;·&nbsp; ACCESS
+          BLAIQ &nbsp;№&nbsp; 01 &nbsp;/&nbsp; 2026 &nbsp;·&nbsp; ACCESS
         </div>
         <div
           className="blaiq-fade blaiq-mono"
@@ -198,7 +198,7 @@ export default function LoginPage(): JSX.Element {
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24 }}>
             <div className="blaiq-rise" style={{ animationDelay: '260ms' }}>
               <div style={{ fontSize: 'clamp(64px, 9vw, 132px)', fontWeight: 200, letterSpacing: '-0.04em', lineHeight: 0.9 }}>
-                OPEN DESIGN
+                BLAIQ
               </div>
               <div className="blaiq-mono" style={{ fontSize: 11, letterSpacing: '0.32em', color: PALETTE.sub, marginTop: 8 }}>
                 ACCESS · IDENTITY · STUDIO
@@ -555,7 +555,7 @@ export default function LoginPage(): JSX.Element {
         }}
       >
         <span className="blaiq-mono" style={{ color: 'rgba(242,239,232,0.55)', fontSize: 9, letterSpacing: '0.32em' }}>
-          ⏺ REC · OPEN DESIGN ACCESS
+          ⏺ REC · BLAIQ ACCESS
         </span>
         <span className="blaiq-mono" style={{ color: 'rgba(242,239,232,0.55)', fontSize: 9, letterSpacing: '0.32em' }}>
           FRAME {String(tick).padStart(4, '0')} / ∞

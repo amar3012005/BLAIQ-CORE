@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
           // eslint-disable-next-line no-console
           console.warn('[AuthProvider] backend unreachable in dev — using fallback');
           const devWs = { id: 'dev-ws', name: 'Dev Workspace', slug: 'dev', role: 'admin' };
-          setUser({ id: 'dev-user', email: 'dev@open-design.local', display_name: 'Dev User', role: 'admin' });
+          setUser({ id: 'dev-user', email: 'dev@blaiq.ai', display_name: 'Dev User', role: 'admin' });
           setOrg({ id: 'dev-org', name: 'Dev Org', slug: 'dev' });
           setRoles(['admin']);
           setPermissions(['*']);
