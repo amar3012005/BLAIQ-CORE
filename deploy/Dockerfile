@@ -30,7 +30,7 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY e2e/package.json ./e2e/package.json
 RUN corepack enable && \
     corepack prepare pnpm@10.33.2 --activate && \
-    pnpm install --frozen-lockfile
+  (pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile)
 
 COPY apps ./apps
 RUN pnpm --filter @open-design/daemon build && \

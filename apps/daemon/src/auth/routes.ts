@@ -37,8 +37,8 @@ export function registerAuthRoutes(router: Router): void {
       await createUser({
         email: email ?? '',
         password: password ?? '',
-        displayName: display_name,
-        tenantName: tenant_name,
+        ...(display_name ? { displayName: display_name } : {}),
+        ...(tenant_name ? { tenantName: tenant_name } : {}),
       });
       // Auto-login after signup.
       const result = await login(req, res, email ?? '', password ?? '');

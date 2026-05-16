@@ -8,6 +8,11 @@ import {
 
 export interface RegisterChatRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'chat' | 'agents' | 'critique' | 'validation' | 'lifecycle'> {}
 
+type TenantRequest = {
+  tenantId?: string;
+  user?: { tenantId?: string };
+};
+
 // Invariant: a chat assistant message row reflects its run's terminal state
 // even when the web client never persists the cancel/finish itself (refresh
 // or dropped PUT). Without this, a row stuck at run_status='running' /
@@ -53,7 +58,8 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
     let releaseSlot = () => {};
-    const tenantId = req.tenantId || req.user?.tenantId;
+    const tenantReq = req as typeof req & TenantRequest;
+    const tenantId = tenantReq.tenantId || tenantReq.user?.tenantId;
     if (tenantId && process.env.OD_SESSION_SECRET) {
       try {
         const { runForTenant } = await import('./db/tenant-context.js');
@@ -63,7 +69,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
         releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
       } catch (err) {
-        if (err && err.name === 'QuotaExceededError') {
+        if (err instanceof Error && err.name === 'QuotaExceededError') {
           return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
         }
         throw err;
@@ -250,7 +256,8 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     // Multi-tenant quota gate. Only active when cookie-session auth is
     // wired (OD_SESSION_SECRET set); otherwise legacy single-user mode.
     let releaseSlot = () => {};
-    const tenantId = req.tenantId || req.user?.tenantId;
+    const tenantReq = req as typeof req & TenantRequest;
+    const tenantId = tenantReq.tenantId || tenantReq.user?.tenantId;
     if (tenantId && process.env.OD_SESSION_SECRET) {
       try {
         const { runForTenant } = await import('./db/tenant-context.js');
@@ -260,7 +267,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
         releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
       } catch (err) {
-        if (err && err.name === 'QuotaExceededError') {
+        if (err instanceof Error && err.name === 'QuotaExceededError') {
           return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
         }
         throw err;
