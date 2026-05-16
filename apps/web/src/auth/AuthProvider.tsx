@@ -131,13 +131,22 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     return pathname === '/login' || pathname === '/login/' || pathname === '/signup' || pathname === '/signup/';
   }, [pathname]);
 
+  // Bootstrap once on mount. Re-bootstrapping on every pathname change
+  // causes a render loop: each in-app navigation flips authState back
+  // to 'loading' which makes ProtectedRoute swap children for the
+  // spinner, which unmounts the SPA router, which triggers a new
+  // navigation, and so on.
+  const bootstrappedOnce = React.useRef(false);
   useEffect(() => {
+    if (bootstrappedOnce.current) return;
+    bootstrappedOnce.current = true;
     if (isPublicRoute()) {
       setAuthState('anonymous');
       return;
     }
     void bootstrap();
-  }, [bootstrap, isPublicRoute, pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = useCallback((): void => {
     if (typeof window !== 'undefined') {
