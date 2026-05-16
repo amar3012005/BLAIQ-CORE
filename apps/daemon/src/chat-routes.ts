@@ -58,19 +58,30 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
     let releaseSlot = () => {};
+<<<<<<< Updated upstream
     const tenantReq = req as typeof req & TenantRequest;
     const tenantId = tenantReq.tenantId || tenantReq.user?.tenantId;
+=======
+    const authedReq = req as any;
+    const tenantId = authedReq.tenantId || authedReq.user?.tenantId;
+>>>>>>> Stashed changes
     if (tenantId && process.env.OD_SESSION_SECRET) {
       try {
         const { runForTenant } = await import('./db/tenant-context.js');
-        const { acquireRunSlot, assertTokenBudget, QuotaExceededError } = await import(
+        const { acquireRunSlot, assertTokenBudget } = await import(
           './auth/tenant-quota.js'
         );
-        const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
+        const limits = await runForTenant(authedReq, (client) => assertTokenBudget(client, tenantId));
         releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
       } catch (err) {
+<<<<<<< Updated upstream
         if (err instanceof Error && err.name === 'QuotaExceededError') {
           return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
+=======
+        const e = err as { name?: string; message?: string };
+        if (e && e.name === 'QuotaExceededError') {
+          return sendApiError(res, 429, 'QUOTA_EXCEEDED', e.message || 'quota exceeded');
+>>>>>>> Stashed changes
         }
         throw err;
       }
@@ -256,19 +267,30 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     // Multi-tenant quota gate. Only active when cookie-session auth is
     // wired (OD_SESSION_SECRET set); otherwise legacy single-user mode.
     let releaseSlot = () => {};
+<<<<<<< Updated upstream
     const tenantReq = req as typeof req & TenantRequest;
     const tenantId = tenantReq.tenantId || tenantReq.user?.tenantId;
+=======
+    const authedReq = req as any;
+    const tenantId = authedReq.tenantId || authedReq.user?.tenantId;
+>>>>>>> Stashed changes
     if (tenantId && process.env.OD_SESSION_SECRET) {
       try {
         const { runForTenant } = await import('./db/tenant-context.js');
-        const { acquireRunSlot, assertTokenBudget, QuotaExceededError } = await import(
+        const { acquireRunSlot, assertTokenBudget } = await import(
           './auth/tenant-quota.js'
         );
-        const limits = await runForTenant(req, (client) => assertTokenBudget(client, tenantId));
+        const limits = await runForTenant(authedReq, (client) => assertTokenBudget(client, tenantId));
         releaseSlot = acquireRunSlot(tenantId, limits.runsConcurrent);
       } catch (err) {
+<<<<<<< Updated upstream
         if (err instanceof Error && err.name === 'QuotaExceededError') {
           return sendApiError(res, 429, 'QUOTA_EXCEEDED', err.message);
+=======
+        const e = err as { name?: string; message?: string };
+        if (e && e.name === 'QuotaExceededError') {
+          return sendApiError(res, 429, 'QUOTA_EXCEEDED', e.message || 'quota exceeded');
+>>>>>>> Stashed changes
         }
         throw err;
       }
