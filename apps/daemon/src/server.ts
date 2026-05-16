@@ -1589,6 +1589,14 @@ function localOriginFromHeader(value) {
 }
 
 function validateLocalDaemonRequest(req) {
+  // In hosted multi-tenant mode the daemon sits behind a reverse proxy
+  // and receives requests from non-loopback peers. The cookie session
+  // middleware (requireSession) already gated this request, so skip
+  // the loopback guard. The guard remains active for local desktop
+  // mode where OD_SESSION_SECRET is unset.
+  if (process.env.OD_SESSION_SECRET) {
+    return { ok: true, origin: null };
+  }
   if (!isLoopbackPeerAddress(req.socket?.remoteAddress)) {
     return {
       ok: false,
