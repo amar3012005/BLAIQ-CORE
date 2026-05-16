@@ -128,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   }, []);
 
   const isPublicRoute = useCallback((): boolean => {
-    return pathname === '/' || pathname === '/login' || pathname === '/signup';
+    return pathname === '/login' || pathname === '/login/' || pathname === '/signup' || pathname === '/signup/';
   }, [pathname]);
 
   useEffect(() => {
