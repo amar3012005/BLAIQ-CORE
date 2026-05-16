@@ -4943,6 +4943,23 @@ export async function startServer({
       await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
       await design.analytics.shutdown();
     };
+    // SPA fallback: serve apps/web/out/index.html for any non-API GET
+    // that didn't match a static file. The web app is a client-routed
+    // SPA; the Next.js static export only emits index.html and the
+    // daemon must return it for deep links like /chat or /login.
+    if (fs.existsSync(STATIC_DIR)) {
+      const indexHtml = path.join(STATIC_DIR, 'index.html');
+      app.use((req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        if (req.path.startsWith('/api/')) return next();
+        if (req.path.startsWith('/artifacts/')) return next();
+        if (req.path.startsWith('/frames/')) return next();
+        if (req.path.includes('.')) return next();
+        if (!fs.existsSync(indexHtml)) return next();
+        res.sendFile(indexHtml);
+      });
+    }
+
     let server;
     try {
       server = app.listen(port, host, () => {
