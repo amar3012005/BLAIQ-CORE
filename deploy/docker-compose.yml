@@ -42,7 +42,7 @@ services:
     container_name: open-design
     image: ${OPEN_DESIGN_IMAGE:-docker.io/vanjayak/open-design:latest}
     build:
-      context: .
+      context: ..
       dockerfile: deploy/Dockerfile
     restart: always
     depends_on:
