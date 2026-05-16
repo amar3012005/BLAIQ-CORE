@@ -39,7 +39,7 @@ export const tr: Dict = {
   'common.daysShort': '{n}g',
   'common.untitled': 'Başlıksız',
 
-  'app.brand': 'Open Design',
+  'app.brand': 'BLAIQ',
   'app.brandPill': 'Önizleme Araştırması',
   'app.brandSubtitle': 'Nexu Labs tarafından',
   'app.welcomeLoading': 'Çalışma alanı yükleniyor…',
