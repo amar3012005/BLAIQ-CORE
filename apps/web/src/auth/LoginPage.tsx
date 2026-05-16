@@ -7,9 +7,9 @@
 
 import React, { useEffect, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Loader2, Chrome } from 'lucide-react';
-import { useAuth } from './AuthProvider.js';
-import apiClient from '../shared/api-client.js';
+import { Loader2 } from 'lucide-react';
+import { useAuth } from './AuthProvider';
+import apiClient from '../shared/api-client';
 
 const PALETTE = {
   bg: '#f2efe8',
@@ -332,7 +332,6 @@ export default function LoginPage(): JSX.Element {
                     gap: 12,
                   }}
                 >
-                  <Chrome size={14} />
                   CONTINUE WITH GOOGLE
                 </button>
 

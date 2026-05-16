@@ -4,7 +4,7 @@
 
 import React, { useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from './AuthProvider.js';
+import { useAuth } from './AuthProvider';
 
 export default function ProtectedRoute({ children }: { children: ReactNode }): JSX.Element | null {
   const { isAuthenticated, loading } = useAuth();

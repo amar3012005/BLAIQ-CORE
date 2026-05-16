@@ -14,8 +14,8 @@ import React, {
   type ReactNode,
 } from 'react';
 import { usePathname } from 'next/navigation';
-import apiClient, { type BootstrapData, HttpError } from '../shared/api-client.js';
-import { installFetchPatch } from '../lib/install-fetch-patch.js';
+import apiClient, { type BootstrapData, HttpError } from '../shared/api-client';
+import { installFetchPatch } from '../lib/install-fetch-patch';
 
 if (typeof window !== 'undefined') installFetchPatch();
 
