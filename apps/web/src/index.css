@@ -314,7 +314,8 @@ code {
    * layout works whether the toolbar is rendered or returns null
    * (workspace-focused mode). */
   grid-template-rows: auto auto 1fr;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-app);
 }
 .app > .split {
@@ -4090,7 +4091,7 @@ code {
 .entry-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   background: var(--bg);
 }
