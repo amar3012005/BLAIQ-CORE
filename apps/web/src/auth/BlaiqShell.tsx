@@ -18,6 +18,7 @@ import { useAuth } from './AuthProvider';
 import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
 import TextArtifactPanel from './TextArtifactPanel';
+import VideoPipelinePanel from './VideoPipelinePanel';
 import { createProject } from '../state/projects';
 import { navigate as spaNavigate } from '../router';
 import type { DesignSystemSummary, SkillSummary } from '../types';
@@ -358,6 +359,12 @@ function BottomGlobalNav({ onNewMission }: { onNewMission: () => void }): JSX.El
   );
 }
 
+function extractField(text: string | undefined, field: string): string | undefined {
+  if (!text) return undefined;
+  const m = text.match(new RegExp(`^${field}\\s*:\\s*(.+)$`, 'mi'));
+  return m?.[1]?.trim();
+}
+
 export default function BlaiqShell({ children }: { children: ReactNode }): JSX.Element {
   const router = useRouter();
   const pathname = usePathname() ?? '/';
@@ -395,6 +402,12 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
     projectId &&
     conversationId &&
     textProjectMeta?.kind === 'text';
+
+  const showVideoPanel =
+    !isHome &&
+    !isBrand &&
+    projectId &&
+    textProjectMeta?.kind === 'video';
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
 
@@ -469,7 +482,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
         )}
         <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* When text mode active, hide OD's .workspace pane via injected CSS so our preview replaces it inline */}
-          {showArtifactPanel && (
+          {(showArtifactPanel || showVideoPanel) && (
             <style>{`
               /* Collapse OD's workspace + resize handle so our preview replaces them */
               .split { grid-template-columns: 45% 0 0 !important; }
@@ -496,6 +509,36 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
                 projectId={projectId}
                 conversationId={conversationId}
                 subtype={textProjectMeta?.textSubtype ?? ''}
+              />
+            </div>
+          )}
+          {showVideoPanel && projectId && (
+            <div
+              className="blaiq-video-pipeline-anchor"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '55%',
+                borderLeft: `1px solid ${PAL.divider}`,
+                background: PAL.bg,
+                zIndex: 10,
+              }}
+            >
+              <VideoPipelinePanel
+                projectId={projectId}
+                brief={{
+                  subject: (textProjectMeta as { videoBrief?: string; subject?: string } | null)?.subject
+                    ?? extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Subject')
+                    ?? 'untitled',
+                  style: extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Style') ?? 'cinematic',
+                  voiceover: extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Voiceover') !== 'no',
+                  music: extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Music') !== 'no',
+                  aspect: extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Aspect') ?? '16:9',
+                  length: Number(extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Length')?.replace(/s$/, '')) || 30,
+                  userPrompt: '',
+                }}
               />
             </div>
           )}

@@ -72,7 +72,7 @@ FROM ${RUNTIME_IMAGE}
 # at runtime. The CLIs ship as npm packages so we install them globally
 # inside the runtime image. Pin versions explicitly so the image stays
 # reproducible.
-RUN apk add --no-cache tini git ca-certificates && \
+RUN apk add --no-cache tini git ca-certificates ffmpeg && \
     addgroup -S -g 1001 open-design && \
     adduser -S -D -H -u 1001 -G open-design open-design && \
     npm install --omit=dev -g \

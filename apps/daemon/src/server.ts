@@ -2187,10 +2187,12 @@ export async function startServer({
     const { registerAuthRoutes } = await import('./auth/routes.js');
     const { registerBrandRoutes } = await import('./brand/brand-routes.js');
     const { registerOpenRouterRoutes } = await import('./brand/openrouter-routes.js');
+    const { registerVideoRoutes } = await import('./video/video-routes.js');
     registerAuthRoutes(app);
     app.use(requireSession());
     registerBrandRoutes(app);
     registerOpenRouterRoutes(app);
+    registerVideoRoutes(app);
   }
 
   // Multi-directory scanning shared by every skill / template surface. The
