@@ -17,6 +17,7 @@ import {
 import { useAuth } from './AuthProvider';
 import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
+import TextArtifactPanel from './TextArtifactPanel';
 import { createProject } from '../state/projects';
 import { navigate as spaNavigate } from '../router';
 import type { DesignSystemSummary, SkillSummary } from '../types';
@@ -362,6 +363,38 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
   const pathname = usePathname() ?? '/';
   const isHome = pathname === '/' || pathname === '';
   const isBrand = pathname === '/brand' || pathname.startsWith('/brand/');
+
+  // Detect text-kind project route → render TextArtifactPanel overlay.
+  // Pathnames: /projects/<id> or /projects/<id>/conversations/<cid>
+  const projectMatch = pathname.match(
+    /^\/projects\/([^/]+)(?:\/conversations\/([^/]+))?/,
+  );
+  const projectId = projectMatch?.[1] ?? null;
+  const conversationId = projectMatch?.[2] ?? null;
+  const [textProjectMeta, setTextProjectMeta] = useState<{
+    kind?: string;
+    textSubtype?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setTextProjectMeta(null);
+      return;
+    }
+    fetch(`/api/projects/${encodeURIComponent(projectId)}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { project?: { metadata?: { kind?: string; textSubtype?: string } } } | null) => {
+        setTextProjectMeta(d?.project?.metadata ?? null);
+      })
+      .catch(() => setTextProjectMeta(null));
+  }, [projectId]);
+
+  const showArtifactPanel =
+    !isHome &&
+    !isBrand &&
+    projectId &&
+    conversationId &&
+    textProjectMeta?.kind === 'text';
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
 
@@ -434,8 +467,26 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
             />
           </aside>
         )}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {isBrand ? <BrandPage /> : children}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{
+            flex: showArtifactPanel ? '0 0 48%' : 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            borderRight: showArtifactPanel ? `1px solid ${PAL.divider}` : undefined,
+          }}>
+            {isBrand ? <BrandPage /> : children}
+          </div>
+          {showArtifactPanel && projectId && conversationId && (
+            <div style={{ flex: '1 1 52%', minWidth: 0, height: '100%' }}>
+              <TextArtifactPanel
+                projectId={projectId}
+                conversationId={conversationId}
+                subtype={textProjectMeta?.textSubtype ?? ''}
+              />
+            </div>
+          )}
         </div>
       </main>
       <BottomGlobalNav onNewMission={() => spaNavigate({ kind: 'home' })} />

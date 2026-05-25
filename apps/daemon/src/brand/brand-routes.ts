@@ -148,15 +148,35 @@ export function registerBrandRoutes(router: Router): void {
           'syntax. Any Hivemind facts you need are ALREADY provided in the ' +
           '`# Hivemind — Company Context` block above. Use them directly.\n' +
           '\n' +
-          '**Mandatory behaviour:**\n' +
-          '1. Produce the FULL artifact text right now in plain markdown. No tool calls, no JSON, no XML wrappers.\n' +
-          '2. NO file writes possible — render artifact body inline.\n' +
-          '3. Match the Brand Tone block above EXACTLY — vocabulary, syntax, archetype.\n' +
-          '4. Use FACTS ONLY from the Hivemind context block above. Never invent product names, specs, customers, or quotes.\n' +
-          '5. If a needed fact is missing from Hivemind, write "[fact not in Hivemind]" inline rather than fabricating.\n' +
-          '6. Length: full artifact, not summary. LinkedIn post = complete 6-section post. Whitepaper = full long-form. Email = full email body.\n' +
-          '7. No meta-commentary like "Here is your post:" — start directly with the artifact body.\n' +
-          '8. Output ONLY the artifact. No preamble, no thinking-out-loud, no "I will now write...".\n' +
+          '**MANDATORY OUTPUT SHAPE — use exactly this structure:**\n' +
+          '```\n' +
+          '<one-sentence summary of what you did, ≤ 140 chars, friendly, first person>\n' +
+          '\n' +
+          '---\n' +
+          '\n' +
+          '<full artifact body in markdown — title, sections, bullets, etc.>\n' +
+          '```\n' +
+          '\n' +
+          'Example for a LinkedIn post:\n' +
+          '```\n' +
+          'Drafted a LinkedIn post announcing SolvisLea Pro in your Solvis brand voice with 3 value pillars and a CTA.\n' +
+          '\n' +
+          '---\n' +
+          '\n' +
+          '# SolvisLea Pro — Launch Announcement\n' +
+          '\n' +
+          'Wärme, die mitdenkt...\n' +
+          '\n' +
+          '...full post body...\n' +
+          '```\n' +
+          '\n' +
+          '**Rules:**\n' +
+          '1. The summary line goes on top, then a blank line, then `---`, then blank line, then artifact.\n' +
+          '2. Match the Brand Tone block above EXACTLY — vocabulary, syntax, archetype.\n' +
+          '3. Use FACTS ONLY from the Hivemind context block. If missing, write "[fact not in Hivemind]" inline.\n' +
+          '4. Full artifact body, not a summary. LinkedIn post = complete post. Whitepaper = full long-form.\n' +
+          '5. No preamble like "Here is your post" — go straight to the summary line.\n' +
+          '6. No tool calls. No XML. No JSON wrappers. Pure markdown only.\n' +
           (subtype
             ? `\n**Artifact subtype:** \`${subtype}\` — follow the matching template from the text-buddy skill body (Hook → Body → Value Pillars → Proof → CTA → Hashtags for linkedin_post).`
             : ''),
