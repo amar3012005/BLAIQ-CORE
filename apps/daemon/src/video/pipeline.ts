@@ -394,6 +394,14 @@ Return the storyboard JSON now.`;
   const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]+?)```/);
   if (fenceMatch && fenceMatch[1]) jsonText = fenceMatch[1].trim();
 
+  // Pre-clean: strip JS-style comments and trailing commas the model sometimes
+  // emits. Done before any parse attempt so jsonrepair has less to do.
+  const stripComments = (s: string): string => s
+    .replace(/\/\*[\s\S]*?\*\//g, '')           // /* ... */
+    .replace(/(^|[^:"'])\/\/[^\n]*/g, '$1')     // // ...  (skip URLs after `:`)
+    .replace(/,(\s*[}\]])/g, '$1');             // trailing commas
+  jsonText = stripComments(jsonText);
+
   // Try direct parse first
   try {
     return JSON.parse(jsonText) as Storyboard;
