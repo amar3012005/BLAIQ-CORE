@@ -88,7 +88,7 @@ export function registerVideoRoutes(router: Router): void {
       const result = await renderVideo(brief, projectDir, ctxOpts, onProgress);
 
       send('done', {
-        final_path: `/api/projects/${body.project_id}/files/final.mp4/preview`,
+        final_path: `/api/projects/${body.project_id}/files/final.mp4`,
         storyboard_path: 'storyboard.json',
       });
       res.end();

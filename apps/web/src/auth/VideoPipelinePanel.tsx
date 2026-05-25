@@ -165,7 +165,7 @@ export default function VideoPipelinePanel({ projectId, brief }: Props): JSX.Ele
         setStageStatus((s) => ({ ...s, [stage]: 'skipped' }));
       } else if (payload.status === 'shot-done') {
         const shotNum = payload.shot ?? 0;
-        const url = payload.path ? `/api/projects/${projectId}/files/${path2name(payload.path)}/preview` : undefined;
+        const url = payload.path ? `/api/projects/${projectId}/files/${path2name(payload.path)}` : undefined;
         setShots((prev) =>
           prev.map((s) =>
             s.shot === shotNum
