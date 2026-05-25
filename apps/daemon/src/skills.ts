@@ -26,7 +26,7 @@ export const SKILL_ID_ALIASES = Object.freeze({
   "editorial-collage-deck": "open-design-landing-deck",
 });
 
-type SkillMode = "image" | "video" | "audio" | "deck" | "design-system" | "template" | "prototype";
+type SkillMode = "image" | "video" | "audio" | "deck" | "design-system" | "template" | "prototype" | "text";
 type SkillSurface = "web" | "image" | "video" | "audio";
 type SkillPlatform = "desktop" | "mobile" | null;
 type JsonRecord = Record<string, unknown>;
@@ -566,7 +566,8 @@ function inferMode(body: unknown, description: unknown): SkillMode {
 function normalizeMode(value: unknown, body: unknown, description: unknown): SkillMode {
   if (
     value === "image" || value === "video" || value === "audio" || value === "deck" ||
-    value === "design-system" || value === "template" || value === "prototype"
+    value === "design-system" || value === "template" || value === "prototype" ||
+    value === "text"
   ) return value;
   return inferMode(body, description);
 }

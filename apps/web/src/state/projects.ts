@@ -55,6 +55,7 @@ export async function createProject(input: {
     const id = randomUUID();
     const resp = await fetch('/api/projects', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...input }),
     });

@@ -3,7 +3,7 @@
 
 'use client';
 
-import React, { useMemo, useState, type ReactNode, type CSSProperties } from 'react';
+import React, { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Bell,
@@ -11,9 +11,16 @@ import {
   Clock,
   MessageSquarePlus,
   Search,
+  Settings,
   Users,
 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
+import MissionBuilder from './MissionBuilder';
+import BrandPage from './BrandPage';
+import { createProject } from '../state/projects';
+import { navigate as spaNavigate } from '../router';
+import type { DesignSystemSummary, SkillSummary } from '../types';
+import type { CreateInput } from '../components/NewProjectPanel';
 
 const PAL = {
   bg: '#F1F0EC',
@@ -36,6 +43,7 @@ const NAV_ITEMS: Array<{ id: string; label: string; to: string }> = [
   { id: 'swarm', label: 'Swarm', to: '/swarm' },
   { id: 'agents', label: 'Agents', to: '/agents' },
   { id: 'artifacts', label: 'Artifacts', to: '/artifacts' },
+  { id: 'brand', label: 'Brand', to: '/brand' },
   { id: 'memory', label: 'Memory', to: '/memory' },
   { id: 'settings', label: 'Settings', to: '/settings' },
 ];
@@ -180,6 +188,14 @@ function TopSystemBar(): JSX.Element {
         <button type="button" style={iconBtn()}>
           <Bell size={13} />
         </button>
+        <button
+          type="button"
+          style={iconBtn()}
+          title="Open settings (⌘,)"
+          onClick={() => window.dispatchEvent(new CustomEvent('blaiq:open-settings', { detail: { section: 'execution' } }))}
+        >
+          <Settings size={13} />
+        </button>
         {(user?.role === 'owner' || user?.role === 'admin') && (
           <button type="button" style={pillBtn()}>Admin</button>
         )}
@@ -215,7 +231,7 @@ function iconBtn(): CSSProperties {
   };
 }
 
-function BottomGlobalNav(): JSX.Element {
+function BottomGlobalNav({ onNewMission }: { onNewMission: () => void }): JSX.Element {
   const router = useRouter();
   const pathname = usePathname() ?? '/';
 
@@ -243,7 +259,7 @@ function BottomGlobalNav(): JSX.Element {
       <div style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, borderRight: innerBorder }}>
         <button
           type="button"
-          onClick={() => router.push('/')}
+          onClick={onNewMission}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -260,7 +276,7 @@ function BottomGlobalNav(): JSX.Element {
           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
         >
           <MessageSquarePlus size={14} />
-          <span>New Chat</span>
+          <span>New Mission</span>
         </button>
         <button
           type="button"
@@ -290,7 +306,13 @@ function BottomGlobalNav(): JSX.Element {
             <button
               key={item.id}
               type="button"
-              onClick={() => router.push(item.to)}
+              onClick={() => {
+                if (item.id === 'settings') {
+                  window.dispatchEvent(new CustomEvent('blaiq:open-settings', { detail: { section: 'execution' } }));
+                  return;
+                }
+                router.push(item.to);
+              }}
               style={{
                 position: 'relative',
                 display: 'inline-flex',
@@ -336,6 +358,31 @@ function BottomGlobalNav(): JSX.Element {
 }
 
 export default function BlaiqShell({ children }: { children: ReactNode }): JSX.Element {
+  const router = useRouter();
+  const pathname = usePathname() ?? '/';
+  const isHome = pathname === '/' || pathname === '';
+  const isBrand = pathname === '/brand' || pathname.startsWith('/brand/');
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
+  const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
+
+  useEffect(() => {
+    fetch('/api/skills', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : { skills: [] })
+      .then((d) => setSkills(d.skills ?? []))
+      .catch(() => {});
+    fetch('/api/design-systems', { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : { designSystems: [] })
+      .then((d) => setDesignSystems(d.designSystems ?? []))
+      .catch(() => {});
+  }, []);
+
+  const handleCreate = async (input: CreateInput): Promise<void> => {
+    const result = await createProject(input);
+    if (result) {
+      spaNavigate({ kind: 'project', projectId: result.project.id, fileName: null });
+    }
+  };
+
   return (
     <div
       style={{
@@ -363,12 +410,35 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
           overflow: 'hidden',
           position: 'relative',
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: 'row',
         }}
       >
-        {children}
+        {isHome && (
+          <aside
+            style={{
+              width: 420,
+              flexShrink: 0,
+              height: '100%',
+              borderRight: `1px solid ${PAL.divider}`,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <MissionBuilder
+              open
+              inline
+              onCreate={handleCreate}
+              skills={skills}
+              designSystems={designSystems}
+            />
+          </aside>
+        )}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {isBrand ? <BrandPage /> : children}
+        </div>
       </main>
-      <BottomGlobalNav />
+      <BottomGlobalNav onNewMission={() => spaNavigate({ kind: 'home' })} />
     </div>
   );
 }

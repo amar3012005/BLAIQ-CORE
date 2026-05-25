@@ -1856,7 +1856,31 @@ export function ProjectView({
             // on the next event.
           }
         }
-        const systemPrompt = await composedSystemPrompt();
+        let systemPrompt = await composedSystemPrompt();
+        // BYOK path: client-composes the system prompt, so server-side
+        // Brand DNA / Brand Tone / Hivemind recall injection in the
+        // daemon's composeDaemonSystemPrompt is bypassed. Fetch the
+        // augment block now and append before sending to the proxy.
+        try {
+          const augRes = await fetch('/api/v1/org/prompt-augment', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: userText,
+              project_kind: project.metadata?.kind ?? '',
+              text_subtype: (project.metadata as { textSubtype?: string } | undefined)?.textSubtype ?? '',
+            }),
+          });
+          if (augRes.ok) {
+            const aug = (await augRes.json()) as { suffix?: string };
+            if (aug.suffix && aug.suffix.length > 0) {
+              systemPrompt = `${systemPrompt}\n\n${aug.suffix}`;
+            }
+          }
+        } catch {
+          // non-fatal — proceed without augmentation
+        }
         const apiHistory = historyWithCommentAttachmentContext(nextHistory, userMsg.id);
         pushEvent({ kind: 'status', label: 'requesting', detail: config.model });
         let accumulatedAssistantText = '';

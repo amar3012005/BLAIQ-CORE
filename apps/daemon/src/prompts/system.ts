@@ -661,7 +661,7 @@ function renderMetadataBlock(
   }
   if (metadata.kind === 'image') {
     lines.push(
-      `- **imageModel**: ${metadata.imageModel ?? '(unknown — ask: which image model to use)'}`,
+      `- **imageModel**: ${metadata.imageModel ?? '(unknown — use the configured media-provider default or prompt-template default; only ask if no model is configured anywhere)'}`,
     );
     lines.push(
       `- **aspectRatio**: ${metadata.imageAspect ?? '(unknown — ask: 1:1, 16:9, 9:16, 4:3, 3:4)'}`,
@@ -683,7 +683,7 @@ function renderMetadataBlock(
   }
   if (metadata.kind === 'video') {
     lines.push(
-      `- **videoModel**: ${metadata.videoModel ?? '(unknown — ask: which video model to use)'}`,
+      `- **videoModel**: ${metadata.videoModel ?? '(unknown — use the configured media-provider default or prompt-template default; only ask if no model is configured anywhere)'}`,
     );
     lines.push(
       `- **lengthSeconds**: ${typeof metadata.videoLength === 'number' ? metadata.videoLength : '(unknown — ask: 3s / 5s / 10s)'}`,
@@ -713,7 +713,7 @@ function renderMetadataBlock(
       `- **audioKind**: ${metadata.audioKind ?? '(unknown — ask: music / speech / sfx)'}`,
     );
     lines.push(
-      `- **audioModel**: ${metadata.audioModel ?? '(unknown — ask: which audio model to use)'}`,
+      `- **audioModel**: ${metadata.audioModel ?? '(unknown — use the configured media-provider default or prompt-template default; only ask if no model is configured anywhere)'}`,
     );
     lines.push(
       `- **durationSeconds**: ${typeof metadata.audioDuration === 'number' ? metadata.audioDuration : '(unknown — ask: target duration)'}`,

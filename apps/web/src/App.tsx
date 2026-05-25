@@ -876,6 +876,16 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [openSettings]);
 
+  // BLAIQ bottom nav fires a custom event to open Settings modal.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { section?: string } | undefined;
+      openSettings((detail?.section as never) ?? 'execution');
+    };
+    window.addEventListener('blaiq:open-settings', onOpen);
+    return () => window.removeEventListener('blaiq:open-settings', onOpen);
+  }, [openSettings]);
+
   // Explicit enabled toggle — true = wake, false = tuck. Persists to
   // localStorage so the overlay state survives across reloads. We keep
   // `adopted` untouched so the entry-view CTA does not regress to

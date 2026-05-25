@@ -89,7 +89,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     res.status(202).json(body);
     design.runs.start(run, async () => {
       try {
-        await startChatRun(req.body || {}, run);
+        await startChatRun({ ...(req.body || {}), __tenantId: tenantId }, run);
       } finally {
         run._releaseSlot?.();
       }
@@ -277,7 +277,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     design.runs.stream(run, req, res);
     design.runs.start(run, async () => {
       try {
-        await startChatRun(req.body || {}, run);
+        await startChatRun({ ...(req.body || {}), __tenantId: tenantId }, run);
       } finally {
         releaseSlot();
       }

@@ -38,7 +38,8 @@ export interface SkillSummary {
     | 'design-system'
     | 'image'
     | 'video'
-    | 'audio';
+    | 'audio'
+    | 'text';
   surface?: 'web' | 'image' | 'video' | 'audio';
   platform?: 'desktop' | 'mobile' | null;
   scenario?: string | null;

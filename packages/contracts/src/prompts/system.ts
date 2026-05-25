@@ -103,6 +103,7 @@ export interface ComposeInput {
     | 'image'
     | 'video'
     | 'audio'
+    | 'text'
     | undefined;
   designSystemBody?: string | undefined;
   designSystemTitle?: string | undefined;

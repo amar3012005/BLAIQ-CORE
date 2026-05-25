@@ -7,7 +7,8 @@ export type ProjectKind =
   | 'other'
   | 'image'
   | 'video'
-  | 'audio';
+  | 'audio'
+  | 'text';
 
 export type MediaAspect = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
 
@@ -64,6 +65,8 @@ export interface PromptTemplateMetadata {
 
 export interface ProjectMetadata {
   kind: ProjectKind;
+  /** Text artifact subtype (linkedin_post, professional_email, memo, etc.). */
+  textSubtype?: string;
   intent?: 'live-artifact';
   fidelity?: 'wireframe' | 'high-fidelity';
   speakerNotes?: boolean;

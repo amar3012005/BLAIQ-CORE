@@ -2185,8 +2185,12 @@ export async function startServer({
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { requireSession } = await import('./auth/cookie-middleware.js');
     const { registerAuthRoutes } = await import('./auth/routes.js');
+    const { registerBrandRoutes } = await import('./brand/brand-routes.js');
+    const { registerOpenRouterRoutes } = await import('./brand/openrouter-routes.js');
     registerAuthRoutes(app);
     app.use(requireSession());
+    registerBrandRoutes(app);
+    registerOpenRouterRoutes(app);
   }
 
   // Multi-directory scanning shared by every skill / template surface. The
@@ -3135,6 +3139,8 @@ export async function startServer({
     designSystemId,
     streamFormat,
     connectedExternalMcp,
+    tenantId,
+    hivemindRecallText,
   }) => {
     const project =
       typeof projectId === 'string' && projectId
@@ -3147,6 +3153,48 @@ export async function startServer({
         ? designSystemId
         : project?.designSystemId;
     const metadata = project?.metadata;
+    let appCfgMediaProviders = {};
+    try {
+      const appCfg = await readAppConfig(RUNTIME_DATA_DIR);
+      appCfgMediaProviders = appCfg.mediaProviders ?? {};
+    } catch (err) {
+      console.warn('[media] readAppConfig failed for model fallback', err);
+    }
+    const configuredMediaModels = Object.values(appCfgMediaProviders)
+      .map((entry) => (typeof entry?.model === 'string' ? entry.model.trim() : ''))
+      .filter((model) => model.length > 0);
+    const fallbackMediaModel =
+      configuredMediaModels.length === 1 ? configuredMediaModels[0] : '';
+    const effectiveMetadata =
+      metadata && (metadata.kind === 'image' || metadata.kind === 'video' || metadata.kind === 'audio')
+        ? {
+            ...metadata,
+            ...(metadata.kind === 'image' && !metadata.imageModel
+              ? {
+                  imageModel:
+                    (typeof metadata.promptTemplate?.model === 'string' && metadata.promptTemplate.model.trim())
+                      || fallbackMediaModel
+                      || undefined,
+                }
+              : {}),
+            ...(metadata.kind === 'video' && !metadata.videoModel
+              ? {
+                  videoModel:
+                    (typeof metadata.promptTemplate?.model === 'string' && metadata.promptTemplate.model.trim())
+                      || fallbackMediaModel
+                      || undefined,
+                }
+              : {}),
+            ...(metadata.kind === 'audio' && !metadata.audioModel
+              ? {
+                  audioModel:
+                    (typeof metadata.promptTemplate?.model === 'string' && metadata.promptTemplate.model.trim())
+                      || fallbackMediaModel
+                      || undefined,
+                }
+              : {}),
+          }
+        : metadata;
 
     let skillBody;
     let skillName;
@@ -3205,6 +3253,55 @@ export async function startServer({
       if (appCfg.customInstructions) userInstructions = appCfg.customInstructions;
     } catch (err) {
       console.warn('[custom-instructions] readAppConfig failed', err);
+    }
+
+    // Org-level Brand DNA + Brand Tone + Hivemind (tenant-scoped).
+    // Prepended to userInstructions so every run respects the company's
+    // visual identity, writing voice, and queries Hivemind first.
+    if (tenantId) {
+      try {
+        const { getTenantBrand } = await import('./brand/brand-store.js');
+        const brand = await getTenantBrand(tenantId);
+        const blocks = [];
+        if (brand.brandDnaMd && brand.brandDnaMd.trim().length > 0) {
+          blocks.push(
+            '# Brand DNA — Visual Identity (org-wide, authoritative)\n' +
+            'Apply these visual rules to every artifact unless the user explicitly overrides.\n\n' +
+            brand.brandDnaMd,
+          );
+        }
+        if (brand.brandToneMd && brand.brandToneMd.trim().length > 0) {
+          blocks.push(
+            '# Brand Tone — Voice & Messaging (org-wide, authoritative)\n' +
+            'Apply these voice/grammar rules to every word written in artifacts and chat replies.\n\n' +
+            brand.brandToneMd,
+          );
+        }
+        if (brand.hivemindEnabled && brand.hivemindApiKey) {
+          // Inject recalled facts only when preflight found something
+          // relevant. Skip empty/no-match runs to avoid prompt bloat.
+          if (hivemindRecallText && hivemindRecallText.trim().length > 0) {
+            blocks.push(
+              '# Hivemind — Company Context (background)\n' +
+              'Org facts recalled from Hivemind. Use only when relevant to ' +
+              'the user\'s actual task. Do not let this override the skill\'s ' +
+              'job (e.g. if the task is to build an artifact, build it — ' +
+              'reference these facts only where they help).\n\n' +
+              '```\n' + hivemindRecallText.slice(0, 3000) + '\n```',
+            );
+          }
+        }
+        if (blocks.length > 0) {
+          // Append (not prepend) so the skill body remains the primary
+          // task driver. Brand DNA/Tone act as constraints, Hivemind
+          // context is background reference material.
+          userInstructions = [userInstructions, blocks.join('\n\n')]
+            .filter(Boolean)
+            .join('\n\n');
+        }
+      } catch (err) {
+        console.warn('[brand] tenant brand load failed', err);
+      }
     }
 
     // Project-level custom instructions from the projects table.
@@ -3355,7 +3452,7 @@ export async function startServer({
       craftBody,
       craftSections,
       memoryBody,
-      metadata,
+      metadata: effectiveMetadata,
       template,
       audioVoiceOptions,
       audioVoiceOptionsError,
@@ -3629,6 +3726,78 @@ export async function startServer({
       .filter((s) => typeof oauthTokensForSpawn[s.id] === 'string')
       .map((s) => ({ id: s.id, label: s.label }));
 
+    // Inform composer that Hivemind is wired so it can add usage hints.
+    // Also perform a server-side preflight recall so the company brain's
+    // facts make it into the prompt even when the agent (API fallback,
+    // Codex, Gemini) doesn't speak MCP itself.
+    let hivemindRecallText = '';
+    if (chatBody?.__tenantId) {
+      try {
+        const { getTenantBrand } = await import('./brand/brand-store.js');
+        const brand = await getTenantBrand(chatBody.__tenantId);
+        if (brand.hivemindEnabled && brand.hivemindApiKey) {
+          connectedExternalMcp.push({ id: 'hivemind', label: 'Hivemind (company brain)' });
+          const recallQuery =
+            typeof message === 'string' && message.trim().length > 0
+              ? message
+              : typeof currentPrompt === 'string'
+                ? currentPrompt
+                : '';
+          // Only recall when the prompt looks like a question about the
+          // org. Build/create/design prompts produce artifacts — recall
+          // bloat there confuses the model into answering instead of
+          // generating files. Heuristic: skip when prompt starts with
+          // build/create/design/make verbs OR is very long (>240 chars,
+          // typical of detailed artifact briefs).
+          const lowered = recallQuery.toLowerCase().trim();
+          const isBuildVerb = /^(create|build|design|make|generate|draft|render|render|compose|write|produce|prototype|deck|slide|poster|landing|page|app|dashboard|wireframe|mock|sketch)\b/.test(
+            lowered,
+          );
+          const isQuestion =
+            /\?/.test(recallQuery) ||
+            /^(who|what|when|where|why|how|which|do|does|is|are|tell me|explain|describe|recall|find|search|list)\b/.test(
+              lowered,
+            );
+          // Text mode artifacts (LinkedIn, email, memo, whitepaper, etc)
+          // always need recall — they're about the company. Override the
+          // build-verb skip rule for text kind.
+          let isTextKind = false;
+          try {
+            if (typeof projectId === 'string' && projectId) {
+              const proj = getProject(db, projectId);
+              isTextKind = (proj?.metadata as { kind?: string } | undefined)?.kind === 'text';
+            }
+          } catch {
+            // non-fatal
+          }
+          const shouldRecall =
+            recallQuery.length > 0 &&
+            (isTextKind || (recallQuery.length < 320 && (isQuestion || !isBuildVerb)));
+          if (shouldRecall) {
+            const { hivemindRecall } = await import('./brand/hivemind-client.js');
+            const recall = await hivemindRecall(
+              brand.hivemindUrl,
+              brand.hivemindApiKey,
+              recallQuery,
+              6,
+            );
+            if (recall.ok && recall.text) {
+              hivemindRecallText = recall.text;
+              console.log(
+                '[hivemind] preflight recall hit (' + recall.text.length + ' chars)',
+              );
+            } else if (!recall.ok) {
+              console.warn('[hivemind] preflight recall failed:', recall.error);
+            }
+          } else {
+            console.log('[hivemind] preflight skipped (build/artifact prompt)');
+          }
+        }
+      } catch (err) {
+        console.warn('[hivemind] preflight error', (err as Error).message);
+      }
+    }
+
     const { prompt: daemonSystemPrompt, activeSkillDir, critiqueShouldRun } =
       await composeDaemonSystemPrompt({
         agentId,
@@ -3637,6 +3806,8 @@ export async function startServer({
         designSystemId,
         streamFormat: def?.streamFormat ?? 'plain',
         connectedExternalMcp,
+        tenantId: chatBody?.__tenantId,
+        hivemindRecallText,
       });
 
     // Make skill side files reachable through three layers, in order of
@@ -3792,14 +3963,40 @@ export async function startServer({
     // We also unlink a stale `.mcp.json` we previously wrote when the user has
     // since disabled all servers, so removing a server actually takes effect
     // on the next run.
+    // Hivemind MCP injection — pull tenant config + append HTTP server.
+    let hivemindAugmented = enabledExternalMcp;
+    let hivemindTokens = oauthTokensForSpawn;
+    if (chatBody?.__tenantId) {
+      try {
+        const { getTenantBrand } = await import('./brand/brand-store.js');
+        const brand = await getTenantBrand(chatBody.__tenantId);
+        if (brand.hivemindEnabled && brand.hivemindApiKey && brand.hivemindUrl) {
+          hivemindAugmented = [
+            ...enabledExternalMcp,
+            {
+              id: 'hivemind',
+              label: 'Hivemind',
+              enabled: true,
+              transport: 'http',
+              url: brand.hivemindUrl,
+              headers: { Authorization: `Bearer ${brand.hivemindApiKey}` },
+            },
+          ];
+          hivemindTokens = { ...oauthTokensForSpawn };
+        }
+      } catch (err) {
+        console.warn('[hivemind] tenant config load failed', err);
+      }
+    }
+
     if (def.id === 'claude' && isManagedProjectCwd(cwd, PROJECTS_DIR)) {
       {
         const target = path.join(cwd, '.mcp.json');
-        if (enabledExternalMcp.length > 0) {
+        if (hivemindAugmented.length > 0) {
           try {
             const claudeMcp = buildClaudeMcpJson(
-              enabledExternalMcp,
-              oauthTokensForSpawn,
+              hivemindAugmented,
+              hivemindTokens,
             );
             if (claudeMcp) {
               await fs.promises.mkdir(path.dirname(target), { recursive: true });

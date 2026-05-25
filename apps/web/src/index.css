@@ -325,7 +325,7 @@ code {
 .app-chrome-header {
   --app-chrome-traffic-space: 0px;
   --app-chrome-traffic-margin: 0px; /* Set to 8px on macOS */
-  display: flex;
+  display: none !important;
   align-items: center;
   min-height: 48px;
   padding: 5px 14px;
@@ -4098,7 +4098,7 @@ code {
 
 .entry {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 1fr !important;
   height: 100%;
   min-height: 0;
   background: var(--bg);
@@ -4109,6 +4109,10 @@ code {
   background: transparent;
   display: flex;
   flex-direction: column;
+}
+/* Hide the old sidebar — replaced by MissionBuilder wizard overlay */
+.entry-side {
+  display: none !important;
 }
 
 /* ============================================================
@@ -19051,3 +19055,321 @@ body.entry-resizing { cursor: col-resize; user-select: none; }
 }
 .palette-tweaks-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .palette-tweaks-check { display: inline-flex; align-items: center; color: var(--text-muted); }
+
+/* ============================================================
+   BLAIQ THEME OVERRIDES — editorial / dossier aesthetic
+   Overrides the default Open Design entry view to match the
+   BLAIQ Mission Builder's warm-neutral + monospace label feel.
+   ============================================================ */
+
+/* Entry header / tabs */
+.entry-header {
+  padding: 18px 28px 0 !important;
+  border-bottom: 1px solid #D8D3CB !important;
+  background: #F1F0EC;
+}
+.entry-tabs {
+  gap: 28px !important;
+}
+.entry-tab {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  text-transform: uppercase;
+  color: #6E6A63 !important;
+  padding: 8px 2px 12px !important;
+  border-bottom: 2px solid transparent !important;
+  transition: color 150ms, border-color 150ms !important;
+}
+.entry-tab:hover:not(:disabled) {
+  color: #111111 !important;
+}
+.entry-tab.active,
+.entry-tab.active:hover:not(:disabled),
+.entry-tab.active:focus {
+  color: #111111 !important;
+  border-bottom-color: #FF6A2A !important;
+}
+
+/* Tab content background */
+.entry-tab-content {
+  background: #F1F0EC !important;
+  padding: 24px 28px 32px !important;
+}
+
+/* Tab toolbar (Recent/Your designs + search) */
+.tab-panel-toolbar {
+  margin-bottom: 8px;
+}
+.tab-panel-toolbar .toolbar-search input,
+.tab-panel-toolbar input[type="text"],
+.tab-panel-toolbar input[type="search"] {
+  background: #FAFAF7 !important;
+  border: 1px solid #D8D3CB !important;
+  border-radius: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  color: #111111 !important;
+}
+.tab-panel-toolbar input:focus {
+  border-color: #FF6A2A !important;
+  outline: none !important;
+}
+
+/* Pills / segmented toggles in toolbar */
+.tab-panel-toolbar button,
+.tab-panel-toolbar .segmented button {
+  background: transparent !important;
+  border: 1px solid #D8D3CB !important;
+  border-radius: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: #6E6A63 !important;
+  padding: 6px 14px !important;
+  transition: all 150ms;
+}
+.tab-panel-toolbar button:hover:not(:disabled) {
+  background: #EDE9E3 !important;
+  color: #111111 !important;
+}
+.tab-panel-toolbar button.active,
+.tab-panel-toolbar [aria-pressed="true"] {
+  background: #111111 !important;
+  border-color: #111111 !important;
+  color: #FFFFFF !important;
+}
+
+/* Design cards — dossier style */
+.design-card {
+  background: #FAFAF7 !important;
+  border: 1px solid #D8D3CB !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  min-height: 180px !important;
+  transition: all 180ms ease !important;
+}
+.design-card:hover {
+  border-color: #FF6A2A !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+  transform: translateY(-2px) !important;
+}
+.design-card-thumb {
+  background: linear-gradient(135deg, #F1F0EC 0%, #E8E5DF 100%) !important;
+  border-bottom: 1px solid #D8D3CB !important;
+}
+.design-card-meta-block {
+  background: #FAFAF7 !important;
+  border-top: 1px solid #D8D3CB !important;
+  padding: 12px 14px 14px !important;
+}
+.design-card-name {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #111111 !important;
+  letter-spacing: -0.005em;
+}
+.design-card-meta {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 9px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase;
+  color: #6E6A63 !important;
+  margin-top: 4px !important;
+}
+.design-card-meta .ds {
+  color: #FF6A2A !important;
+}
+.design-card-status {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase;
+}
+
+/* Tag pills on cards (Prototype / Media / Slide) */
+.design-card-tag {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 8px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase !important;
+  border-radius: 0 !important;
+  padding: 3px 8px !important;
+  border: 1px solid #D8D3CB !important;
+  background: #FAFAF7 !important;
+}
+.design-card-tag.tag-prototype {
+  color: #FF6A2A !important;
+  border-color: rgba(255,106,42,0.3) !important;
+  background: rgba(255,106,42,0.06) !important;
+}
+.design-card-tag.tag-media {
+  color: #22863A !important;
+  border-color: rgba(34,134,58,0.3) !important;
+  background: rgba(34,134,58,0.06) !important;
+}
+.design-card-tag.tag-slide {
+  color: #9A6700 !important;
+  border-color: rgba(154,103,0,0.3) !important;
+  background: rgba(154,103,0,0.06) !important;
+}
+.design-card-tag.tag-live-artifact {
+  color: #6E40C9 !important;
+  border-color: rgba(110,64,201,0.3) !important;
+  background: rgba(110,64,201,0.06) !important;
+}
+
+/* Close button on cards */
+.design-card-close {
+  background: rgba(250,250,247,0.92) !important;
+  border: 1px solid #D8D3CB !important;
+  border-radius: 0 !important;
+}
+
+/* ============================================================
+   BLAIQ THEME — Chat empty state + starters + composer
+   Matches login page palette (#f2efe8 bg, #111 ink, mono labels).
+   ============================================================ */
+.chat-empty-wrap {
+  background: #F1F0EC !important;
+  gap: 32px !important;
+  padding: 48px 24px !important;
+}
+.chat-empty-title {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 26px !important;
+  letter-spacing: -0.01em !important;
+  color: #111111 !important;
+}
+.chat-empty-hint {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  color: #6E6A63 !important;
+  line-height: 1.6 !important;
+  max-width: 48ch !important;
+}
+
+/* Starter cards — dossier style */
+.chat-example {
+  background: #FAFAF7 !important;
+  border: 1px solid #D8D3CB !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 16px 18px !important;
+  gap: 14px !important;
+}
+.chat-example::before {
+  display: none !important;
+}
+.chat-example:hover {
+  border-color: #FF6A2A !important;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06) !important;
+  background: #FAFAF7 !important;
+  transform: translateY(-2px) !important;
+}
+.chat-example-icon {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 0 !important;
+  background: #FF6A2A !important;
+  color: #FFFFFF !important;
+  box-shadow: none !important;
+}
+.chat-example-title {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  color: #111111 !important;
+}
+.chat-example-tag {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace !important;
+  font-size: 9px !important;
+  letter-spacing: 0.16em !important;
+  text-transform: uppercase !important;
+  color: #FF6A2A !important;
+  background: rgba(255,106,42,0.08) !important;
+  border: 1px solid rgba(255,106,42,0.25) !important;
+  border-radius: 0 !important;
+  padding: 2px 8px !important;
+}
+.chat-example-prompt {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12.5px !important;
+  color: #6E6A63 !important;
+  line-height: 1.55 !important;
+}
+.chat-example-cta {
+  border-radius: 0 !important;
+  background: #F1F0EC !important;
+  border: 1px solid #D8D3CB !important;
+  color: #6E6A63 !important;
+}
+.chat-example:hover .chat-example-cta {
+  background: #111111 !important;
+  color: #FFFFFF !important;
+  border-color: #111111 !important;
+}
+
+/* Chat log background to match */
+.chat-log-wrap,
+.chat-log {
+  background: #F1F0EC !important;
+}
+
+/* Composer (bottom input) */
+.chat-composer,
+.chat-input,
+.chat-composer-shell {
+  background: #FAFAF7 !important;
+  border-color: #D8D3CB !important;
+  border-radius: 0 !important;
+}
+.chat-composer textarea,
+.chat-composer input[type="text"] {
+  background: transparent !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  color: #111111 !important;
+}
+.chat-composer textarea::placeholder {
+  color: #6E6A63 !important;
+}
+
+/* Send button */
+.chat-send-btn,
+button[type="submit"].send-btn,
+.composer-send {
+  background: #FF6A2A !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+}
+.chat-send-btn:hover:not(:disabled) {
+  background: #E8561D !important;
+}
+
+/* Top action buttons (Finalize design package / Continue in CLI) */
+.proj-action-primary,
+button.primary-action {
+  background: #FF6A2A !important;
+  color: #FFFFFF !important;
+  border-radius: 0 !important;
+  border: none !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+}
+.proj-action-secondary,
+button.secondary-action {
+  background: transparent !important;
+  border: 1px solid #D8D3CB !important;
+  color: #111111 !important;
+  border-radius: 0 !important;
+  font-family: 'Inter', sans-serif !important;
+}
