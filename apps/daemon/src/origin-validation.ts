@@ -146,6 +146,10 @@ export function isLocalSameOrigin(
   port: number | string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  // Hosted multi-tenant mode: cookie session middleware (requireSession)
+  // already gated the request. Skip the loopback origin guard, otherwise
+  // every browser call from a reverse proxy / tunnel domain gets 403.
+  if (env.OD_SESSION_SECRET) return true;
   const host = String(headerValue(req.headers?.host) || '');
   const origin = headerValue(req.headers?.origin);
   const ports = allowedBrowserPorts(port, env);
