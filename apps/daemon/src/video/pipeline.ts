@@ -491,23 +491,115 @@ export async function renderVideo(
     .join('\n');
   const scriptContext = `# Script narration\n${storyboard.narration || '(no narration)'}\n\n# Shot visuals\n${shotVisualsDigest}\n\n# Title: ${storyboard.title}`;
 
+  // Subject spec — strict JSON describing every appearance detail. Generated
+  // once by SCRIPT_MODEL from persona + script context, then attached verbatim
+  // to BOTH the subject-sheet prompt and every per-shot frame prompt so the
+  // same person renders consistently across all stages.
+  let subjectSpecJson = '';
   if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
-    onProgress({ stage: 'subject-sheet', status: 'start' });
-    const subjectPrompt = `Character turnaround reference sheet — single image divided into three panels side by side on neutral light-grey seamless studio backdrop, soft even lighting, no shadows on backdrop.
+    try {
+      const specSchema = `{
+  "scene_type": "<one-line scene type the subject appears in>",
+  "composition": {
+    "layout": "4-photo grid collage",
+    "camera": "smartphone photography",
+    "framing": ["full body standing", "crouching pose", "casual seated pose", "upper body portrait"],
+    "angle": "eye-level, natural perspective",
+    "aspect_ratio": "1:1 collage"
+  },
+  "subject": {
+    "gender": "<derive from persona>",
+    "age": "<specific age range, e.g. 'early 30s'>",
+    "aesthetic": "<3-5 adjectives describing the visual aesthetic>",
+    "appearance": {
+      "skin_tone": "<specific descriptor>",
+      "face": "<facial features + symmetry>",
+      "expression": "<expression descriptor>",
+      "eyes": "<eye colour + gaze>",
+      "hair": { "color": "<specific>", "style": "<specific>", "texture": "<specific>" },
+      "makeup": "<minimal/natural/glam — describe>"
+    },
+    "outfit": {
+      "top": "<specific garment + colour>",
+      "bottom": "<specific garment + colour>",
+      "shoes": "<specific shoes + colour>",
+      "outerwear": "<jacket/coat if any, else empty string>",
+      "accessories": "<jewellery, watch, bag, etc., else empty string>",
+      "style": "<one-line outfit style>"
+    },
+    "pose_style": "<typical pose style across the 4 framings>",
+    "body_language": "<body language descriptor>"
+  },
+  "environment": {
+    "location": "minimal studio backdrop",
+    "background": "clean light gray seamless wall",
+    "floor": "neutral studio floor",
+    "lighting": { "type": "soft diffused studio lighting", "tone": "neutral", "shadows": "soft and natural", "highlights": "subtle skin glow" }
+  },
+  "style": {
+    "photography_type": "<editorial/documentary/etc.>",
+    "visual_tone": "<one-line tone>",
+    "mood": "<one-line mood matching narration>",
+    "color_palette": "<3-4 dominant colours>",
+    "contrast": "<low/medium/high>",
+    "grain": "<grain descriptor>"
+  },
+  "rendering": {
+    "realism": "ultra-realistic",
+    "detail_level": "high skin and fabric texture detail",
+    "sharpness": "high",
+    "depth_of_field": "natural",
+    "post_processing": "minimal, clean, slightly soft finish"
+  },
+  "atmosphere": "<one-line atmosphere>"
+}`;
+      const specSystem = `You are a casting + wardrobe director. Output ONLY a single valid JSON object matching the schema. No prose, no code fence. Pick concrete specific details (no placeholders, no "various", no "any"). Wardrobe, age, hair, makeup, and atmosphere MUST be coherent with the script narration mood and the shots the subject appears in. Same person will be rendered consistently in many shots, so be specific enough that two image-gens would produce the same person.`;
+      const specUser = `Persona: ${storyboard.presenter_persona}
 
-# Subject persona
-${storyboard.presenter_persona}
-
-# Script context (use this to choose wardrobe, accessories, props, age, expression — match the mood of the narration and the shots the subject appears in)
 ${scriptContext}
 
-# Layout
-Panel 1 (left): full body FRONT view, arms raised wide to the sides at shoulder height, palms forward, neutral confident expression, feet shoulder-width apart.
-Panel 2 (centre): full body SIDE view (profile), arms relaxed at sides.
-Panel 3 (right): full body BACK view, arms relaxed at sides.
+Brand tone (voice): ${ctx.brandTone.slice(0, 800)}
+Visual world: ${storyboard.visual_world || ''}
+Color grade: ${storyboard.color_grade}
 
-Identical subject in all three panels — same face, hair, build, wardrobe, accessories. Wardrobe and styling MUST match what the script narration implies (occupation, scene, era, mood).
-Photoreal, sharp focus, 50mm equivalent, no text, no labels, no watermark, no logo. Aspect ${brief.aspect}.`;
+Fill this schema with concrete, locked-in subject details:
+${specSchema}`;
+      const raw = await orChat(
+        [
+          { role: 'system', content: specSystem },
+          { role: 'user', content: specUser },
+        ],
+        SCRIPT_MODEL,
+        { maxTokens: 4000, jsonMode: true },
+      );
+      let cleaned = raw.trim();
+      const fence = cleaned.match(/```(?:json)?\s*([\s\S]+?)```/);
+      if (fence && fence[1]) cleaned = fence[1].trim();
+      // Validate parses
+      JSON.parse(cleaned);
+      subjectSpecJson = cleaned;
+      await fs.writeFile(path.join(projectDir, 'subject_spec.json'), subjectSpecJson);
+    } catch (err) {
+      console.warn('[video-pipeline] subject spec failed:', (err as Error).message);
+    }
+  }
+
+  if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
+    onProgress({ stage: 'subject-sheet', status: 'start' });
+    const subjectPrompt = `Subject reference sheet — 4-photo grid collage (2x2), smartphone-photography style, on a neutral light-grey seamless studio backdrop with soft even diffused lighting.
+
+# Strict subject specification (USE EXACTLY — do NOT improvise hair, face, wardrobe, age, body type)
+${subjectSpecJson || `Persona: ${storyboard.presenter_persona}`}
+
+# 4-photo grid layout (same individual in every panel)
+Panel 1 (top-left): full body STANDING front view, arms relaxed.
+Panel 2 (top-right): CROUCHING pose, looking toward camera.
+Panel 3 (bottom-left): casual SEATED pose on the floor or low surface.
+Panel 4 (bottom-right): UPPER BODY portrait, eye-level, soft natural smile.
+
+Identical subject in all four panels — same face, same hair, same skin tone, same wardrobe, same age, same build. Treat the JSON specification above as the locked identity contract.
+
+Style: photoreal, ultra-realistic, high skin and fabric texture detail, sharp focus, smartphone editorial look, no text, no labels, no watermark, no logo. Aspect ${brief.aspect}.`;
     try {
       const buf = await orImage(subjectPrompt, IMAGE_MODEL);
       const p = path.join(projectDir, 'subject_sheet.png');
@@ -562,10 +654,13 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
   await Promise.all(
     storyboard.shots.map(async (shot) => {
       const identityClause: string[] = [];
-      if (subjectSheetDataUri) identityClause.push('STRICT IDENTITY LOCK: the person in this shot is the SAME individual shown in the FIRST attached reference image (turnaround sheet). Match the face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its three panels. Do NOT invent a different person.');
+      if (subjectSheetDataUri) identityClause.push('STRICT IDENTITY LOCK: the person in this shot is the SAME individual shown in the FIRST attached reference image (4-photo subject grid). Match the face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.');
       if (scenerySheetDataUri) identityClause.push('STRICT LOCATION LOCK: the environment in this shot is the SAME location shown in the SECOND attached reference image. Match the architecture, materials, color palette, props, signage, time of day, and lighting direction exactly. Do NOT invent a different location.');
+      const specBlock = subjectSpecJson
+        ? `\n\n# Locked subject specification (must match attached subject reference image)\n${subjectSpecJson}`
+        : '';
       const refs = identityClause.length ? '\n\n' + identityClause.join('\n') : '';
-      const prompt = `${shot.image_prompt}${refs}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+      const prompt = `${shot.image_prompt}${specBlock}${refs}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
       const buf = await orImage(prompt, IMAGE_MODEL, refImagesForShot);
       const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
       await fs.writeFile(p, buf);
