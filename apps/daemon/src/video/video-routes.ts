@@ -61,6 +61,13 @@ export function registerVideoRoutes(router: Router): void {
     const onProgress = (e: ProgressEvent): void => {
       send('progress', e);
     };
+    // SSE heartbeat: send a comment line every 15s so reverse proxies
+    // (Coolify nginx, Cloudflare, etc.) don't drop the connection during
+    // slow stages (subject sheet gen, i2v polling).
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch { /* socket closed */ }
+    }, 15000);
+    res.on('close', () => clearInterval(heartbeat));
 
     try {
       // Stage 1+2: brand + Hivemind recall
@@ -94,12 +101,14 @@ export function registerVideoRoutes(router: Router): void {
         final_path: `/api/projects/${body.project_id}/files/final.mp4`,
         storyboard_path: 'storyboard.json',
       });
+      clearInterval(heartbeat);
       res.end();
     } catch (err) {
       const msg = (err as Error).message;
       // eslint-disable-next-line no-console
       console.error('[video-pipeline] failed:', msg);
       send('error', { message: msg });
+      clearInterval(heartbeat);
       res.end();
     }
   });

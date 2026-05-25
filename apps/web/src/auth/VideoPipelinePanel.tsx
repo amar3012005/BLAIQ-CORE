@@ -40,10 +40,12 @@ interface Props {
   onScript?: (markdown: string) => void;
 }
 
-type StageKey = 'recall' | 'script' | 'ref-frames' | 'voice' | 'video' | 'stitch' | 'final';
+type StageKey = 'recall' | 'script' | 'subject-sheet' | 'scenery-sheet' | 'ref-frames' | 'voice' | 'video' | 'stitch' | 'final';
 const STAGES: Array<{ key: StageKey; label: string }> = [
   { key: 'recall', label: 'Recall' },
   { key: 'script', label: 'Script' },
+  { key: 'subject-sheet', label: 'Subjects' },
+  { key: 'scenery-sheet', label: 'Scenery' },
   { key: 'ref-frames', label: 'Frames' },
   { key: 'voice', label: 'Voice' },
   { key: 'video', label: 'Video' },
@@ -63,6 +65,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [stageStatus, setStageStatus] = useState<Record<StageKey, 'pending' | 'running' | 'done' | 'skipped'>>({
     recall: 'pending',
     script: 'pending',
+    'subject-sheet': 'pending',
+    'scenery-sheet': 'pending',
     'ref-frames': 'pending',
     voice: 'pending',
     video: 'pending',
@@ -105,6 +109,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     setStageStatus({
       recall: 'pending',
       script: 'pending',
+      'subject-sheet': 'pending',
+      'scenery-sheet': 'pending',
       'ref-frames': 'pending',
       voice: 'pending',
       video: 'pending',
@@ -193,21 +199,29 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         return;
       }
       if (stage === 'subject-sheet') {
-        if (payload.status === 'done' && payload.path) {
+        if (payload.status === 'start') setStageStatus((s) => ({ ...s, 'subject-sheet': 'running' }));
+        else if (payload.status === 'done' && payload.path) {
           const url = `/api/projects/${projectId}/files/${path2name(payload.path)}`;
           const id = payload.subjectId || 'subject';
           setSubjectSheets((prev) => {
             const filtered = prev.filter((s) => s.id !== id);
             return [...filtered, { id, url }];
           });
+          setStageStatus((s) => ({ ...s, 'subject-sheet': 'done' }));
           setActiveTab('references');
+        } else if (payload.status === 'skip') {
+          setStageStatus((s) => ({ ...s, 'subject-sheet': 'skipped' }));
         }
         return;
       }
       if (stage === 'scenery-sheet') {
-        if (payload.status === 'done' && payload.path) {
+        if (payload.status === 'start') setStageStatus((s) => ({ ...s, 'scenery-sheet': 'running' }));
+        else if (payload.status === 'done' && payload.path) {
           setScenerySheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+          setStageStatus((s) => ({ ...s, 'scenery-sheet': 'done' }));
           setActiveTab('references');
+        } else if (payload.status === 'skip') {
+          setStageStatus((s) => ({ ...s, 'scenery-sheet': 'skipped' }));
         }
         return;
       }

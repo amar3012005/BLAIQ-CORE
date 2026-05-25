@@ -673,7 +673,9 @@ export async function renderVideo(
   "atmosphere": "<>"
 }`;
 
-  for (const subj of subjects) {
+  // Parallelize per-subject spec + sheet gen so 3 subjects do not block
+  // sequentially for ~90s. Each subject independent.
+  await Promise.all(subjects.map(async (subj) => {
     onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
     // Build per-subject spec JSON
     try {
@@ -733,7 +735,7 @@ Style: photoreal, ultra-realistic, high skin and fabric texture detail, sharp fo
       console.warn(`[video-pipeline] sheet for subject ${subj.id} failed:`, (err as Error).message);
       onProgress({ stage: 'subject-sheet', status: 'skip', subjectId: subj.id });
     }
-  }
+  }));
   if (subjects.length === 0) onProgress({ stage: 'subject-sheet', status: 'skip' });
 
   // Stage 3.5b: scenery / location reference sheet — single establishing
