@@ -724,15 +724,18 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
       if (!shot.refFramePath) return;
       const imgBuf = await fs.readFile(shot.refFramePath);
       const imgDataUri = `data:image/png;base64,${imgBuf.toString('base64')}`;
-      const specClause = subjectSpecJson
-        ? `\n\nLocked subject specification (must match the attached first frame):\n${subjectSpecJson}`
-        : '';
-      const motion = `STRICT IMAGE-TO-VIDEO: animate the attached image as the FIRST FRAME. The subject, face, hair, skin tone, wardrobe, environment, lighting, color palette, and composition MUST match the attached frame exactly throughout the clip. Do NOT change the subject's identity, do NOT swap wardrobe, do NOT change the location.
-
-Shot visual: ${shot.visual}
-Motion: ${shot.motion_prompt}
-Camera: ${shot.camera || brief.style}
-Style: ${brief.style}. Color grade: ${storyboard.color_grade}.${specClause}`;
+      // Keep i2v prompt < 4096 chars (grok-imagine-video hard limit).
+      // Identity lock travels via the attached first-frame image; verbose
+      // spec JSON is unnecessary here and explodes the prompt size.
+      const trim = (s: string | undefined, n: number): string => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+      const motionParts = [
+        'Image-to-video: animate the attached image as FIRST FRAME. Keep subject identity, wardrobe, location, lighting, and palette identical to the frame.',
+        `Action: ${trim(shot.motion_prompt, 700)}`,
+        `Camera: ${trim(shot.camera || brief.style, 200)}`,
+        `Style: ${trim(brief.style, 80)}. Color grade: ${trim(storyboard.color_grade, 200)}.`,
+      ];
+      let motion = motionParts.join(' ');
+      if (motion.length > 3900) motion = motion.slice(0, 3900);
       try {
         const vidBuf = await orVideo(imgDataUri, motion, VIDEO_MODEL, shot.duration_s);
         const vp = path.join(projectDir, `shot${shot.shot}.mp4`);
