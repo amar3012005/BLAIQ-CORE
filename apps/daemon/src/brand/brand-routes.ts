@@ -143,14 +143,20 @@ export function registerBrandRoutes(router: Router): void {
         blocks.push(
           '# OUTPUT CONTRACT — READ TWICE BEFORE REPLYING\n' +
           '\n' +
+          '**You have NO tools available in this turn.** Do NOT emit `<tool_call>`, ' +
+          '`<function_call>`, `tool_use`, `<recall>`, or any other tool-invocation ' +
+          'syntax. Any Hivemind facts you need are ALREADY provided in the ' +
+          '`# Hivemind — Company Context` block above. Use them directly.\n' +
+          '\n' +
           '**Mandatory behaviour:**\n' +
-          '1. You MUST produce the full artifact in your reply RIGHT NOW. No deferrals, no "Done", no "here you go" stubs.\n' +
-          '2. NO file writes possible — render as markdown inline.\n' +
-          '3. The artifact MUST follow the Brand Tone block above EXACTLY — vocabulary, syntax, archetype, all of it. Read it twice if needed.\n' +
-          '4. Use FACTS ONLY from the Hivemind block above. Never invent product names, specs, customers, or quotes.\n' +
-          '5. If a fact is not in Hivemind, say "[fact not in Hivemind]" inline rather than making one up.\n' +
-          '6. Reply length: produce the full artifact, not a summary. LinkedIn post = full 6-section post. Whitepaper = full long-form. Email = full email body.\n' +
-          '7. No meta-commentary like "Here is your post:" — start directly with the artifact.\n' +
+          '1. Produce the FULL artifact text right now in plain markdown. No tool calls, no JSON, no XML wrappers.\n' +
+          '2. NO file writes possible — render artifact body inline.\n' +
+          '3. Match the Brand Tone block above EXACTLY — vocabulary, syntax, archetype.\n' +
+          '4. Use FACTS ONLY from the Hivemind context block above. Never invent product names, specs, customers, or quotes.\n' +
+          '5. If a needed fact is missing from Hivemind, write "[fact not in Hivemind]" inline rather than fabricating.\n' +
+          '6. Length: full artifact, not summary. LinkedIn post = complete 6-section post. Whitepaper = full long-form. Email = full email body.\n' +
+          '7. No meta-commentary like "Here is your post:" — start directly with the artifact body.\n' +
+          '8. Output ONLY the artifact. No preamble, no thinking-out-loud, no "I will now write...".\n' +
           (subtype
             ? `\n**Artifact subtype:** \`${subtype}\` — follow the matching template from the text-buddy skill body (Hook → Body → Value Pillars → Proof → CTA → Hashtags for linkedin_post).`
             : ''),
