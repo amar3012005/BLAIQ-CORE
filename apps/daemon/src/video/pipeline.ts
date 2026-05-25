@@ -258,8 +258,16 @@ async function orVideo(
       }
     }
     if (!urls.length) throw new Error('openrouter video completed but no URLs');
-    const vidRes = await fetch(urls[0]!);
-    if (!vidRes.ok) throw new Error(`fetch video ${vidRes.status}`);
+    // Auth header only for openrouter.ai-hosted URLs; pre-signed CDN URLs (S3/GCS)
+    // reject Authorization headers.
+    const dlUrl = urls[0]!;
+    let host = '';
+    try { host = new URL(dlUrl).hostname.toLowerCase(); } catch { /* noop */ }
+    const dlHeaders: Record<string, string> = host.endsWith('openrouter.ai')
+      ? { Authorization: `Bearer ${OR_KEY()}` }
+      : {};
+    const vidRes = await fetch(dlUrl, { headers: dlHeaders });
+    if (!vidRes.ok) throw new Error(`fetch video ${vidRes.status} host=${host}`);
     return Buffer.from(await vidRes.arrayBuffer());
   }
   throw new Error('openrouter video poll timeout');
