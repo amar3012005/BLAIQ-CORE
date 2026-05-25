@@ -34,6 +34,15 @@ export interface VideoBrief {
   userPrompt: string;
 }
 
+export interface SubjectDef {
+  id: string;          // short slug e.g. "host", "customer_a"
+  name?: string;
+  persona: string;     // detailed persona description
+  specJson?: string;   // JSON spec built per subject
+  sheetPath?: string;
+  sheetDataUri?: string;
+}
+
 export interface Shot {
   shot: number;
   duration_s: number;
@@ -41,6 +50,7 @@ export interface Shot {
   visual: string;
   camera?: string;
   presenter_action?: string;
+  subject_ids?: string[];  // which subjects appear in this shot
   image_prompt: string;
   motion_prompt: string;
   narration_chunk: string;
@@ -52,8 +62,9 @@ export interface Shot {
 export interface Storyboard {
   title: string;
   duration_s: number;
-  presenter_persona?: string;
+  presenter_persona?: string;       // legacy single-subject fallback
   visual_world?: string;
+  subjects?: SubjectDef[];          // multi-subject
   narration: string;
   music_brief: string;
   color_grade: string;
@@ -65,7 +76,7 @@ export type ProgressEvent =
   | { stage: 'recall'; status: 'start' | 'done'; chars?: number }
   | { stage: 'script'; status: 'start' | 'done'; storyboard?: Storyboard }
   | { stage: 'chat-script'; markdown: string }
-  | { stage: 'subject-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
+  | { stage: 'subject-sheet'; status: 'start' | 'done' | 'skip'; path?: string; subjectId?: string }
   | { stage: 'scenery-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
   | { stage: 'video-error'; shot: number; message: string }
   | { stage: 'ref-frames'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
@@ -346,8 +357,15 @@ Return ONLY valid JSON, no preamble, no markdown fence. Schema:
 {
   "title": "compelling title",
   "duration_s": ${brief.length},
-  "presenter_persona": "1-sentence persona: age range, demeanor, wardrobe (locked across all shots for visual identity)",
+  "presenter_persona": "1-sentence persona for the PRIMARY subject (used when subjects array is empty). Detail: age range, gender, demeanor, wardrobe.",
   "visual_world": "1-sentence world description: location, lighting, color palette tied to brand (locked across all shots)",
+  "subjects": [
+    {
+      "id": "<short-slug e.g. 'host', 'customer_a', 'engineer'>",
+      "name": "<display name or empty>",
+      "persona": "Detailed persona — age, gender, ethnicity hint, build, hair colour+style, wardrobe top/bottom/shoes/accessories, demeanor, occupation. Be specific enough that two renders produce the same person."
+    }
+  ],
   "narration": "${brief.voiceover ? 'FULL voiceover script in brand tone. ~150 words/min. Open with a HOOK question or punchy statement, then 2-3 message pillars with concrete evidence (numbers, names, customer quotes) from Hivemind facts above, end with a clear CTA. 6-8 complete sentences minimum. No filler.' : ''}",
   "music_brief": "what music feels like — tempo BPM, instrumentation, energy arc across the runtime (1-2 sentences)",
   "color_grade": "color grade direction tied to brand palette + lighting mood (1 sentence)",
@@ -358,6 +376,7 @@ Return ONLY valid JSON, no preamble, no markdown fence. Schema:
       "segment": "hook | pillar_1 | pillar_2 | pillar_3 | broll | cta",
       "visual": "1-sentence what-we-see in this shot",
       "camera": "shot size + lens + camera move. Format: '<size> <lens> <move>'. Examples: 'wide 24mm slow dolly-in', 'medium 50mm handheld follow', 'close 85mm static rack-focus', 'low-angle 35mm orbit-left'.",
+      "subject_ids": ["<which subject ids from the subjects array appear in this shot — empty array for b-roll/product>"],
       "presenter_action": "EXACT physical action the subject performs across this shot (not a static pose): 'walks across kitchen toward the device, places hand on its surface, looks up into camera' OR 'no presenter — product close-up' for b-roll",
       "image_prompt": "Vivid paragraph image prompt — cinematic mood, lighting setup (key/fill/practicals), composition (rule-of-thirds, negative space), color palette, depth-of-field, emotional tone. Repeat presenter_persona + visual_world verbatim for identity lock. 3-5 sentences.",
       "motion_prompt": "DETAILED i2v animation directive. Must include: (a) camera motion with magnitude (e.g. 'slow dolly-in 5cm over 4 seconds'); (b) subject motion (e.g. 'subject turns head left, smiles, then walks forward 1 step'); (c) environmental motion (e.g. 'curtains billow softly, dust motes drift in light shaft, steam rises from cup'); (d) physics realism cues (gravity, weight, fabric drape); (e) mood filters (lens flare, soft bloom, light leaks). 4-6 sentences. ACTION-FIRST — no static descriptions.",
@@ -371,7 +390,9 @@ Constraints:
 - Total shots: ${shotCount}. Each shot 3-8 seconds. Durations sum EXACTLY to ${brief.length}.
 - Plot arc: shot 1 = hook (curiosity); middle shots = message pillars with concrete evidence; final shot = CTA + brand mark.
 - Every shot MUST have motion. If a shot describes a still pose, it is INVALID — add subject action and camera move.
-- Lock presenter_persona and visual_world verbatim in every shot's image_prompt — guarantees identity consistency across generated frames.
+- ALWAYS populate the subjects array with 1-3 distinct subjects (1 = solo presenter, 2-3 = host + customer or multi-character story). Reuse the SAME subject id across all shots they appear in for identity continuity.
+- Every shot must list which subject_ids appear. Use [] only for pure b-roll (product, scenery, abstract).
+- Lock subjects (by id) and visual_world verbatim in every shot's image_prompt — guarantees identity consistency across generated frames.
 - Style: ${brief.style}. Aspect: ${brief.aspect}.
 - Use Brand Tone vocabulary for narration. Never invent facts beyond Hivemind context.`;
 
@@ -445,7 +466,16 @@ function storyboardToMarkdown(sb: Storyboard, brief: VideoBrief): string {
   lines.push('');
   lines.push(`**Duration:** ${sb.duration_s}s · **Style:** ${brief.style} · **Aspect:** ${brief.aspect}`);
   lines.push('');
-  if (sb.presenter_persona) lines.push(`**Presenter:** ${sb.presenter_persona}`);
+  if (sb.subjects && sb.subjects.length > 0) {
+    lines.push('## Subjects');
+    lines.push('');
+    for (const s of sb.subjects) {
+      lines.push(`- **${s.id}**${s.name ? ` (${s.name})` : ''}: ${s.persona}`);
+    }
+    lines.push('');
+  } else if (sb.presenter_persona) {
+    lines.push(`**Presenter:** ${sb.presenter_persona}`);
+  }
   if (sb.visual_world) lines.push(`**Visual world:** ${sb.visual_world}`);
   if (sb.color_grade) lines.push(`**Color grade:** ${sb.color_grade}`);
   if (sb.music_brief) lines.push(`**Music:** ${sb.music_brief}`);
@@ -458,13 +488,14 @@ function storyboardToMarkdown(sb: Storyboard, brief: VideoBrief): string {
   }
   lines.push('## Storyboard');
   lines.push('');
-  lines.push('| Shot | Dur | Segment | Camera | Visual | On-screen |');
-  lines.push('|------|-----|---------|--------|--------|-----------|');
+  lines.push('| Shot | Dur | Segment | Subjects | Camera | Visual | On-screen |');
+  lines.push('|------|-----|---------|----------|--------|--------|-----------|');
   for (const s of sb.shots) {
     const row = [
       String(s.shot),
       `${s.duration_s}s`,
       s.segment || '',
+      (s.subject_ids || []).join(', ') || '—',
       (s.camera || '').replace(/\|/g, '/'),
       (s.visual || '').replace(/\|/g, '/'),
       (s.on_screen_text || '').replace(/\|/g, '/'),
@@ -511,90 +542,54 @@ export async function renderVideo(
   await fs.writeFile(path.join(projectDir, 'script.md'), md);
   onProgress({ stage: 'chat-script', markdown: md });
 
-  // Stage 3.5a: subject turnaround sheet — one composite image with front /
-  // side / back views (front pose has arms raised) so the model has a full
-  // identity reference. Generated only if presenter_persona present.
-  let subjectSheetDataUri: string | undefined;
-  // Build script context summary used by both reference sheets so identity +
-  // world reflect what the narration actually requires (wardrobe matching the
-  // moment, props seen in shots, mood from narration).
+  // Build script context summary used by reference sheets so identity + world
+  // reflect what the narration requires.
   const shotVisualsDigest = storyboard.shots
-    .map((s) => `Shot ${s.shot} (${s.segment || ''}): ${s.visual}`)
+    .map((s) => `Shot ${s.shot} (${s.segment || ''}) subjects=${(s.subject_ids || []).join(',') || '-'}: ${s.visual}`)
     .join('\n');
   const scriptContext = `# Script narration\n${storyboard.narration || '(no narration)'}\n\n# Shot visuals\n${shotVisualsDigest}\n\n# Title: ${storyboard.title}`;
 
-  // Subject spec — strict JSON describing every appearance detail. Generated
-  // once by SCRIPT_MODEL from persona + script context, then attached verbatim
-  // to BOTH the subject-sheet prompt and every per-shot frame prompt so the
-  // same person renders consistently across all stages.
-  let subjectSpecJson = '';
-  if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
-    try {
-      const specSchema = `{
-  "scene_type": "<one-line scene type the subject appears in>",
-  "composition": {
-    "layout": "4-photo grid collage",
-    "camera": "smartphone photography",
-    "framing": ["full body standing", "crouching pose", "casual seated pose", "upper body portrait"],
-    "angle": "eye-level, natural perspective",
-    "aspect_ratio": "1:1 collage"
-  },
+  // Stage 3.5a: per-subject sheets. Supports 1-3 distinct subjects.
+  // Legacy fallback: if subjects[] empty but presenter_persona set, build a
+  // single synthetic subject from it.
+  const subjects: SubjectDef[] = Array.isArray(storyboard.subjects) && storyboard.subjects.length > 0
+    ? storyboard.subjects.slice(0, 3)
+    : (storyboard.presenter_persona && storyboard.presenter_persona.trim()
+        ? [{ id: 'host', persona: storyboard.presenter_persona }]
+        : []);
+  storyboard.subjects = subjects;
+
+  const specSchema = `{
   "subject": {
-    "gender": "<derive from persona>",
-    "age": "<specific age range, e.g. 'early 30s'>",
-    "aesthetic": "<3-5 adjectives describing the visual aesthetic>",
+    "gender": "<>", "age": "<specific>", "aesthetic": "<3-5 adjectives>",
     "appearance": {
-      "skin_tone": "<specific descriptor>",
-      "face": "<facial features + symmetry>",
-      "expression": "<expression descriptor>",
-      "eyes": "<eye colour + gaze>",
-      "hair": { "color": "<specific>", "style": "<specific>", "texture": "<specific>" },
-      "makeup": "<minimal/natural/glam — describe>"
+      "skin_tone": "<>", "face": "<>", "expression": "<>", "eyes": "<>",
+      "hair": { "color": "<>", "style": "<>", "texture": "<>" },
+      "makeup": "<>"
     },
-    "outfit": {
-      "top": "<specific garment + colour>",
-      "bottom": "<specific garment + colour>",
-      "shoes": "<specific shoes + colour>",
-      "outerwear": "<jacket/coat if any, else empty string>",
-      "accessories": "<jewellery, watch, bag, etc., else empty string>",
-      "style": "<one-line outfit style>"
-    },
-    "pose_style": "<typical pose style across the 4 framings>",
-    "body_language": "<body language descriptor>"
+    "outfit": { "top": "<>", "bottom": "<>", "shoes": "<>", "outerwear": "<>", "accessories": "<>", "style": "<>" },
+    "pose_style": "<>", "body_language": "<>"
   },
-  "environment": {
-    "location": "minimal studio backdrop",
-    "background": "clean light gray seamless wall",
-    "floor": "neutral studio floor",
-    "lighting": { "type": "soft diffused studio lighting", "tone": "neutral", "shadows": "soft and natural", "highlights": "subtle skin glow" }
-  },
-  "style": {
-    "photography_type": "<editorial/documentary/etc.>",
-    "visual_tone": "<one-line tone>",
-    "mood": "<one-line mood matching narration>",
-    "color_palette": "<3-4 dominant colours>",
-    "contrast": "<low/medium/high>",
-    "grain": "<grain descriptor>"
-  },
-  "rendering": {
-    "realism": "ultra-realistic",
-    "detail_level": "high skin and fabric texture detail",
-    "sharpness": "high",
-    "depth_of_field": "natural",
-    "post_processing": "minimal, clean, slightly soft finish"
-  },
-  "atmosphere": "<one-line atmosphere>"
+  "style": { "photography_type": "<>", "visual_tone": "<>", "mood": "<>", "color_palette": "<>", "contrast": "<>", "grain": "<>" },
+  "rendering": { "realism": "ultra-realistic", "detail_level": "high", "sharpness": "high", "depth_of_field": "natural", "post_processing": "minimal" },
+  "atmosphere": "<>"
 }`;
-      const specSystem = `You are a casting + wardrobe director. Output ONLY a single valid JSON object matching the schema. No prose, no code fence. Pick concrete specific details (no placeholders, no "various", no "any"). Wardrobe, age, hair, makeup, and atmosphere MUST be coherent with the script narration mood and the shots the subject appears in. Same person will be rendered consistently in many shots, so be specific enough that two image-gens would produce the same person.`;
-      const specUser = `Persona: ${storyboard.presenter_persona}
+
+  for (const subj of subjects) {
+    onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
+    // Build per-subject spec JSON
+    try {
+      const specSystem = `You are a casting + wardrobe director. Output ONLY a single valid JSON object matching the schema. No prose, no code fence. Pick concrete specific details (no placeholders). Same person will render consistently across many shots, so be specific.`;
+      const specUser = `Subject id: ${subj.id} (${subj.name || ''})
+Persona: ${subj.persona}
 
 ${scriptContext}
 
-Brand tone (voice): ${ctx.brandTone.slice(0, 800)}
+Brand tone (voice): ${ctx.brandTone.slice(0, 600)}
 Visual world: ${storyboard.visual_world || ''}
 Color grade: ${storyboard.color_grade}
 
-Fill this schema with concrete, locked-in subject details:
+Fill this schema with concrete locked-in details:
 ${specSchema}`;
       const raw = await orChat(
         [
@@ -602,54 +597,46 @@ ${specSchema}`;
           { role: 'user', content: specUser },
         ],
         SCRIPT_MODEL,
-        { maxTokens: 4000, jsonMode: true },
+        { maxTokens: 3000, jsonMode: true },
       );
       let cleaned = raw.trim();
       const fence = cleaned.match(/```(?:json)?\s*([\s\S]+?)```/);
       if (fence && fence[1]) cleaned = fence[1].trim();
-      // Validate parses; if not, jsonrepair before storing.
-      try {
-        JSON.parse(cleaned);
-      } catch {
-        cleaned = jsonrepair(cleaned);
-        JSON.parse(cleaned);
-      }
-      subjectSpecJson = cleaned;
-      await fs.writeFile(path.join(projectDir, 'subject_spec.json'), subjectSpecJson);
+      try { JSON.parse(cleaned); } catch { cleaned = jsonrepair(cleaned); JSON.parse(cleaned); }
+      subj.specJson = cleaned;
+      await fs.writeFile(path.join(projectDir, `subject_${subj.id}_spec.json`), cleaned);
     } catch (err) {
-      console.warn('[video-pipeline] subject spec failed:', (err as Error).message);
+      console.warn(`[video-pipeline] spec for subject ${subj.id} failed:`, (err as Error).message);
     }
-  }
 
-  if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
-    onProgress({ stage: 'subject-sheet', status: 'start' });
-    const subjectPrompt = `Subject reference sheet — 4-photo grid collage (2x2), smartphone-photography style, on a neutral light-grey seamless studio backdrop with soft even diffused lighting.
+    // Generate 4-photo grid sheet
+    const subjectPrompt = `Subject reference sheet for "${subj.id}" — 4-photo grid collage (2x2), smartphone-photography style, neutral light-grey seamless studio backdrop, soft diffused lighting.
 
-# Strict subject specification (USE EXACTLY — do NOT improvise hair, face, wardrobe, age, body type)
-${subjectSpecJson || `Persona: ${storyboard.presenter_persona}`}
+# Strict subject specification (USE EXACTLY — do NOT improvise hair, face, wardrobe, age, body)
+${subj.specJson || `Persona: ${subj.persona}`}
 
-# 4-photo grid layout (same individual in every panel)
+# 4-photo grid (same individual every panel)
 Panel 1 (top-left): full body STANDING front view, arms relaxed.
 Panel 2 (top-right): CROUCHING pose, looking toward camera.
-Panel 3 (bottom-left): casual SEATED pose on the floor or low surface.
+Panel 3 (bottom-left): casual SEATED pose on floor or low surface.
 Panel 4 (bottom-right): UPPER BODY portrait, eye-level, soft natural smile.
 
-Identical subject in all four panels — same face, same hair, same skin tone, same wardrobe, same age, same build. Treat the JSON specification above as the locked identity contract.
+Identical subject in all four panels — same face, hair, skin tone, wardrobe, age, build. Treat the JSON above as the locked identity contract.
 
-Style: photoreal, ultra-realistic, high skin and fabric texture detail, sharp focus, smartphone editorial look, no text, no labels, no watermark, no logo. Aspect ${brief.aspect}.`;
+Style: photoreal, ultra-realistic, high skin and fabric texture detail, sharp focus, smartphone editorial. No text, no labels, no watermark. Aspect ${brief.aspect}.`;
     try {
       const buf = await orImage(subjectPrompt, IMAGE_MODEL);
-      const p = path.join(projectDir, 'subject_sheet.png');
+      const p = path.join(projectDir, `subject_${subj.id}_sheet.png`);
       await fs.writeFile(p, buf);
-      subjectSheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
-      onProgress({ stage: 'subject-sheet', status: 'done', path: p });
+      subj.sheetPath = p;
+      subj.sheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+      onProgress({ stage: 'subject-sheet', status: 'done', path: p, subjectId: subj.id });
     } catch (err) {
-      console.warn('[video-pipeline] subject sheet failed:', (err as Error).message);
-      onProgress({ stage: 'subject-sheet', status: 'skip' });
+      console.warn(`[video-pipeline] sheet for subject ${subj.id} failed:`, (err as Error).message);
+      onProgress({ stage: 'subject-sheet', status: 'skip', subjectId: subj.id });
     }
-  } else {
-    onProgress({ stage: 'subject-sheet', status: 'skip' });
   }
+  if (subjects.length === 0) onProgress({ stage: 'subject-sheet', status: 'skip' });
 
   // Stage 3.5b: scenery / location reference sheet — single establishing
   // image of the world the video lives in. Used as second image reference
@@ -681,24 +668,44 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
     onProgress({ stage: 'scenery-sheet', status: 'skip' });
   }
 
-  // Stage 4: ref frames per shot (parallel). Each shot gets BOTH the subject
-  // turnaround sheet AND the scenery sheet as image_url refs so identity +
-  // environment lock across every shot.
+  // Stage 4: ref frames per shot (parallel). Each shot gets ONLY the subject
+  // sheets for subjects appearing in that shot (per subject_ids) + scenery
+  // sheet as image_url refs. Strict per-subject identity lock + narration.
   onProgress({ stage: 'ref-frames', status: 'start' });
-  const refImagesForShot: string[] = [];
-  if (subjectSheetDataUri) refImagesForShot.push(subjectSheetDataUri);
-  if (scenerySheetDataUri) refImagesForShot.push(scenerySheetDataUri);
+  const subjectsById = new Map(subjects.map((s) => [s.id, s]));
   await Promise.all(
     storyboard.shots.map(async (shot) => {
-      const identityClause: string[] = [];
-      if (subjectSheetDataUri) identityClause.push('STRICT IDENTITY LOCK: the person in this shot is the SAME individual shown in the FIRST attached reference image (4-photo subject grid). Match the face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.');
-      if (scenerySheetDataUri) identityClause.push('STRICT LOCATION LOCK: the environment in this shot is the SAME location shown in the SECOND attached reference image. Match the architecture, materials, color palette, props, signage, time of day, and lighting direction exactly. Do NOT invent a different location.');
-      const specBlock = subjectSpecJson
-        ? `\n\n# Locked subject specification (must match attached subject reference image)\n${subjectSpecJson}`
+      const shotSubjects: SubjectDef[] = (shot.subject_ids || [])
+        .map((id) => subjectsById.get(id))
+        .filter((s): s is SubjectDef => Boolean(s && s.sheetDataUri));
+      const refs: string[] = [];
+      shotSubjects.forEach((s) => { if (s.sheetDataUri) refs.push(s.sheetDataUri); });
+      if (scenerySheetDataUri) refs.push(scenerySheetDataUri);
+
+      const subjectClauses: string[] = [];
+      shotSubjects.forEach((s, idx) => {
+        const ordinal = ['FIRST', 'SECOND', 'THIRD'][idx] || `#${idx + 1}`;
+        subjectClauses.push(`STRICT IDENTITY LOCK — subject "${s.id}" appears in this shot and is the SAME individual shown in the ${ordinal} attached reference image. Match face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.`);
+      });
+      if (scenerySheetDataUri) {
+        const ord = ['FIRST', 'SECOND', 'THIRD', 'FOURTH'][shotSubjects.length] || `#${shotSubjects.length + 1}`;
+        subjectClauses.push(`STRICT LOCATION LOCK — the environment is the SAME location shown in the ${ord} attached reference image. Match architecture, materials, color palette, props, signage, time of day, and lighting direction exactly.`);
+      }
+
+      const subjectSpecBlocks = shotSubjects
+        .filter((s) => s.specJson)
+        .map((s) => `# Locked spec for subject "${s.id}" (must match attached reference)\n${s.specJson}`)
+        .join('\n\n');
+
+      const narrationCue = shot.narration_chunk
+        ? `\n\n# Narration line for this shot (visual must match the emotional beat)\n"${shot.narration_chunk}"`
         : '';
-      const refs = identityClause.length ? '\n\n' + identityClause.join('\n') : '';
-      const prompt = `${shot.image_prompt}${specBlock}${refs}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
-      const buf = await orImage(prompt, IMAGE_MODEL, refImagesForShot);
+
+      const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
+      const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
+
+      const prompt = `${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+      const buf = await orImage(prompt, IMAGE_MODEL, refs);
       const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
       await fs.writeFile(p, buf);
       shot.refFramePath = p;

@@ -73,7 +73,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [storyboardTitle, setStoryboardTitle] = useState('');
   const [narration, setNarration] = useState('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
-  const [subjectSheet, setSubjectSheet] = useState<string | null>(null);
+  const [subjectSheets, setSubjectSheets] = useState<Array<{ id: string; url: string }>>([]);
   const [scenerySheet, setScenerySheet] = useState<string | null>(null);
   const [scriptMd, setScriptMd] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'script' | 'references' | 'shots' | 'final'>('script');
@@ -85,7 +85,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     setError(null);
     setFinalUrl(null);
     setShots([]);
-    setSubjectSheet(null);
+    setSubjectSheets([]);
     setScenerySheet(null);
     setScriptMd('');
     setActiveTab('script');
@@ -149,7 +149,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string }) => {
     if (evName === 'progress' && payload.stage) {
       const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet';
       if (stage === 'error') {
@@ -169,7 +169,12 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       }
       if (stage === 'subject-sheet') {
         if (payload.status === 'done' && payload.path) {
-          setSubjectSheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+          const url = `/api/projects/${projectId}/files/${path2name(payload.path)}`;
+          const id = payload.subjectId || 'subject';
+          setSubjectSheets((prev) => {
+            const filtered = prev.filter((s) => s.id !== id);
+            return [...filtered, { id, url }];
+          });
           setActiveTab('references');
         }
         return;
@@ -355,7 +360,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       }}>
         {([
           { key: 'script', label: 'Script', Icon: FileText, badge: scriptMd ? '•' : '' },
-          { key: 'references', label: 'Reference Sheets', Icon: ImageIcon, badge: (subjectSheet ? 1 : 0) + (scenerySheet ? 1 : 0) || '' },
+          { key: 'references', label: 'Reference Sheets', Icon: ImageIcon, badge: subjectSheets.length + (scenerySheet ? 1 : 0) || '' },
           { key: 'shots', label: 'Shot Frames', Icon: LayoutGrid, badge: shots.length || '' },
           { key: 'final', label: 'Final Video', Icon: Film, badge: finalUrl ? '•' : '' },
         ] as const).map((t) => {
@@ -412,16 +417,16 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
 
         {activeTab === 'references' && (
           <div>
-            {(subjectSheet || scenerySheet) ? (
+            {(subjectSheets.length > 0 || scenerySheet) ? (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
-                {subjectSheet && (
-                  <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                {subjectSheets.map((s) => (
+                  <div key={s.id} style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
                     <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
-                      SUBJECT TURNAROUND — front (arms raised) / side / back
+                      SUBJECT — {s.id} · 4-photo grid
                     </div>
-                    <img src={subjectSheet} alt="subject turnaround" style={{ width: '100%', display: 'block' }} />
+                    <img src={s.url} alt={`subject ${s.id}`} style={{ width: '100%', display: 'block' }} />
                   </div>
-                )}
+                ))}
                 {scenerySheet && (
                   <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
                     <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
@@ -431,11 +436,11 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
                   </div>
                 )}
                 <div style={{ ...mono, color: P.muted, fontSize: 8 }}>
-                  Both sheets are passed as image_url references to every shot frame so identity + location lock across all shots.
+                  Per-shot frame gen receives only the subject sheets for subjects appearing in that shot (per subject_ids) plus the scenery sheet, with strict per-subject identity + location lock clauses.
                 </div>
               </div>
             ) : (
-              <EmptyTab icon={<ImageIcon size={32} color={P.border} />} title="Reference sheets appear here" hint="Subject turnaround (front arms-raised / side / back) and scenery establishing shot generate once per render and seed every shot frame." />
+              <EmptyTab icon={<ImageIcon size={32} color={P.border} />} title="Reference sheets appear here" hint="One 4-photo subject grid is generated per subject in the script (host, customer, etc.) plus a scenery establishing shot. Each shot frame only uses the sheets for subjects in that shot." />
             )}
           </div>
         )}
@@ -491,7 +496,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         )}
 
         {/* Empty initial state across all tabs */}
-        {!scriptMd && !subjectSheet && !scenerySheet && shots.length === 0 && !finalUrl && !running && !error && activeTab === 'script' && (
+        {!scriptMd && subjectSheets.length === 0 && !scenerySheet && shots.length === 0 && !finalUrl && !running && !error && activeTab === 'script' && (
           <div style={{ marginTop: 30 }}>
             <EmptyTab
               icon={<VideoIcon size={32} color={P.border} />}
