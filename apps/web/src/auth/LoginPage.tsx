@@ -71,7 +71,10 @@ export default function LoginPage(): JSX.Element {
     setSubmitting(true);
     try {
       await apiClient.login({ email: email.trim().toLowerCase(), password });
-      router.replace(nextPath);
+      // Hard reload so AuthProvider re-bootstraps with the new session cookie.
+      // router.replace alone keeps the provider mounted with stale 'anonymous'
+      // state → ProtectedRoute bounces back to /login.
+      window.location.replace(nextPath || '/');
     } catch (err) {
       const e = err as { response?: { data?: { detail?: string } }; message?: string };
       setError(e?.response?.data?.detail || e?.message || 'Login failed');
