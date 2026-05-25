@@ -140,9 +140,9 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'character-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
     if (evName === 'progress' && payload.stage) {
-      const stage = payload.stage as StageKey | 'error' | 'chat-script';
+      const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'character-sheet';
       if (stage === 'error') {
         setError(payload.message || 'unknown error');
         return;
