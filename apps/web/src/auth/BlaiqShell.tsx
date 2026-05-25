@@ -467,19 +467,31 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
             />
           </aside>
         )}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          <div style={{
-            flex: showArtifactPanel ? '0 0 48%' : 1,
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            borderRight: showArtifactPanel ? `1px solid ${PAL.divider}` : undefined,
-          }}>
-            {isBrand ? <BrandPage /> : children}
-          </div>
+        <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* When text mode active, hide OD's .workspace pane via injected CSS so our preview replaces it inline */}
+          {showArtifactPanel && (
+            <style>{`
+              /* Collapse OD's workspace + resize handle so our preview replaces them */
+              .split { grid-template-columns: 45% 0 0 !important; }
+              .split > .workspace,
+              .split > .split-resize-handle { display: none !important; }
+            `}</style>
+          )}
+          {isBrand ? <BrandPage /> : children}
           {showArtifactPanel && projectId && conversationId && (
-            <div style={{ flex: '1 1 52%', minWidth: 0, height: '100%' }}>
+            <div
+              className="blaiq-text-preview-anchor"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '55%',
+                borderLeft: `1px solid ${PAL.divider}`,
+                background: PAL.bg,
+                zIndex: 10,
+              }}
+            >
               <TextArtifactPanel
                 projectId={projectId}
                 conversationId={conversationId}
