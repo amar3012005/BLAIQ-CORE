@@ -20,7 +20,7 @@ const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
 
 const SCRIPT_MODEL = process.env.BLAIQ_VIDEO_SCRIPT_MODEL || 'anthropic/claude-sonnet-4.6';
 const ROUTER_MODEL = process.env.BLAIQ_VIDEO_ROUTER_MODEL || 'google/gemini-2.5-flash';
-const IMAGE_MODEL = process.env.BLAIQ_VIDEO_IMAGE_MODEL || 'openai/gpt-image-1';
+const IMAGE_MODEL = process.env.BLAIQ_VIDEO_IMAGE_MODEL || 'google/gemini-2.5-flash-image';
 const VIDEO_MODEL = process.env.BLAIQ_VIDEO_I2V_MODEL || 'google/veo-3';
 
 export interface VideoBrief {
@@ -92,9 +92,10 @@ async function orChat(messages: Array<{ role: string; content: string }>, model:
 }
 
 async function orImage(prompt: string, model: string): Promise<Buffer> {
-  // OpenRouter image gen via /images/generations OR via chat with output modality.
-  // Try /images/generations first (OpenAI shape).
-  const r = await fetch(`${OR_BASE}/images/generations`, {
+  // OpenRouter image gen lives behind /chat/completions with
+  // `modalities: ["image","text"]`. Response messages can carry image
+  // bytes inline as data: URIs OR as image_url objects.
+  const r = await fetch(`${OR_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${OR_KEY()}`,
@@ -102,24 +103,63 @@ async function orImage(prompt: string, model: string): Promise<Buffer> {
     },
     body: JSON.stringify({
       model,
-      prompt,
-      n: 1,
-      response_format: 'b64_json',
-      size: '1024x1024',
+      modalities: ['image', 'text'],
+      messages: [{ role: 'user', content: prompt }],
     }),
   });
   if (!r.ok) {
     const text = await r.text();
     throw new Error(`openrouter image ${r.status}: ${text.slice(0, 300)}`);
   }
-  const data = (await r.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
-  const item = data.data?.[0];
-  if (item?.b64_json) return Buffer.from(item.b64_json, 'base64');
-  if (item?.url) {
-    const imgRes = await fetch(item.url);
-    return Buffer.from(await imgRes.arrayBuffer());
+  const data = (await r.json()) as {
+    choices?: Array<{
+      message?: {
+        content?: string | Array<{ type?: string; image_url?: { url?: string } | string; text?: string }>;
+        images?: Array<{ image_url?: { url?: string } | string; url?: string }>;
+      };
+    }>;
+  };
+  const msg = data.choices?.[0]?.message;
+  if (!msg) throw new Error('openrouter image: no message in response');
+
+  // 1) Structured `images` array (gemini-flash-image, nano banana shape)
+  for (const img of msg.images ?? []) {
+    const u = typeof img.image_url === 'string'
+      ? img.image_url
+      : (img.image_url as { url?: string } | undefined)?.url ?? img.url;
+    if (u) return await fetchImageUrl(u);
   }
-  throw new Error('openrouter image returned no data');
+
+  // 2) Content array with type=image_url
+  if (Array.isArray(msg.content)) {
+    for (const part of msg.content) {
+      const u = typeof part.image_url === 'string'
+        ? part.image_url
+        : (part.image_url as { url?: string } | undefined)?.url;
+      if (u) return await fetchImageUrl(u);
+    }
+  }
+
+  // 3) Content string with markdown image ![](url) or data: URI
+  if (typeof msg.content === 'string') {
+    const dataUri = msg.content.match(/data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/);
+    if (dataUri && dataUri[1]) return Buffer.from(dataUri[1], 'base64');
+    const md = msg.content.match(/!\[[^\]]*\]\((https?:\/\/[^)]+)\)/);
+    if (md && md[1]) return await fetchImageUrl(md[1]);
+  }
+
+  throw new Error('openrouter image: no image in response');
+}
+
+async function fetchImageUrl(url: string): Promise<Buffer> {
+  if (url.startsWith('data:')) {
+    const m = url.match(/^data:[^;]+;base64,(.+)$/);
+    if (m && m[1]) return Buffer.from(m[1], 'base64');
+    throw new Error('malformed data URI');
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`fetch image url ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
 }
 
 async function orVideo(
