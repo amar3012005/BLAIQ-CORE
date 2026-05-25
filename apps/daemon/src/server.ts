@@ -2248,6 +2248,10 @@ export async function startServer({
   // Health/version remain open for monitoring probes.
   // Non-browser clients (no Origin header) are always allowed.
   app.use('/api', (req, res, next) => {
+    // Hosted multi-tenant mode: cookie session middleware already gates
+    // the request. Allow any browser origin; skip loopback-only CORS guard.
+    if (process.env.OD_SESSION_SECRET) return next();
+
     // Live artifact previews have stricter local-daemon validation and
     // loopback CORS handling on the route itself. Let that middleware produce
     // the structured error shape and preflight headers for preview embeds.
