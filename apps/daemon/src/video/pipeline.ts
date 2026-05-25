@@ -64,7 +64,8 @@ export type ProgressEvent =
   | { stage: 'recall'; status: 'start' | 'done'; chars?: number }
   | { stage: 'script'; status: 'start' | 'done'; storyboard?: Storyboard }
   | { stage: 'chat-script'; markdown: string }
-  | { stage: 'character-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
+  | { stage: 'subject-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
+  | { stage: 'scenery-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
   | { stage: 'video-error'; shot: number; message: string }
   | { stage: 'ref-frames'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
   | { stage: 'voice'; status: 'start' | 'done' | 'skip'; path?: string }
@@ -458,37 +459,68 @@ export async function renderVideo(
   await fs.writeFile(path.join(projectDir, 'script.md'), md);
   onProgress({ stage: 'chat-script', markdown: md });
 
-  // Stage 3.5: character sheet (if presenter persona present) — single portrait
-  // generated once, then passed as image reference to every shot's image gen
-  // so identity (face, wardrobe, build) locks across all frames.
-  let characterSheetDataUri: string | undefined;
+  // Stage 3.5a: subject turnaround sheet — one composite image with front /
+  // side / back views (front pose has arms raised) so the model has a full
+  // identity reference. Generated only if presenter_persona present.
+  let subjectSheetDataUri: string | undefined;
   if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
-    onProgress({ stage: 'character-sheet', status: 'start' });
-    const sheetPrompt = `Character reference sheet, neutral studio lighting, soft seamless backdrop. Subject: ${storyboard.presenter_persona}. Visual world cues: ${storyboard.visual_world || ''}. Color grade: ${storyboard.color_grade}. Single full-body + headshot composite, photoreal, ${brief.aspect}, sharp, no text, no logo.`;
+    onProgress({ stage: 'subject-sheet', status: 'start' });
+    const subjectPrompt = `Character turnaround reference sheet, single image divided into three panels side by side on neutral light-grey seamless studio backdrop, soft even lighting, no shadows on backdrop.
+Subject: ${storyboard.presenter_persona}.
+Panel 1 (left): full body FRONT view, arms raised wide to the sides at shoulder height, palms forward, neutral expression, feet shoulder-width apart.
+Panel 2 (centre): full body SIDE view (profile), arms relaxed at sides.
+Panel 3 (right): full body BACK view, arms relaxed at sides.
+Identical subject in all three panels — same face, hair, build, wardrobe.
+Photoreal, sharp focus, 50mm equivalent, no text, no labels, no watermark, no logo. Aspect ${brief.aspect}.`;
     try {
-      const buf = await orImage(sheetPrompt, IMAGE_MODEL);
-      const sheetPath = path.join(projectDir, 'character_sheet.png');
-      await fs.writeFile(sheetPath, buf);
-      characterSheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
-      onProgress({ stage: 'character-sheet', status: 'done', path: sheetPath });
+      const buf = await orImage(subjectPrompt, IMAGE_MODEL);
+      const p = path.join(projectDir, 'subject_sheet.png');
+      await fs.writeFile(p, buf);
+      subjectSheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+      onProgress({ stage: 'subject-sheet', status: 'done', path: p });
     } catch (err) {
-      console.warn('[video-pipeline] character sheet failed:', (err as Error).message);
-      onProgress({ stage: 'character-sheet', status: 'skip' });
+      console.warn('[video-pipeline] subject sheet failed:', (err as Error).message);
+      onProgress({ stage: 'subject-sheet', status: 'skip' });
     }
   } else {
-    onProgress({ stage: 'character-sheet', status: 'skip' });
+    onProgress({ stage: 'subject-sheet', status: 'skip' });
   }
 
-  // Stage 4: ref frames per shot (parallel). Each shot's gen receives the
-  // character sheet as image reference (when available) to lock identity.
+  // Stage 3.5b: scenery / location reference sheet — single establishing
+  // image of the world the video lives in. Used as second image reference
+  // for per-shot frame gen so location, palette, props stay consistent.
+  let scenerySheetDataUri: string | undefined;
+  if (storyboard.visual_world && storyboard.visual_world.trim()) {
+    onProgress({ stage: 'scenery-sheet', status: 'start' });
+    const sceneryPrompt = `Cinematic establishing shot of the location only, NO PEOPLE in frame. Location: ${storyboard.visual_world}. Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photoreal, natural lighting, sharp focus, no text, no watermark. Aspect ${brief.aspect}.`;
+    try {
+      const buf = await orImage(sceneryPrompt, IMAGE_MODEL);
+      const p = path.join(projectDir, 'scenery_sheet.png');
+      await fs.writeFile(p, buf);
+      scenerySheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+      onProgress({ stage: 'scenery-sheet', status: 'done', path: p });
+    } catch (err) {
+      console.warn('[video-pipeline] scenery sheet failed:', (err as Error).message);
+      onProgress({ stage: 'scenery-sheet', status: 'skip' });
+    }
+  } else {
+    onProgress({ stage: 'scenery-sheet', status: 'skip' });
+  }
+
+  // Stage 4: ref frames per shot (parallel). Each shot gets BOTH the subject
+  // turnaround sheet AND the scenery sheet as image_url refs so identity +
+  // environment lock across every shot.
   onProgress({ stage: 'ref-frames', status: 'start' });
-  const refImagesForShot = characterSheetDataUri ? [characterSheetDataUri] : [];
+  const refImagesForShot: string[] = [];
+  if (subjectSheetDataUri) refImagesForShot.push(subjectSheetDataUri);
+  if (scenerySheetDataUri) refImagesForShot.push(scenerySheetDataUri);
   await Promise.all(
     storyboard.shots.map(async (shot) => {
-      const identityClause = characterSheetDataUri
-        ? ' SAME subject as the attached reference image — match face, hair, build, wardrobe exactly.'
-        : '';
-      const prompt = `${shot.image_prompt}.${identityClause} Style: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+      const identityClause: string[] = [];
+      if (subjectSheetDataUri) identityClause.push('Use the FIRST reference image as the subject — match face, hair, build, wardrobe exactly from any of its panels.');
+      if (scenerySheetDataUri) identityClause.push('Use the SECOND reference image as the location — match architecture, palette, props, lighting direction exactly.');
+      const refs = identityClause.length ? ' ' + identityClause.join(' ') : '';
+      const prompt = `${shot.image_prompt}.${refs} Style: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
       const buf = await orImage(prompt, IMAGE_MODEL, refImagesForShot);
       const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
       await fs.writeFile(p, buf);

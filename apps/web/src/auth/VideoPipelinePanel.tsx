@@ -72,6 +72,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [storyboardTitle, setStoryboardTitle] = useState('');
   const [narration, setNarration] = useState('');
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
+  const [subjectSheet, setSubjectSheet] = useState<string | null>(null);
+  const [scenerySheet, setScenerySheet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -80,6 +82,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     setError(null);
     setFinalUrl(null);
     setShots([]);
+    setSubjectSheet(null);
+    setScenerySheet(null);
     setStageStatus({
       recall: 'pending',
       script: 'pending',
@@ -140,9 +144,9 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'character-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
     if (evName === 'progress' && payload.stage) {
-      const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'character-sheet';
+      const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet';
       if (stage === 'error') {
         setError(payload.message || 'unknown error');
         return;
@@ -155,8 +159,16 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         setError(`shot ${payload.shot}: ${payload.message || 'i2v failed, used image fallback'}`);
         return;
       }
-      if (stage === 'character-sheet') {
-        // Treat character sheet as part of script/frames flow; no separate row.
+      if (stage === 'subject-sheet') {
+        if (payload.status === 'done' && payload.path) {
+          setSubjectSheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+        }
+        return;
+      }
+      if (stage === 'scenery-sheet') {
+        if (payload.status === 'done' && payload.path) {
+          setScenerySheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+        }
         return;
       }
       if (payload.status === 'start') {
@@ -336,6 +348,29 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
                 border: `1px solid ${P.border}`,
               }}
             />
+          </div>
+        )}
+
+        {/* Subject + scenery reference sheets */}
+        {(subjectSheet || scenerySheet) && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ ...mono, color: P.muted, marginBottom: 10 }}>
+              REFERENCE SHEETS
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {subjectSheet && (
+                <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <img src={subjectSheet} alt="subject turnaround" style={{ width: '100%', display: 'block' }} />
+                  <div style={{ padding: '6px 10px', fontSize: 11, color: P.muted }}>Subject — front (arms raised) / side / back</div>
+                </div>
+              )}
+              {scenerySheet && (
+                <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <img src={scenerySheet} alt="scenery" style={{ width: '100%', display: 'block' }} />
+                  <div style={{ padding: '6px 10px', fontSize: 11, color: P.muted }}>Scenery — establishing location</div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
