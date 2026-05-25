@@ -374,16 +374,36 @@ Return the storyboard JSON now.`;
       { role: 'user', content: user },
     ],
     SCRIPT_MODEL,
-    { maxTokens: 6000, jsonMode: true },
+    { maxTokens: 16000, jsonMode: true },
   );
   // Strip code fences if model still wraps
   let jsonText = raw.trim();
   const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]+?)```/);
   if (fenceMatch && fenceMatch[1]) jsonText = fenceMatch[1].trim();
+
+  // Try direct parse first
   try {
     return JSON.parse(jsonText) as Storyboard;
-  } catch (err) {
-    throw new Error(`script JSON parse failed: ${(err as Error).message}\nraw: ${jsonText.slice(0, 500)}`);
+  } catch (_e1) {
+    // Repair pass: model produced malformed JSON (truncation / smart-quotes /
+    // unescaped quotes inside strings). Ask the SCRIPT_MODEL to fix the JSON
+    // verbatim — cheap second call, much higher recovery rate than regex hacks.
+    try {
+      const repaired = await orChat(
+        [
+          { role: 'system', content: 'You are a JSON repair tool. Output ONLY valid JSON that matches the original intent. Do not add commentary. Do not wrap in code fences. If the input is truncated, complete the missing fields with empty strings or sensible defaults so the JSON parses.' },
+          { role: 'user', content: `Repair this JSON so it parses with JSON.parse. Preserve all data. Close any unterminated strings, balance brackets, escape inner quotes, replace smart quotes with straight quotes.\n\n${jsonText}` },
+        ],
+        SCRIPT_MODEL,
+        { maxTokens: 16000, jsonMode: true },
+      );
+      let repairedText = repaired.trim();
+      const rf = repairedText.match(/```(?:json)?\s*([\s\S]+?)```/);
+      if (rf && rf[1]) repairedText = rf[1].trim();
+      return JSON.parse(repairedText) as Storyboard;
+    } catch (e2) {
+      throw new Error(`script JSON parse failed after repair: ${(e2 as Error).message}\nraw head: ${jsonText.slice(0, 400)}\nraw tail: ${jsonText.slice(-200)}`);
+    }
   }
 }
 
