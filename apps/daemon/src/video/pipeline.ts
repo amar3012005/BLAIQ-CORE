@@ -328,8 +328,8 @@ async function generateStoryboard(
   hivemindContext: string,
 ): Promise<Storyboard> {
   const shotCount = Math.max(4, Math.min(8, Math.ceil(brief.length / 6)));
-  const system = `You are a senior creative director crafting a cinematic, Higgsfield-style brand promo video.
-Think like a film director: plot arc (hook → tension → reveal → CTA), camera grammar (wide / medium / close / push-in / dolly / handheld), presenter persona, and a unified visual world across shots.
+  const system = `You are a senior creative director + cinematographer crafting a cinematic, Higgsfield-style brand promo video.
+Think like a working film director — every shot MUST have ACTION. No static "person stands and smiles" frames. Every shot specifies movement: subject motion (gesture, walk, turn, reach, react) and camera motion (dolly, push-in, tilt, pan, orbit, handheld float). Plot arc with momentum: hook → tension → reveal → CTA.
 
 # Brand DNA (visual identity)
 ${brandDna}
@@ -347,20 +347,20 @@ Return ONLY valid JSON, no preamble, no markdown fence. Schema:
   "duration_s": ${brief.length},
   "presenter_persona": "1-sentence persona: age range, demeanor, wardrobe (locked across all shots for visual identity)",
   "visual_world": "1-sentence world description: location, lighting, color palette tied to brand (locked across all shots)",
-  "narration": "${brief.voiceover ? 'full voiceover script in brand tone, ~150 words/min, with hook + 2-3 message pillars + CTA' : ''}",
-  "music_brief": "what music feels like — tempo, instrumentation, energy (1 sentence)",
-  "color_grade": "color grade direction tied to brand palette (1 sentence)",
+  "narration": "${brief.voiceover ? 'FULL voiceover script in brand tone. ~150 words/min. Open with a HOOK question or punchy statement, then 2-3 message pillars with concrete evidence (numbers, names, customer quotes) from Hivemind facts above, end with a clear CTA. 6-8 complete sentences minimum. No filler.' : ''}",
+  "music_brief": "what music feels like — tempo BPM, instrumentation, energy arc across the runtime (1-2 sentences)",
+  "color_grade": "color grade direction tied to brand palette + lighting mood (1 sentence)",
   "shots": [
     {
       "shot": 1,
       "duration_s": <int seconds, sum across all shots EXACTLY = ${brief.length}>,
       "segment": "hook | pillar_1 | pillar_2 | pillar_3 | broll | cta",
-      "visual": "1-sentence what-we-see",
-      "camera": "shot size + move (e.g. 'wide static', 'medium 2s push-in', 'close handheld', 'low-angle dolly')",
-      "presenter_action": "what presenter does on screen (or 'no presenter' for b-roll)",
-      "image_prompt": "detailed image-gen prompt — MUST repeat presenter_persona + visual_world verbatim each shot for identity lock, plus shot-specific framing, lens, lighting, brand color hex codes",
-      "motion_prompt": "i2v motion direction — camera move + subject motion (e.g. 'subject smiles and gestures right, camera slow push-in 5%')",
-      "narration_chunk": "${brief.voiceover ? 'spoken text aligned to this shot duration' : ''}",
+      "visual": "1-sentence what-we-see in this shot",
+      "camera": "shot size + lens + camera move. Format: '<size> <lens> <move>'. Examples: 'wide 24mm slow dolly-in', 'medium 50mm handheld follow', 'close 85mm static rack-focus', 'low-angle 35mm orbit-left'.",
+      "presenter_action": "EXACT physical action the subject performs across this shot (not a static pose): 'walks across kitchen toward the device, places hand on its surface, looks up into camera' OR 'no presenter — product close-up' for b-roll",
+      "image_prompt": "Vivid paragraph image prompt — cinematic mood, lighting setup (key/fill/practicals), composition (rule-of-thirds, negative space), color palette, depth-of-field, emotional tone. Repeat presenter_persona + visual_world verbatim for identity lock. 3-5 sentences.",
+      "motion_prompt": "DETAILED i2v animation directive. Must include: (a) camera motion with magnitude (e.g. 'slow dolly-in 5cm over 4 seconds'); (b) subject motion (e.g. 'subject turns head left, smiles, then walks forward 1 step'); (c) environmental motion (e.g. 'curtains billow softly, dust motes drift in light shaft, steam rises from cup'); (d) physics realism cues (gravity, weight, fabric drape); (e) mood filters (lens flare, soft bloom, light leaks). 4-6 sentences. ACTION-FIRST — no static descriptions.",
+      "narration_chunk": "${brief.voiceover ? 'Spoken text aligned to this shot duration — must be a complete, on-brand sentence with substance (concrete claim + evidence). No filler phrases.' : ''}",
       "on_screen_text": "lower-third / supers / logo cue or empty string"
     }
   ]
@@ -368,7 +368,8 @@ Return ONLY valid JSON, no preamble, no markdown fence. Schema:
 
 Constraints:
 - Total shots: ${shotCount}. Each shot 3-8 seconds. Durations sum EXACTLY to ${brief.length}.
-- Plot arc: shot 1 = hook (curiosity); middle shots = message pillars with evidence; final shot = CTA + logo.
+- Plot arc: shot 1 = hook (curiosity); middle shots = message pillars with concrete evidence; final shot = CTA + brand mark.
+- Every shot MUST have motion. If a shot describes a still pose, it is INVALID — add subject action and camera move.
 - Lock presenter_persona and visual_world verbatim in every shot's image_prompt — guarantees identity consistency across generated frames.
 - Style: ${brief.style}. Aspect: ${brief.aspect}.
 - Use Brand Tone vocabulary for narration. Never invent facts beyond Hivemind context.`;
