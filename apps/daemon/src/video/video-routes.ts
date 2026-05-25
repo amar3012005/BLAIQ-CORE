@@ -7,6 +7,7 @@ import type { AuthenticatedRequest } from '../db/tenant-context.js';
 import { getTenantBrand } from '../brand/brand-store.js';
 import { hivemindRecall } from '../brand/hivemind-client.js';
 import { renderVideo, type VideoBrief, type ProgressEvent } from './pipeline.js';
+import { submitReply, type HitlGate, type HitlReply } from './hitl-store.js';
 
 const PROJECTS_DIR = process.env.OD_DATA_DIR
   ? path.join(process.env.OD_DATA_DIR, 'projects')
@@ -79,10 +80,12 @@ export function registerVideoRoutes(router: Router): void {
 
       // Stages 3-7
       const voiceMatch = brand.brandToneMd.match(/voice[: ]+([a-z0-9-]+)/i)?.[1];
-      const ctxOpts: { brandTone: string; brandDna: string; hivemindContext: string; voice?: string } = {
+      const ctxOpts: { brandTone: string; brandDna: string; hivemindContext: string; voice?: string; projectId: string; hitlEnabled?: boolean } = {
         brandTone: brand.brandToneMd || '',
         brandDna: brand.brandDnaMd || '',
         hivemindContext,
+        projectId: body.project_id,
+        hitlEnabled: true,
       };
       if (voiceMatch) ctxOpts.voice = voiceMatch;
       const result = await renderVideo(brief, projectDir, ctxOpts, onProgress);
@@ -99,5 +102,32 @@ export function registerVideoRoutes(router: Router): void {
       send('error', { message: msg });
       res.end();
     }
+  });
+
+  // POST /api/v1/video/:projectId/hitl/:gate — resolve a pending HITL gate.
+  router.post('/api/v1/video/:projectId/hitl/:gate', (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) {
+      res.status(401).json({ error: 'not authenticated' });
+      return;
+    }
+    const projectId = req.params.projectId;
+    const gate = req.params.gate as HitlGate;
+    if (!projectId || !['discovery', 'script', 'references', 'frames'].includes(gate)) {
+      res.status(400).json({ error: 'invalid projectId or gate' });
+      return;
+    }
+    const body = (req.body ?? {}) as Partial<HitlReply>;
+    const reply: HitlReply = {
+      approve: body.approve === true,
+      notes: typeof body.notes === 'string' ? body.notes : '',
+      answers: typeof body.answers === 'object' && body.answers ? body.answers : {},
+    };
+    const ok = submitReply(projectId, gate, reply);
+    if (!ok) {
+      res.status(404).json({ error: 'no pending HITL gate for this projectId+gate' });
+      return;
+    }
+    res.json({ ok: true });
   });
 }

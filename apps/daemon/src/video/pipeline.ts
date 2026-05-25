@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { jsonrepair } from 'jsonrepair';
+import { waitForReply, type HitlGate, type HitlReply } from './hitl-store.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
@@ -76,6 +77,14 @@ export type ProgressEvent =
   | { stage: 'recall'; status: 'start' | 'done'; chars?: number }
   | { stage: 'script'; status: 'start' | 'done'; storyboard?: Storyboard }
   | { stage: 'chat-script'; markdown: string }
+  | {
+      stage: 'hitl';
+      gate: HitlGate;
+      title: string;
+      questions?: Array<{ id: string; question: string; hint?: string }>;
+      previewMarkdown?: string;
+      previewImages?: string[]; // file basenames under projectDir
+    }
   | { stage: 'subject-sheet'; status: 'start' | 'done' | 'skip'; path?: string; subjectId?: string }
   | { stage: 'scenery-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
   | { stage: 'video-error'; shot: number; message: string }
@@ -525,22 +534,111 @@ export async function renderVideo(
     brandDna: string;
     hivemindContext: string;
     voice?: string;
+    projectId: string;
+    hitlEnabled?: boolean;
   },
   onProgress: ProgressCallback,
 ): Promise<{ finalPath: string; storyboard: Storyboard }> {
   if (!OR_KEY()) throw new Error('OPENROUTER_API_KEY not set');
   await fs.mkdir(projectDir, { recursive: true });
+  const HITL = ctx.hitlEnabled !== false;
+
+  // ── Gate 1: DISCOVERY — generate questions from user query + Hivemind facts,
+  // ask the user to answer before script generation.
+  let discoveryAnswers: Record<string, string> = {};
+  let discoveryNotes = '';
+  if (HITL) {
+    let questions: Array<{ id: string; question: string; hint?: string }> = [];
+    try {
+      const qs = await orChat(
+        [
+          {
+            role: 'system',
+            content: 'You are a senior video creative director running a 5-minute discovery call. Output ONLY a JSON array of 3-5 short, sharp questions that you MUST know before you can write a strong, on-brand video script. Each question is an object {id: short-slug, question: full sentence, hint: optional 1-line guidance}. Skip anything already in the brief or Hivemind facts. No preamble, no markdown fence.',
+          },
+          {
+            role: 'user',
+            content: `Brief: ${JSON.stringify(brief)}\n\nHivemind facts: ${ctx.hivemindContext.slice(0, 4000) || '(none)'}\n\nBrand tone (voice): ${ctx.brandTone.slice(0, 600)}\n\nReturn the JSON array now.`,
+          },
+        ],
+        SCRIPT_MODEL,
+        { maxTokens: 1500, jsonMode: true },
+      );
+      let cleaned = qs.trim();
+      const fence = cleaned.match(/```(?:json)?\s*([\s\S]+?)```/);
+      if (fence && fence[1]) cleaned = fence[1].trim();
+      try { questions = JSON.parse(cleaned); } catch { questions = JSON.parse(jsonrepair(cleaned)); }
+      // Unwrap if model wrapped in object
+      if (!Array.isArray(questions) && questions && typeof questions === 'object') {
+        const obj = questions as unknown as Record<string, unknown>;
+        const arr = obj.questions || obj.items || obj.data;
+        if (Array.isArray(arr)) questions = arr as typeof questions;
+      }
+      if (!Array.isArray(questions)) questions = [];
+    } catch (err) {
+      console.warn('[video-pipeline] discovery question gen failed:', (err as Error).message);
+      questions = [];
+    }
+    if (questions.length > 0) {
+      onProgress({
+        stage: 'hitl',
+        gate: 'discovery',
+        title: 'Discovery — answer a few quick questions before we write the script',
+        questions,
+      });
+      const reply = await waitForReply(ctx.projectId, 'discovery');
+      discoveryAnswers = reply.answers || {};
+      discoveryNotes = reply.notes || '';
+    }
+  }
+
+  // Build augmented user prompt with discovery answers + notes so the
+  // storyboard step uses them.
+  const augmentedPrompt = [
+    brief.userPrompt || '',
+    Object.keys(discoveryAnswers).length
+      ? '\n\nDiscovery answers:\n' + Object.entries(discoveryAnswers).map(([k, v]) => `- ${k}: ${v}`).join('\n')
+      : '',
+    discoveryNotes ? `\n\nAdditional notes:\n${discoveryNotes}` : '',
+  ].join('').trim();
+  const briefForScript: VideoBrief = { ...brief, userPrompt: augmentedPrompt || brief.userPrompt };
 
   // Stage 3: script + storyboard
   onProgress({ stage: 'script', status: 'start' });
-  const storyboard = await generateStoryboard(brief, ctx.brandTone, ctx.brandDna, ctx.hivemindContext);
+  let storyboard = await generateStoryboard(briefForScript, ctx.brandTone, ctx.brandDna, ctx.hivemindContext);
   await fs.writeFile(path.join(projectDir, 'storyboard.json'), JSON.stringify(storyboard, null, 2));
   onProgress({ stage: 'script', status: 'done', storyboard });
 
-  // Push human-readable script to chat (renders in left chat pane while frames generate)
-  const md = storyboardToMarkdown(storyboard, brief);
+  // Push human-readable script to chat
+  let md = storyboardToMarkdown(storyboard, briefForScript);
   await fs.writeFile(path.join(projectDir, 'script.md'), md);
   onProgress({ stage: 'chat-script', markdown: md });
+
+  // ── Gate 2: SCRIPT APPROVAL — user reviews the storyboard, can request a
+  // rewrite with notes, or approve to proceed.
+  if (HITL) {
+    let attempts = 0;
+    while (attempts < 3) {
+      onProgress({
+        stage: 'hitl',
+        gate: 'script',
+        title: 'Script ready — approve or request changes',
+        previewMarkdown: md,
+      });
+      const reply = await waitForReply(ctx.projectId, 'script');
+      if (reply.approve) break;
+      attempts += 1;
+      // Rewrite with notes appended to user prompt
+      const revisedPrompt = `${briefForScript.userPrompt}\n\nRevision request: ${reply.notes || '(no notes — improve clarity, action, brand tone)'}`;
+      onProgress({ stage: 'script', status: 'start' });
+      storyboard = await generateStoryboard({ ...briefForScript, userPrompt: revisedPrompt }, ctx.brandTone, ctx.brandDna, ctx.hivemindContext);
+      await fs.writeFile(path.join(projectDir, 'storyboard.json'), JSON.stringify(storyboard, null, 2));
+      onProgress({ stage: 'script', status: 'done', storyboard });
+      md = storyboardToMarkdown(storyboard, briefForScript);
+      await fs.writeFile(path.join(projectDir, 'script.md'), md);
+      onProgress({ stage: 'chat-script', markdown: md });
+    }
+  }
 
   // Build script context summary used by reference sheets so identity + world
   // reflect what the narration requires.
@@ -668,51 +766,154 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
     onProgress({ stage: 'scenery-sheet', status: 'skip' });
   }
 
+  // ── Gate 3: REFERENCES APPROVAL — user previews subject sheets + scenery
+  // and can request a regenerate with notes (e.g. "make the host older", "use
+  // a brighter kitchen").
+  if (HITL && (subjects.some((s) => s.sheetDataUri) || scenerySheetDataUri)) {
+    let attempts = 0;
+    while (attempts < 2) {
+      const previewImages: string[] = [];
+      for (const s of subjects) if (s.sheetPath) previewImages.push(path.basename(s.sheetPath));
+      if (scenerySheetDataUri) previewImages.push('scenery_sheet.png');
+      onProgress({
+        stage: 'hitl',
+        gate: 'references',
+        title: 'Reference sheets ready — approve or request changes',
+        previewImages,
+      });
+      const reply = await waitForReply(ctx.projectId, 'references');
+      if (reply.approve) break;
+      attempts += 1;
+      const note = reply.notes || 'improve realism, match brand tone better';
+      // Regenerate subject sheets with the note appended to each spec/persona.
+      for (const subj of subjects) {
+        onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
+        const subjectPrompt = `Subject reference sheet for "${subj.id}" — 4-photo grid collage (2x2), smartphone-photography style, neutral light-grey seamless studio backdrop, soft diffused lighting.
+
+# Strict subject specification (USE EXACTLY)
+${subj.specJson || `Persona: ${subj.persona}`}
+
+# User revision request — APPLY THIS
+${note}
+
+# 4-photo grid (same individual every panel)
+Panel 1 (top-left): full body STANDING front view, arms relaxed.
+Panel 2 (top-right): CROUCHING pose, looking toward camera.
+Panel 3 (bottom-left): casual SEATED pose on floor or low surface.
+Panel 4 (bottom-right): UPPER BODY portrait, eye-level, soft natural smile.
+
+Identical subject in all four panels. Photoreal, ultra-realistic, sharp focus, smartphone editorial. No text, no labels, no watermark. Aspect ${brief.aspect}.`;
+        try {
+          const buf = await orImage(subjectPrompt, IMAGE_MODEL);
+          const p = path.join(projectDir, `subject_${subj.id}_sheet.png`);
+          await fs.writeFile(p, buf);
+          subj.sheetPath = p;
+          subj.sheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+          onProgress({ stage: 'subject-sheet', status: 'done', path: p, subjectId: subj.id });
+        } catch (err) {
+          console.warn(`[video-pipeline] subject sheet retry failed for ${subj.id}:`, (err as Error).message);
+          onProgress({ stage: 'subject-sheet', status: 'skip', subjectId: subj.id });
+        }
+      }
+      // Regenerate scenery with same note
+      if (storyboard.visual_world && storyboard.visual_world.trim()) {
+        onProgress({ stage: 'scenery-sheet', status: 'start' });
+        const sceneryPrompt = `Cinematic establishing shot of the LOCATION ONLY, NO PEOPLE in frame.
+
+# Location
+${storyboard.visual_world}
+
+# User revision request — APPLY THIS
+${note}
+
+# Style
+Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photoreal, natural lighting, sharp focus, no text, no watermark. Aspect ${brief.aspect}.`;
+        try {
+          const buf = await orImage(sceneryPrompt, IMAGE_MODEL);
+          const p = path.join(projectDir, 'scenery_sheet.png');
+          await fs.writeFile(p, buf);
+          scenerySheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+          onProgress({ stage: 'scenery-sheet', status: 'done', path: p });
+        } catch (err) {
+          console.warn('[video-pipeline] scenery sheet retry failed:', (err as Error).message);
+          onProgress({ stage: 'scenery-sheet', status: 'skip' });
+        }
+      }
+    }
+  }
+
   // Stage 4: ref frames per shot (parallel). Each shot gets ONLY the subject
   // sheets for subjects appearing in that shot (per subject_ids) + scenery
   // sheet as image_url refs. Strict per-subject identity lock + narration.
-  onProgress({ stage: 'ref-frames', status: 'start' });
   const subjectsById = new Map(subjects.map((s) => [s.id, s]));
-  await Promise.all(
-    storyboard.shots.map(async (shot) => {
-      const shotSubjects: SubjectDef[] = (shot.subject_ids || [])
-        .map((id) => subjectsById.get(id))
-        .filter((s): s is SubjectDef => Boolean(s && s.sheetDataUri));
-      const refs: string[] = [];
-      shotSubjects.forEach((s) => { if (s.sheetDataUri) refs.push(s.sheetDataUri); });
-      if (scenerySheetDataUri) refs.push(scenerySheetDataUri);
+  const generateRefFrames = async (extraNote: string): Promise<void> => {
+    onProgress({ stage: 'ref-frames', status: 'start' });
+    await Promise.all(
+      storyboard.shots.map(async (shot) => {
+        const shotSubjects: SubjectDef[] = (shot.subject_ids || [])
+          .map((id) => subjectsById.get(id))
+          .filter((s): s is SubjectDef => Boolean(s && s.sheetDataUri));
+        const refs: string[] = [];
+        shotSubjects.forEach((s) => { if (s.sheetDataUri) refs.push(s.sheetDataUri); });
+        if (scenerySheetDataUri) refs.push(scenerySheetDataUri);
 
-      const subjectClauses: string[] = [];
-      shotSubjects.forEach((s, idx) => {
-        const ordinal = ['FIRST', 'SECOND', 'THIRD'][idx] || `#${idx + 1}`;
-        subjectClauses.push(`STRICT IDENTITY LOCK — subject "${s.id}" appears in this shot and is the SAME individual shown in the ${ordinal} attached reference image. Match face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.`);
+        const subjectClauses: string[] = [];
+        shotSubjects.forEach((s, idx) => {
+          const ordinal = ['FIRST', 'SECOND', 'THIRD'][idx] || `#${idx + 1}`;
+          subjectClauses.push(`STRICT IDENTITY LOCK — subject "${s.id}" appears in this shot and is the SAME individual shown in the ${ordinal} attached reference image. Match face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.`);
+        });
+        if (scenerySheetDataUri) {
+          const ord = ['FIRST', 'SECOND', 'THIRD', 'FOURTH'][shotSubjects.length] || `#${shotSubjects.length + 1}`;
+          subjectClauses.push(`STRICT LOCATION LOCK — the environment is the SAME location shown in the ${ord} attached reference image. Match architecture, materials, color palette, props, signage, time of day, and lighting direction exactly.`);
+        }
+
+        const subjectSpecBlocks = shotSubjects
+          .filter((s) => s.specJson)
+          .map((s) => `# Locked spec for subject "${s.id}" (must match attached reference)\n${s.specJson}`)
+          .join('\n\n');
+
+        const narrationCue = shot.narration_chunk
+          ? `\n\n# Narration line for this shot (visual must match the emotional beat)\n"${shot.narration_chunk}"`
+          : '';
+        const revisionBlock = extraNote
+          ? `\n\n# User revision request — APPLY THIS to this shot frame\n${extraNote}`
+          : '';
+
+        const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
+        const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
+
+        const prompt = `${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}${revisionBlock}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+        const buf = await orImage(prompt, IMAGE_MODEL, refs);
+        const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
+        await fs.writeFile(p, buf);
+        shot.refFramePath = p;
+        onProgress({ stage: 'ref-frames', status: 'shot-done', shot: shot.shot, path: p });
+      }),
+    );
+    onProgress({ stage: 'ref-frames', status: 'done' });
+  };
+  await generateRefFrames('');
+
+  // ── Gate 4: SHOT FRAMES APPROVAL — user previews per-shot reference frames
+  // and can request a regenerate with notes before the expensive i2v stage.
+  if (HITL) {
+    let attempts = 0;
+    while (attempts < 2) {
+      const previewImages: string[] = storyboard.shots
+        .filter((s) => s.refFramePath)
+        .map((s) => path.basename(s.refFramePath!));
+      onProgress({
+        stage: 'hitl',
+        gate: 'frames',
+        title: 'Shot frames ready — approve or request changes before video render',
+        previewImages,
       });
-      if (scenerySheetDataUri) {
-        const ord = ['FIRST', 'SECOND', 'THIRD', 'FOURTH'][shotSubjects.length] || `#${shotSubjects.length + 1}`;
-        subjectClauses.push(`STRICT LOCATION LOCK — the environment is the SAME location shown in the ${ord} attached reference image. Match architecture, materials, color palette, props, signage, time of day, and lighting direction exactly.`);
-      }
-
-      const subjectSpecBlocks = shotSubjects
-        .filter((s) => s.specJson)
-        .map((s) => `# Locked spec for subject "${s.id}" (must match attached reference)\n${s.specJson}`)
-        .join('\n\n');
-
-      const narrationCue = shot.narration_chunk
-        ? `\n\n# Narration line for this shot (visual must match the emotional beat)\n"${shot.narration_chunk}"`
-        : '';
-
-      const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
-      const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
-
-      const prompt = `${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
-      const buf = await orImage(prompt, IMAGE_MODEL, refs);
-      const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
-      await fs.writeFile(p, buf);
-      shot.refFramePath = p;
-      onProgress({ stage: 'ref-frames', status: 'shot-done', shot: shot.shot, path: p });
-    }),
-  );
-  onProgress({ stage: 'ref-frames', status: 'done' });
+      const reply = await waitForReply(ctx.projectId, 'frames');
+      if (reply.approve) break;
+      attempts += 1;
+      await generateRefFrames(reply.notes || 'improve cinematic quality, lighting, and composition');
+    }
+  }
 
   // Stage 5: voiceover (optional)
   let voicePath: string | undefined;

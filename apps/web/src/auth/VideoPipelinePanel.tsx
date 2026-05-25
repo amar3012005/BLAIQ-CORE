@@ -79,6 +79,16 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [activeTab, setActiveTab] = useState<'script' | 'references' | 'shots' | 'final'>('script');
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [hitl, setHitl] = useState<null | {
+    gate: 'discovery' | 'script' | 'references' | 'frames';
+    title: string;
+    questions?: Array<{ id: string; question: string; hint?: string }>;
+    previewMarkdown?: string;
+    previewImages?: string[];
+  }>(null);
+  const [hitlAnswers, setHitlAnswers] = useState<Record<string, string>>({});
+  const [hitlNotes, setHitlNotes] = useState('');
+  const [hitlSubmitting, setHitlSubmitting] = useState(false);
 
   const start = useCallback(async () => {
     setRunning(true);
@@ -87,6 +97,9 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     setShots([]);
     setSubjectSheets([]);
     setScenerySheet(null);
+    setHitl(null);
+    setHitlAnswers({});
+    setHitlNotes('');
     setScriptMd('');
     setActiveTab('script');
     setStageStatus({
@@ -149,9 +162,21 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string; gate?: 'discovery' | 'script' | 'references' | 'frames'; title?: string; questions?: Array<{ id: string; question: string; hint?: string }>; previewMarkdown?: string; previewImages?: string[] }) => {
     if (evName === 'progress' && payload.stage) {
-      const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet';
+      const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl';
+      if (stage === 'hitl' && payload.gate) {
+        setHitl({
+          gate: payload.gate,
+          title: payload.title || 'Review',
+          ...(payload.questions ? { questions: payload.questions } : {}),
+          ...(payload.previewMarkdown ? { previewMarkdown: payload.previewMarkdown } : {}),
+          ...(payload.previewImages ? { previewImages: payload.previewImages } : {}),
+        });
+        setHitlAnswers({});
+        setHitlNotes('');
+        return;
+      }
       if (stage === 'error') {
         setError(payload.message || 'unknown error');
         return;
@@ -506,6 +531,100 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
           </div>
         )}
       </div>
+
+      {/* HITL gate overlay */}
+      {hitl && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(17,17,17,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 24 }}>
+          <div style={{ background: P.bg, border: `1px solid ${P.border}`, borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ ...mono, fontSize: 9, color: P.accent }}>HITL · {hitl.gate.toUpperCase()}</div>
+            </div>
+            <div style={{ padding: '18px 20px' }}>
+              <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 14, fontWeight: 700, color: P.ink, marginBottom: 14 }}>
+                {hitl.title}
+              </div>
+
+              {hitl.questions && hitl.questions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 16 }}>
+                  {hitl.questions.map((q) => (
+                    <div key={q.id}>
+                      <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 600, color: P.ink, marginBottom: 4 }}>{q.question}</div>
+                      {q.hint && <div style={{ fontSize: 11, color: P.muted, marginBottom: 6 }}>{q.hint}</div>}
+                      <textarea
+                        value={hitlAnswers[q.id] || ''}
+                        onChange={(e) => setHitlAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                        placeholder="Your answer…"
+                        style={{ width: '100%', minHeight: 60, padding: '8px 10px', background: P.card, border: `1px solid ${P.border}`, fontSize: 12, fontFamily: '"Inter", sans-serif', color: P.ink, resize: 'vertical', outline: 'none' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hitl.previewMarkdown && (
+                <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, padding: 12, fontSize: 11, lineHeight: 1.55, color: P.ink, maxHeight: 240, overflowY: 'auto', marginBottom: 14, whiteSpace: 'pre-wrap', fontFamily: '"Inter", sans-serif' }}>
+                  {hitl.previewMarkdown}
+                </div>
+              )}
+
+              {hitl.previewImages && hitl.previewImages.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, marginBottom: 14 }}>
+                  {hitl.previewImages.map((name) => (
+                    <img key={name} src={`/api/projects/${projectId}/files/${name}`} alt={name} style={{ width: '100%', borderRadius: 6, border: `1px solid ${P.border}` }} />
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ ...mono, fontSize: 9, color: P.muted, marginBottom: 6 }}>NOTES / CHANGE REQUEST (optional)</div>
+                <textarea
+                  value={hitlNotes}
+                  onChange={(e) => setHitlNotes(e.target.value)}
+                  placeholder={hitl.gate === 'discovery' ? 'Anything else we should know…' : 'What should change? Leave empty to approve.'}
+                  style={{ width: '100%', minHeight: 70, padding: '8px 10px', background: P.card, border: `1px solid ${P.border}`, fontSize: 12, fontFamily: '"Inter", sans-serif', color: P.ink, resize: 'vertical', outline: 'none' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                {hitl.gate !== 'discovery' && (
+                  <button
+                    type="button"
+                    disabled={hitlSubmitting}
+                    onClick={async () => {
+                      setHitlSubmitting(true);
+                      try {
+                        await fetch(`/api/v1/video/${projectId}/hitl/${hitl.gate}`, {
+                          method: 'POST', credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ approve: false, notes: hitlNotes || '' }),
+                        });
+                        setHitl(null);
+                      } finally { setHitlSubmitting(false); }
+                    }}
+                    style={{ padding: '8px 14px', background: 'transparent', border: `1px solid ${P.border}`, color: P.ink, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 600 }}
+                  >Regenerate with notes</button>
+                )}
+                <button
+                  type="button"
+                  disabled={hitlSubmitting}
+                  onClick={async () => {
+                    setHitlSubmitting(true);
+                    try {
+                      await fetch(`/api/v1/video/${projectId}/hitl/${hitl.gate}`, {
+                        method: 'POST', credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ approve: true, notes: hitlNotes || '', answers: hitlAnswers }),
+                      });
+                      setHitl(null);
+                    } finally { setHitlSubmitting(false); }
+                  }}
+                  style={{ padding: '8px 14px', background: P.ink, border: 'none', color: P.white, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 700 }}
+                >{hitl.gate === 'discovery' ? 'Submit & continue' : 'Approve & continue'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
