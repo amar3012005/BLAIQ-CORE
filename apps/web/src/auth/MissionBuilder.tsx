@@ -231,7 +231,7 @@ export default function MissionBuilder({
   const totalSteps = useMemo(() => {
     if (state.type === 'other') return 3; // type → name → review
     if (state.type === 'text') return 4; // type → name → subtype → review
-    if (state.type === 'image') return 4; // type → name → model+aspect → review
+    if (state.type === 'image') return 3; // type → name → review (model/prompt chosen in chat)
     if (state.type === 'video') return 5; // type → name → model+aspect → HITL → review
     if (state.type === 'audio') return 4; // type → name → kind+model → review
     return 5; // prototype/deck: type → name → brand → configure → review
@@ -240,7 +240,7 @@ export default function MissionBuilder({
   const stepLabels = useMemo(() => {
     if (state.type === 'other') return ['TYPE', 'NAME', 'LAUNCH'];
     if (state.type === 'text') return ['TYPE', 'NAME', 'FORMAT', 'LAUNCH'];
-    if (state.type === 'image') return ['TYPE', 'NAME', 'MODEL', 'LAUNCH'];
+    if (state.type === 'image') return ['TYPE', 'NAME', 'LAUNCH'];
     if (state.type === 'video') return ['TYPE', 'NAME', 'MODEL', 'BRIEF', 'LAUNCH'];
     if (state.type === 'audio') return ['TYPE', 'NAME', 'MODEL', 'LAUNCH'];
     return ['TYPE', 'NAME', 'BRAND', 'CONFIG', 'LAUNCH'];
@@ -292,8 +292,8 @@ export default function MissionBuilder({
       (metadata as unknown as Record<string, string>).textSubtype = state.textSubtype;
     }
     if (state.type === 'image') {
-      metadata.imageModel = state.mediaModel || undefined;
-      metadata.imageAspect = state.aspect;
+      // Model + aspect chosen in chat composer per generation, not at creation.
+      metadata.imageAspect = state.aspect || '1:1';
     }
     if (state.type === 'video') {
       metadata.videoModel = state.mediaModel || undefined;
@@ -366,8 +366,7 @@ export default function MissionBuilder({
       return null;
     }
     if (state.type === 'image') {
-      if (step === 2) return renderImageStep();
-      if (step === 3) return renderReviewStep();
+      if (step === 2) return renderReviewStep();
       return null;
     }
     if (state.type === 'video') {

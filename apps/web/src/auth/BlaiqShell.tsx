@@ -19,6 +19,7 @@ import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
 import TextArtifactPanel from './TextArtifactPanel';
 import VideoPipelinePanel from './VideoPipelinePanel';
+import ImagePipelinePanel from './ImagePipelinePanel';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { createProject } from '../state/projects';
 import { navigate as spaNavigate } from '../router';
@@ -409,6 +410,11 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
     !isBrand &&
     projectId &&
     textProjectMeta?.kind === 'video';
+  const showImagePanel =
+    !isHome &&
+    !isBrand &&
+    projectId &&
+    textProjectMeta?.kind === 'image';
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
   const [videoScript, setVideoScript] = useState<string>('');
@@ -484,7 +490,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
         )}
         <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* When text mode active, hide OD's .workspace pane via injected CSS so our preview replaces it inline */}
-          {(showArtifactPanel || showVideoPanel) && (
+          {(showArtifactPanel || showVideoPanel || showImagePanel) && (
             <style>{`
               /* Collapse OD's workspace + resize handle so our preview replaces them */
               .split { grid-template-columns: 45% 0 0 !important; }
@@ -542,6 +548,26 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
                   userPrompt: '',
                 }}
                 onScript={(md) => setVideoScript(md)}
+              />
+            </div>
+          )}
+          {showImagePanel && projectId && (
+            <div
+              className="blaiq-image-pipeline-anchor"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '55%',
+                borderLeft: `1px solid ${PAL.divider}`,
+                background: PAL.bg,
+                zIndex: 10,
+              }}
+            >
+              <ImagePipelinePanel
+                projectId={projectId}
+                aspect={(textProjectMeta as { imageAspect?: string } | null)?.imageAspect || '1:1'}
               />
             </div>
           )}
