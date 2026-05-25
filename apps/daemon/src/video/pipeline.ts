@@ -483,14 +483,30 @@ export async function renderVideo(
   // side / back views (front pose has arms raised) so the model has a full
   // identity reference. Generated only if presenter_persona present.
   let subjectSheetDataUri: string | undefined;
+  // Build script context summary used by both reference sheets so identity +
+  // world reflect what the narration actually requires (wardrobe matching the
+  // moment, props seen in shots, mood from narration).
+  const shotVisualsDigest = storyboard.shots
+    .map((s) => `Shot ${s.shot} (${s.segment || ''}): ${s.visual}`)
+    .join('\n');
+  const scriptContext = `# Script narration\n${storyboard.narration || '(no narration)'}\n\n# Shot visuals\n${shotVisualsDigest}\n\n# Title: ${storyboard.title}`;
+
   if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
     onProgress({ stage: 'subject-sheet', status: 'start' });
-    const subjectPrompt = `Character turnaround reference sheet, single image divided into three panels side by side on neutral light-grey seamless studio backdrop, soft even lighting, no shadows on backdrop.
-Subject: ${storyboard.presenter_persona}.
-Panel 1 (left): full body FRONT view, arms raised wide to the sides at shoulder height, palms forward, neutral expression, feet shoulder-width apart.
+    const subjectPrompt = `Character turnaround reference sheet — single image divided into three panels side by side on neutral light-grey seamless studio backdrop, soft even lighting, no shadows on backdrop.
+
+# Subject persona
+${storyboard.presenter_persona}
+
+# Script context (use this to choose wardrobe, accessories, props, age, expression — match the mood of the narration and the shots the subject appears in)
+${scriptContext}
+
+# Layout
+Panel 1 (left): full body FRONT view, arms raised wide to the sides at shoulder height, palms forward, neutral confident expression, feet shoulder-width apart.
 Panel 2 (centre): full body SIDE view (profile), arms relaxed at sides.
 Panel 3 (right): full body BACK view, arms relaxed at sides.
-Identical subject in all three panels — same face, hair, build, wardrobe.
+
+Identical subject in all three panels — same face, hair, build, wardrobe, accessories. Wardrobe and styling MUST match what the script narration implies (occupation, scene, era, mood).
 Photoreal, sharp focus, 50mm equivalent, no text, no labels, no watermark, no logo. Aspect ${brief.aspect}.`;
     try {
       const buf = await orImage(subjectPrompt, IMAGE_MODEL);
@@ -512,7 +528,16 @@ Photoreal, sharp focus, 50mm equivalent, no text, no labels, no watermark, no lo
   let scenerySheetDataUri: string | undefined;
   if (storyboard.visual_world && storyboard.visual_world.trim()) {
     onProgress({ stage: 'scenery-sheet', status: 'start' });
-    const sceneryPrompt = `Cinematic establishing shot of the location only, NO PEOPLE in frame. Location: ${storyboard.visual_world}. Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photoreal, natural lighting, sharp focus, no text, no watermark. Aspect ${brief.aspect}.`;
+    const sceneryPrompt = `Cinematic establishing shot of the LOCATION ONLY, NO PEOPLE in frame.
+
+# Location
+${storyboard.visual_world}
+
+# Script context (use this to choose props, time of day, weather, signage, set dressing — match what the shots and narration describe)
+${scriptContext}
+
+# Style
+Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photoreal, natural lighting, sharp focus, no text, no watermark. Aspect ${brief.aspect}.`;
     try {
       const buf = await orImage(sceneryPrompt, IMAGE_MODEL);
       const p = path.join(projectDir, 'scenery_sheet.png');
@@ -537,10 +562,10 @@ Photoreal, sharp focus, 50mm equivalent, no text, no labels, no watermark, no lo
   await Promise.all(
     storyboard.shots.map(async (shot) => {
       const identityClause: string[] = [];
-      if (subjectSheetDataUri) identityClause.push('Use the FIRST reference image as the subject — match face, hair, build, wardrobe exactly from any of its panels.');
-      if (scenerySheetDataUri) identityClause.push('Use the SECOND reference image as the location — match architecture, palette, props, lighting direction exactly.');
-      const refs = identityClause.length ? ' ' + identityClause.join(' ') : '';
-      const prompt = `${shot.image_prompt}.${refs} Style: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+      if (subjectSheetDataUri) identityClause.push('STRICT IDENTITY LOCK: the person in this shot is the SAME individual shown in the FIRST attached reference image (turnaround sheet). Match the face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its three panels. Do NOT invent a different person.');
+      if (scenerySheetDataUri) identityClause.push('STRICT LOCATION LOCK: the environment in this shot is the SAME location shown in the SECOND attached reference image. Match the architecture, materials, color palette, props, signage, time of day, and lighting direction exactly. Do NOT invent a different location.');
+      const refs = identityClause.length ? '\n\n' + identityClause.join('\n') : '';
+      const prompt = `${shot.image_prompt}${refs}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
       const buf = await orImage(prompt, IMAGE_MODEL, refImagesForShot);
       const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
       await fs.writeFile(p, buf);

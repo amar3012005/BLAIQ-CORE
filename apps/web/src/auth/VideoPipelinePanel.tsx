@@ -3,7 +3,8 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, type CSSProperties } from 'react';
-import { Play, RefreshCcw, CheckCircle2, Loader2, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Music } from 'lucide-react';
+import { Play, RefreshCcw, CheckCircle2, Loader2, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Music, FileText, Film, LayoutGrid } from 'lucide-react';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 const P = {
   bg: '#F1F0EC',
@@ -74,6 +75,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [finalUrl, setFinalUrl] = useState<string | null>(null);
   const [subjectSheet, setSubjectSheet] = useState<string | null>(null);
   const [scenerySheet, setScenerySheet] = useState<string | null>(null);
+  const [scriptMd, setScriptMd] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'script' | 'references' | 'shots' | 'final'>('script');
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -84,6 +87,8 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     setShots([]);
     setSubjectSheet(null);
     setScenerySheet(null);
+    setScriptMd('');
+    setActiveTab('script');
     setStageStatus({
       recall: 'pending',
       script: 'pending',
@@ -152,7 +157,10 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         return;
       }
       if (stage === 'chat-script') {
-        if (payload.markdown && onScript) onScript(payload.markdown);
+        if (payload.markdown) {
+          setScriptMd(payload.markdown);
+          if (onScript) onScript(payload.markdown);
+        }
         return;
       }
       if (stage === 'video-error') {
@@ -162,12 +170,14 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       if (stage === 'subject-sheet') {
         if (payload.status === 'done' && payload.path) {
           setSubjectSheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+          setActiveTab('references');
         }
         return;
       }
       if (stage === 'scenery-sheet') {
         if (payload.status === 'done' && payload.path) {
           setScenerySheet(`/api/projects/${projectId}/files/${path2name(payload.path)}`);
+          setActiveTab('references');
         }
         return;
       }
@@ -202,9 +212,11 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
               : s,
           ),
         );
+        if (stage === 'ref-frames' || stage === 'video') setActiveTab('shots');
       }
     } else if (evName === 'done' && payload.final_path) {
       setFinalUrl(payload.final_path);
+      setActiveTab('final');
       setStageStatus((s) => ({ ...s, final: 'done' }));
       setRunning(false);
     } else if (evName === 'error') {
@@ -332,147 +344,160 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         </div>
       )}
 
-      {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
-        {/* Final video player */}
-        {finalUrl && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ ...mono, color: P.muted, marginBottom: 8 }}>FINAL VIDEO</div>
-            <video
-              src={finalUrl}
-              controls
+      {/* Tab bar */}
+      <div style={{
+        display: 'flex',
+        gap: 0,
+        padding: '0 12px',
+        borderBottom: `1px solid ${P.border}`,
+        background: P.bg,
+        flexShrink: 0,
+      }}>
+        {([
+          { key: 'script', label: 'Script', Icon: FileText, badge: scriptMd ? '•' : '' },
+          { key: 'references', label: 'Reference Sheets', Icon: ImageIcon, badge: (subjectSheet ? 1 : 0) + (scenerySheet ? 1 : 0) || '' },
+          { key: 'shots', label: 'Shot Frames', Icon: LayoutGrid, badge: shots.length || '' },
+          { key: 'final', label: 'Final Video', Icon: Film, badge: finalUrl ? '•' : '' },
+        ] as const).map((t) => {
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setActiveTab(t.key)}
               style={{
-                width: '100%',
-                maxHeight: 480,
-                background: '#000',
-                border: `1px solid ${P.border}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '10px 14px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: `2px solid ${active ? P.ink : 'transparent'}`,
+                color: active ? P.ink : P.muted,
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 12,
+                fontWeight: active ? 700 : 500,
+                cursor: 'pointer',
+                marginBottom: -1,
               }}
-            />
-          </div>
-        )}
+            >
+              <t.Icon size={13} />
+              {t.label}
+              {t.badge ? (
+                <span style={{ ...mono, fontSize: 9, color: P.muted, marginLeft: 2 }}>{t.badge}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Subject + scenery reference sheets */}
-        {(subjectSheet || scenerySheet) && (
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ ...mono, color: P.muted, marginBottom: 10 }}>
-              REFERENCE SHEETS
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {subjectSheet && (
-                <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                  <img src={subjectSheet} alt="subject turnaround" style={{ width: '100%', display: 'block' }} />
-                  <div style={{ padding: '6px 10px', fontSize: 11, color: P.muted }}>Subject — front (arms raised) / side / back</div>
-                </div>
-              )}
-              {scenerySheet && (
-                <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                  <img src={scenerySheet} alt="scenery" style={{ width: '100%', display: 'block' }} />
-                  <div style={{ padding: '6px 10px', fontSize: 11, color: P.muted }}>Scenery — establishing location</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Shot grid */}
-        {shots.length > 0 && (
+      {/* Body — single active tab */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
+        {activeTab === 'script' && (
           <div>
-            <div style={{ ...mono, color: P.muted, marginBottom: 10 }}>
-              STORYBOARD · {shots.length} SHOTS
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              {shots.map((s) => (
-                <div key={s.shot} style={{
-                  background: P.card,
-                  border: `1px solid ${P.border}`,
-                  overflow: 'hidden',
-                }}>
-                  <div style={{
-                    aspectRatio: brief.aspect === '9:16' ? '9 / 16' : '16 / 9',
-                    background: '#000',
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {s.videoClip ? (
-                      <video src={s.videoClip} muted autoPlay loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : s.refFrame ? (
-                      <img src={s.refFrame} alt={`shot ${s.shot}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ color: P.muted, fontFamily: '"Inter", sans-serif', fontSize: 11 }}>
-                        <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
-                      </div>
-                    )}
-                    <div style={{
-                      position: 'absolute',
-                      top: 6,
-                      left: 6,
-                      padding: '2px 6px',
-                      background: 'rgba(0,0,0,0.7)',
-                      color: P.white,
-                      ...mono,
-                      fontSize: 8,
-                    }}>
-                      SHOT {s.shot}
+            {scriptMd ? (
+              <MarkdownRenderer source={scriptMd} />
+            ) : narration ? (
+              <div>
+                <div style={{ ...mono, color: P.muted, marginBottom: 8 }}>NARRATION</div>
+                <div style={{ padding: '12px 16px', background: P.card, border: `1px solid ${P.border}`, fontFamily: '"Inter", sans-serif', fontSize: 13, lineHeight: 1.6, color: P.ink }}>
+                  {narration}
+                </div>
+              </div>
+            ) : (
+              <EmptyTab icon={<FileText size={32} color={P.border} />} title="Script appears here" hint="The full storyboard (title, presenter, world, narration, shot table) renders here once the script stage finishes." />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'references' && (
+          <div>
+            {(subjectSheet || scenerySheet) ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
+                {subjectSheet && (
+                  <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
+                      SUBJECT TURNAROUND — front (arms raised) / side / back
                     </div>
+                    <img src={subjectSheet} alt="subject turnaround" style={{ width: '100%', display: 'block' }} />
                   </div>
-                  <div style={{ padding: 10 }}>
-                    <div style={{
-                      fontFamily: '"Inter", sans-serif',
-                      fontSize: 11,
-                      color: P.ink,
-                      lineHeight: 1.4,
-                      maxHeight: 50,
-                      overflow: 'hidden',
-                    }}>
+                )}
+                {scenerySheet && (
+                  <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
+                      SCENERY — establishing location
+                    </div>
+                    <img src={scenerySheet} alt="scenery" style={{ width: '100%', display: 'block' }} />
+                  </div>
+                )}
+                <div style={{ ...mono, color: P.muted, fontSize: 8 }}>
+                  Both sheets are passed as image_url references to every shot frame so identity + location lock across all shots.
+                </div>
+              </div>
+            ) : (
+              <EmptyTab icon={<ImageIcon size={32} color={P.border} />} title="Reference sheets appear here" hint="Subject turnaround (front arms-raised / side / back) and scenery establishing shot generate once per render and seed every shot frame." />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'shots' && (
+          <div>
+            {shots.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+                {shots.map((s) => (
+                  <div key={s.shot} style={{ background: P.card, border: `1px solid ${P.border}`, overflow: 'hidden' }}>
+                    <div style={{ aspectRatio: brief.aspect === '9:16' ? '9 / 16' : '16 / 9', background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {s.videoClip ? (
+                        <video src={s.videoClip} muted autoPlay loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : s.refFrame ? (
+                        <img src={s.refFrame} alt={`shot ${s.shot}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Loader2 size={20} color={P.muted} style={{ animation: 'spin 1s linear infinite' }} />
+                      )}
+                      <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', background: 'rgba(0,0,0,0.7)', color: P.white, ...mono, fontSize: 8 }}>
+                        SHOT {s.shot}
+                      </div>
+                    </div>
+                    <div style={{ padding: 10, fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink, lineHeight: 1.4, maxHeight: 60, overflow: 'hidden' }}>
                       {s.narration || s.imagePrompt?.slice(0, 80)}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyTab icon={<LayoutGrid size={32} color={P.border} />} title="Shot frames appear here" hint="Each shot's reference frame renders first (image gen with both sheets as input), then its i2v video clip replaces the still." />
+            )}
           </div>
         )}
 
-        {/* Narration */}
-        {narration && (
-          <div style={{ marginTop: 24 }}>
-            <div style={{ ...mono, color: P.muted, marginBottom: 8 }}>NARRATION</div>
-            <div style={{
-              padding: '12px 16px',
-              background: P.card,
-              border: `1px solid ${P.border}`,
-              fontFamily: '"Inter", sans-serif',
-              fontSize: 13,
-              lineHeight: 1.6,
-              color: P.ink,
-            }}>
-              {narration}
-            </div>
+        {activeTab === 'final' && (
+          <div>
+            {finalUrl ? (
+              <div>
+                <video src={finalUrl} controls style={{ width: '100%', maxHeight: 600, background: '#000', border: `1px solid ${P.border}` }} />
+                {narration && (
+                  <div style={{ marginTop: 18 }}>
+                    <div style={{ ...mono, color: P.muted, marginBottom: 8 }}>NARRATION</div>
+                    <div style={{ padding: '12px 16px', background: P.card, border: `1px solid ${P.border}`, fontFamily: '"Inter", sans-serif', fontSize: 13, lineHeight: 1.6, color: P.ink }}>
+                      {narration}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EmptyTab icon={<Film size={32} color={P.border} />} title="Final video appears here" hint="After all per-shot i2v clips finish, FFmpeg stitches them with the voiceover and the final MP4 lands here." />
+            )}
           </div>
         )}
 
-        {/* Empty state */}
-        {shots.length === 0 && !running && !error && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            gap: 12,
-            color: P.muted,
-            textAlign: 'center',
-            padding: 40,
-          }}>
-            <VideoIcon size={32} color={P.border} />
-            <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 14, fontWeight: 600, color: P.ink }}>
-              Ready to render
-            </div>
-            <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.muted, maxWidth: 360 }}>
-              Click START RENDER to run the 7-stage pipeline: Hivemind recall → script → reference frames → voiceover → i2v → stitch. Uses OpenRouter models throughout.
-            </div>
+        {/* Empty initial state across all tabs */}
+        {!scriptMd && !subjectSheet && !scenerySheet && shots.length === 0 && !finalUrl && !running && !error && activeTab === 'script' && (
+          <div style={{ marginTop: 30 }}>
+            <EmptyTab
+              icon={<VideoIcon size={32} color={P.border} />}
+              title="Ready to render"
+              hint="Click START RENDER to run the pipeline: script → subject sheet → scenery sheet → shot frames (locked to both sheets) → per-shot i2v → stitch + voice."
+            />
           </div>
         )}
       </div>
@@ -486,4 +511,14 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
 
 function path2name(p: string): string {
   return p.split('/').pop() ?? p;
+}
+
+function EmptyTab({ icon, title, hint }: { icon: React.ReactNode; title: string; hint: string }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '60px 40px', textAlign: 'center', color: '#6E6A63' }}>
+      {icon}
+      <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 14, fontWeight: 600, color: '#111' }}>{title}</div>
+      <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, maxWidth: 380 }}>{hint}</div>
+    </div>
+  );
 }
