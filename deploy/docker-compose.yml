@@ -42,8 +42,8 @@ services:
     container_name: open-design
     image: ${OPEN_DESIGN_IMAGE:-docker.io/vanjayak/open-design:latest}
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: ${BLAIQ_BUILD_CONTEXT:-..}
+      dockerfile: ${BLAIQ_DOCKERFILE:-deploy/Dockerfile}
     restart: always
     depends_on:
       postgres:
