@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { jsonrepair } from 'jsonrepair';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
@@ -397,24 +398,35 @@ Return the storyboard JSON now.`;
   try {
     return JSON.parse(jsonText) as Storyboard;
   } catch (_e1) {
-    // Repair pass: model produced malformed JSON (truncation / smart-quotes /
-    // unescaped quotes inside strings). Ask the SCRIPT_MODEL to fix the JSON
-    // verbatim — cheap second call, much higher recovery rate than regex hacks.
+    // Pass 1 — programmatic repair (jsonrepair): handles unescaped quotes,
+    // smart quotes, trailing commas, unterminated strings, missing brackets.
+    // Cheap, deterministic, no LLM round-trip.
     try {
-      const repaired = await orChat(
-        [
-          { role: 'system', content: 'You are a JSON repair tool. Output ONLY valid JSON that matches the original intent. Do not add commentary. Do not wrap in code fences. If the input is truncated, complete the missing fields with empty strings or sensible defaults so the JSON parses.' },
-          { role: 'user', content: `Repair this JSON so it parses with JSON.parse. Preserve all data. Close any unterminated strings, balance brackets, escape inner quotes, replace smart quotes with straight quotes.\n\n${jsonText}` },
-        ],
-        SCRIPT_MODEL,
-        { maxTokens: 16000, jsonMode: true },
-      );
-      let repairedText = repaired.trim();
-      const rf = repairedText.match(/```(?:json)?\s*([\s\S]+?)```/);
-      if (rf && rf[1]) repairedText = rf[1].trim();
-      return JSON.parse(repairedText) as Storyboard;
-    } catch (e2) {
-      throw new Error(`script JSON parse failed after repair: ${(e2 as Error).message}\nraw head: ${jsonText.slice(0, 400)}\nraw tail: ${jsonText.slice(-200)}`);
+      const fixed = jsonrepair(jsonText);
+      return JSON.parse(fixed) as Storyboard;
+    } catch (_e2) {
+      // Pass 2 — LLM repair as last resort.
+      try {
+        const repaired = await orChat(
+          [
+            { role: 'system', content: 'You are a JSON repair tool. Output ONLY valid JSON that matches the original intent. Do not add commentary. Do not wrap in code fences. If the input is truncated, complete the missing fields with empty strings or sensible defaults so the JSON parses.' },
+            { role: 'user', content: `Repair this JSON so it parses with JSON.parse. Preserve all data. Close any unterminated strings, balance brackets, escape inner quotes, replace smart quotes with straight quotes.\n\n${jsonText}` },
+          ],
+          SCRIPT_MODEL,
+          { maxTokens: 16000, jsonMode: true },
+        );
+        let repairedText = repaired.trim();
+        const rf = repairedText.match(/```(?:json)?\s*([\s\S]+?)```/);
+        if (rf && rf[1]) repairedText = rf[1].trim();
+        try {
+          return JSON.parse(repairedText) as Storyboard;
+        } catch {
+          // Last-ditch — run jsonrepair on the LLM repair output too.
+          return JSON.parse(jsonrepair(repairedText)) as Storyboard;
+        }
+      } catch (e3) {
+        throw new Error(`script JSON parse failed after all repairs: ${(e3 as Error).message}\nraw head: ${jsonText.slice(0, 400)}\nraw tail: ${jsonText.slice(-200)}`);
+      }
     }
   }
 }
@@ -587,8 +599,13 @@ ${specSchema}`;
       let cleaned = raw.trim();
       const fence = cleaned.match(/```(?:json)?\s*([\s\S]+?)```/);
       if (fence && fence[1]) cleaned = fence[1].trim();
-      // Validate parses
-      JSON.parse(cleaned);
+      // Validate parses; if not, jsonrepair before storing.
+      try {
+        JSON.parse(cleaned);
+      } catch {
+        cleaned = jsonrepair(cleaned);
+        JSON.parse(cleaned);
+      }
       subjectSpecJson = cleaned;
       await fs.writeFile(path.join(projectDir, 'subject_spec.json'), subjectSpecJson);
     } catch (err) {
