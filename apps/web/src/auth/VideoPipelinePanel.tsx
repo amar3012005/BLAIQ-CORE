@@ -36,6 +36,7 @@ interface Props {
     length: number;
     userPrompt: string;
   };
+  onScript?: (markdown: string) => void;
 }
 
 type StageKey = 'recall' | 'script' | 'ref-frames' | 'voice' | 'video' | 'stitch' | 'final';
@@ -57,7 +58,7 @@ interface ShotState {
   narration?: string;
 }
 
-export default function VideoPipelinePanel({ projectId, brief }: Props): JSX.Element {
+export default function VideoPipelinePanel({ projectId, brief, onScript }: Props): JSX.Element {
   const [stageStatus, setStageStatus] = useState<Record<StageKey, 'pending' | 'running' | 'done' | 'skipped'>>({
     recall: 'pending',
     script: 'pending',
@@ -139,11 +140,23 @@ export default function VideoPipelinePanel({ projectId, brief }: Props): JSX.Ele
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string }) => {
     if (evName === 'progress' && payload.stage) {
-      const stage = payload.stage as StageKey | 'error';
+      const stage = payload.stage as StageKey | 'error' | 'chat-script';
       if (stage === 'error') {
         setError(payload.message || 'unknown error');
+        return;
+      }
+      if (stage === 'chat-script') {
+        if (payload.markdown && onScript) onScript(payload.markdown);
+        return;
+      }
+      if (stage === 'video-error') {
+        setError(`shot ${payload.shot}: ${payload.message || 'i2v failed, used image fallback'}`);
+        return;
+      }
+      if (stage === 'character-sheet') {
+        // Treat character sheet as part of script/frames flow; no separate row.
         return;
       }
       if (payload.status === 'start') {
@@ -186,7 +199,7 @@ export default function VideoPipelinePanel({ projectId, brief }: Props): JSX.Ele
       setError(payload.message || 'unknown error');
       setRunning(false);
     }
-  }, [projectId]);
+  }, [projectId, onScript]);
 
   return (
     <div style={{

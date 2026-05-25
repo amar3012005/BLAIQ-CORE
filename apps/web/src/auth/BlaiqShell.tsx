@@ -19,6 +19,7 @@ import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
 import TextArtifactPanel from './TextArtifactPanel';
 import VideoPipelinePanel from './VideoPipelinePanel';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { createProject } from '../state/projects';
 import { navigate as spaNavigate } from '../router';
 import type { DesignSystemSummary, SkillSummary } from '../types';
@@ -410,6 +411,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
     textProjectMeta?.kind === 'video';
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [designSystems, setDesignSystems] = useState<DesignSystemSummary[]>([]);
+  const [videoScript, setVideoScript] = useState<string>('');
 
   useEffect(() => {
     fetch('/api/skills', { credentials: 'include' })
@@ -539,7 +541,31 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
                   length: Number(extractField((textProjectMeta as { videoBrief?: string } | null)?.videoBrief, 'Length')?.replace(/s$/, '')) || 30,
                   userPrompt: '',
                 }}
+                onScript={(md) => setVideoScript(md)}
               />
+            </div>
+          )}
+          {showVideoPanel && videoScript && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 56,
+                left: 16,
+                right: '57%',
+                bottom: 80,
+                background: PAL.panel,
+                border: `1px solid ${PAL.divider}`,
+                borderRadius: 12,
+                padding: 20,
+                overflowY: 'auto',
+                zIndex: 9,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: PAL.muted, marginBottom: 12 }}>
+                SCRIPT — generated, frames rendering
+              </div>
+              <MarkdownRenderer source={videoScript} />
             </div>
           )}
         </div>

@@ -64,6 +64,8 @@ export type ProgressEvent =
   | { stage: 'recall'; status: 'start' | 'done'; chars?: number }
   | { stage: 'script'; status: 'start' | 'done'; storyboard?: Storyboard }
   | { stage: 'chat-script'; markdown: string }
+  | { stage: 'character-sheet'; status: 'start' | 'done' | 'skip'; path?: string }
+  | { stage: 'video-error'; shot: number; message: string }
   | { stage: 'ref-frames'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
   | { stage: 'voice'; status: 'start' | 'done' | 'skip'; path?: string }
   | { stage: 'video'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
@@ -98,10 +100,16 @@ async function orChat(messages: Array<{ role: string; content: string }>, model:
   return data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning || '';
 }
 
-async function orImage(prompt: string, model: string): Promise<Buffer> {
+async function orImage(prompt: string, model: string, refImages: string[] = []): Promise<Buffer> {
   // OpenRouter image gen lives behind /chat/completions with
   // `modalities: ["image","text"]`. Response messages can carry image
   // bytes inline as data: URIs OR as image_url objects.
+  // Optional refImages (data: URIs) are attached as image_url content blocks
+  // so the provider (gemini-flash-image / nano-banana) locks identity from refs.
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
+  for (const ref of refImages) {
+    content.push({ type: 'image_url', image_url: { url: ref } });
+  }
   const r = await fetch(`${OR_BASE}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -111,7 +119,7 @@ async function orImage(prompt: string, model: string): Promise<Buffer> {
     body: JSON.stringify({
       model,
       modalities: ['image', 'text'],
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: refImages.length ? content : prompt }],
     }),
   });
   if (!r.ok) {
@@ -442,12 +450,38 @@ export async function renderVideo(
   await fs.writeFile(path.join(projectDir, 'script.md'), md);
   onProgress({ stage: 'chat-script', markdown: md });
 
-  // Stage 4: ref frames per shot (parallel)
+  // Stage 3.5: character sheet (if presenter persona present) — single portrait
+  // generated once, then passed as image reference to every shot's image gen
+  // so identity (face, wardrobe, build) locks across all frames.
+  let characterSheetDataUri: string | undefined;
+  if (storyboard.presenter_persona && storyboard.presenter_persona.trim()) {
+    onProgress({ stage: 'character-sheet', status: 'start' });
+    const sheetPrompt = `Character reference sheet, neutral studio lighting, soft seamless backdrop. Subject: ${storyboard.presenter_persona}. Visual world cues: ${storyboard.visual_world || ''}. Color grade: ${storyboard.color_grade}. Single full-body + headshot composite, photoreal, ${brief.aspect}, sharp, no text, no logo.`;
+    try {
+      const buf = await orImage(sheetPrompt, IMAGE_MODEL);
+      const sheetPath = path.join(projectDir, 'character_sheet.png');
+      await fs.writeFile(sheetPath, buf);
+      characterSheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+      onProgress({ stage: 'character-sheet', status: 'done', path: sheetPath });
+    } catch (err) {
+      console.warn('[video-pipeline] character sheet failed:', (err as Error).message);
+      onProgress({ stage: 'character-sheet', status: 'skip' });
+    }
+  } else {
+    onProgress({ stage: 'character-sheet', status: 'skip' });
+  }
+
+  // Stage 4: ref frames per shot (parallel). Each shot's gen receives the
+  // character sheet as image reference (when available) to lock identity.
   onProgress({ stage: 'ref-frames', status: 'start' });
+  const refImagesForShot = characterSheetDataUri ? [characterSheetDataUri] : [];
   await Promise.all(
     storyboard.shots.map(async (shot) => {
-      const prompt = `${shot.image_prompt}. Style: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Consistent style across all shots.`;
-      const buf = await orImage(prompt, IMAGE_MODEL);
+      const identityClause = characterSheetDataUri
+        ? ' SAME subject as the attached reference image — match face, hair, build, wardrobe exactly.'
+        : '';
+      const prompt = `${shot.image_prompt}.${identityClause} Style: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+      const buf = await orImage(prompt, IMAGE_MODEL, refImagesForShot);
       const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
       await fs.writeFile(p, buf);
       shot.refFramePath = p;
@@ -489,7 +523,9 @@ export async function renderVideo(
         shot.videoPath = vp;
         onProgress({ stage: 'video', status: 'shot-done', shot: shot.shot, path: vp });
       } catch (err) {
-        console.warn(`[video-pipeline] shot ${shot.shot} i2v failed:`, (err as Error).message);
+        const msg = (err as Error).message;
+        console.warn(`[video-pipeline] shot ${shot.shot} i2v failed:`, msg);
+        onProgress({ stage: 'video-error', shot: shot.shot, message: msg.slice(0, 400) });
         // Fallback: convert static image to N-second video clip via ffmpeg
         const vp = path.join(projectDir, `shot${shot.shot}.mp4`);
         await ffmpeg([
