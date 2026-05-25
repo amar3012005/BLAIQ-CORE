@@ -187,10 +187,21 @@ async function orVideo(
   // OpenRouter async video gen: POST /videos → polling_url → poll until completed.
   // Reference image attached as image_url + OpenAI multi-modal content blocks
   // so the provider can route as image-to-video (AgentScope-BLAIQ pattern).
+  // Providers across OpenRouter vary on which field they read the init / first
+  // frame image from. Send all common aliases so whichever the provider parses
+  // ends up using the same image. grok-imagine-video uses image_url; veo
+  // uses first_frame; runway uses init_image; kling uses image; minimax uses
+  // first_frame_image. Multi-modal messages block is the canonical OpenAI shape.
   const payload: Record<string, unknown> = {
     model,
     prompt: motionPrompt,
     image_url: imageDataUri,
+    image: imageDataUri,
+    first_frame: imageDataUri,
+    first_frame_image: imageDataUri,
+    init_image: imageDataUri,
+    start_frame: imageDataUri,
+    reference_image: imageDataUri,
     messages: [
       {
         role: 'user',
@@ -695,7 +706,15 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
       if (!shot.refFramePath) return;
       const imgBuf = await fs.readFile(shot.refFramePath);
       const imgDataUri = `data:image/png;base64,${imgBuf.toString('base64')}`;
-      const motion = `${shot.motion_prompt}. Camera: ${brief.style}. Maintain identity from reference frame: subject, wardrobe, environment, palette.`;
+      const specClause = subjectSpecJson
+        ? `\n\nLocked subject specification (must match the attached first frame):\n${subjectSpecJson}`
+        : '';
+      const motion = `STRICT IMAGE-TO-VIDEO: animate the attached image as the FIRST FRAME. The subject, face, hair, skin tone, wardrobe, environment, lighting, color palette, and composition MUST match the attached frame exactly throughout the clip. Do NOT change the subject's identity, do NOT swap wardrobe, do NOT change the location.
+
+Shot visual: ${shot.visual}
+Motion: ${shot.motion_prompt}
+Camera: ${shot.camera || brief.style}
+Style: ${brief.style}. Color grade: ${storyboard.color_grade}.${specClause}`;
       try {
         const vidBuf = await orVideo(imgDataUri, motion, VIDEO_MODEL, shot.duration_s);
         const vp = path.join(projectDir, `shot${shot.shot}.mp4`);
