@@ -36,10 +36,14 @@ export interface VideoBrief {
 export interface Shot {
   shot: number;
   duration_s: number;
+  segment?: string;
   visual: string;
+  camera?: string;
+  presenter_action?: string;
   image_prompt: string;
   motion_prompt: string;
   narration_chunk: string;
+  on_screen_text?: string;
   refFramePath?: string;
   videoPath?: string;
 }
@@ -47,6 +51,8 @@ export interface Shot {
 export interface Storyboard {
   title: string;
   duration_s: number;
+  presenter_persona?: string;
+  visual_world?: string;
   narration: string;
   music_brief: string;
   color_grade: string;
@@ -57,6 +63,7 @@ export type ProgressEvent =
   | { stage: 'router'; status: 'start' | 'done'; skill?: string }
   | { stage: 'recall'; status: 'start' | 'done'; chars?: number }
   | { stage: 'script'; status: 'start' | 'done'; storyboard?: Storyboard }
+  | { stage: 'chat-script'; markdown: string }
   | { stage: 'ref-frames'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
   | { stage: 'voice'; status: 'start' | 'done' | 'skip'; path?: string }
   | { stage: 'video'; status: 'start' | 'done' | 'shot-done'; shot?: number; path?: string }
@@ -163,35 +170,91 @@ async function fetchImageUrl(url: string): Promise<Buffer> {
 }
 
 async function orVideo(
-  imageBase64: string,
+  imageDataUri: string,
   motionPrompt: string,
   model: string,
-  durationS: number,
+  _durationS: number,
 ): Promise<Buffer> {
-  // OpenRouter video gen — model-specific. Generic shape:
-  const r = await fetch(`${OR_BASE}/videos/generations`, {
+  // OpenRouter async video gen: POST /videos → polling_url → poll until completed.
+  // Reference image attached as image_url + OpenAI multi-modal content blocks
+  // so the provider can route as image-to-video (AgentScope-BLAIQ pattern).
+  const payload: Record<string, unknown> = {
+    model,
+    prompt: motionPrompt,
+    image_url: imageDataUri,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: motionPrompt },
+          { type: 'image_url', image_url: { url: imageDataUri } },
+        ],
+      },
+    ],
+  };
+  const submit = await fetch(`${OR_BASE}/videos`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${OR_KEY()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model,
-      prompt: motionPrompt,
-      image: imageBase64,
-      duration: durationS,
-      aspect_ratio: '16:9',
-    }),
+    body: JSON.stringify(payload),
   });
-  if (!r.ok) {
-    const text = await r.text();
-    throw new Error(`openrouter video ${r.status}: ${text.slice(0, 300)}`);
+  if (!submit.ok) {
+    const text = await submit.text();
+    throw new Error(`openrouter video submit ${submit.status}: ${text.slice(0, 300)}`);
   }
-  const data = (await r.json()) as { data?: Array<{ url?: string }> };
-  const url = data.data?.[0]?.url;
-  if (!url) throw new Error('openrouter video returned no url');
-  const vidRes = await fetch(url);
-  return Buffer.from(await vidRes.arrayBuffer());
+  const job = (await submit.json()) as {
+    polling_url?: string;
+    status_url?: string;
+    poll_url?: string;
+    id?: string;
+  };
+  const pollingUrl = job.polling_url || job.status_url || job.poll_url;
+  if (!pollingUrl) throw new Error('openrouter video: no polling_url');
+
+  const maxAttempts = 120; // ~10 min at 5s
+  const intervalMs = 5000;
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    const pr = await fetch(pollingUrl, {
+      headers: { Authorization: `Bearer ${OR_KEY()}` },
+    });
+    if (!pr.ok) continue;
+    const status = (await pr.json()) as {
+      status?: string;
+      unsigned_urls?: string[];
+      urls?: string[];
+      output?: string[] | string;
+      outputs?: string[];
+      video_urls?: string[];
+      videos?: Array<{ url?: string; video_url?: string; src?: string } | string>;
+      error?: string;
+    };
+    if (status.status === 'failed') throw new Error(`openrouter video failed: ${status.error || 'unknown'}`);
+    if (status.status !== 'completed') continue;
+
+    const urls: string[] = [];
+    for (const f of ['unsigned_urls', 'urls', 'output', 'outputs', 'video_urls'] as const) {
+      const v = status[f];
+      if (Array.isArray(v)) urls.push(...v.filter(Boolean).map(String));
+      else if (typeof v === 'string' && v) urls.push(v);
+    }
+    if (Array.isArray(status.videos)) {
+      for (const e of status.videos) {
+        if (typeof e === 'string') urls.push(e);
+        else if (e && typeof e === 'object') {
+          const u = e.url || e.video_url || e.src;
+          if (u) urls.push(u);
+        }
+      }
+    }
+    if (!urls.length) throw new Error('openrouter video completed but no URLs');
+    const vidRes = await fetch(urls[0]!);
+    if (!vidRes.ok) throw new Error(`fetch video ${vidRes.status}`);
+    return Buffer.from(await vidRes.arrayBuffer());
+  }
+  throw new Error('openrouter video poll timeout');
 }
 
 async function orTts(text: string, voice: string): Promise<Buffer> {
@@ -236,7 +299,9 @@ async function generateStoryboard(
   brandDna: string,
   hivemindContext: string,
 ): Promise<Storyboard> {
-  const system = `You are a senior content director writing a JSON storyboard for a brand promo video.
+  const shotCount = Math.max(4, Math.min(8, Math.ceil(brief.length / 6)));
+  const system = `You are a senior creative director crafting a cinematic, Higgsfield-style brand promo video.
+Think like a film director: plot arc (hook → tension → reveal → CTA), camera grammar (wide / medium / close / push-in / dolly / handheld), presenter persona, and a unified visual world across shots.
 
 # Brand DNA (visual identity)
 ${brandDna}
@@ -244,35 +309,41 @@ ${brandDna}
 # Brand Tone (voice)
 ${brandTone}
 
-# Hivemind facts (org context — use only these for product/people/customer claims)
+# Hivemind facts (org context — use only these for product/people/customer claims; never invent)
 ${hivemindContext}
 
 # Output contract
 Return ONLY valid JSON, no preamble, no markdown fence. Schema:
 {
-  "title": string,
+  "title": "compelling title",
   "duration_s": ${brief.length},
-  "narration": "full voiceover script, ${brief.voiceover ? 'matching brand tone' : 'leave empty string'}",
-  "music_brief": "what music should feel like (1 sentence)",
+  "presenter_persona": "1-sentence persona: age range, demeanor, wardrobe (locked across all shots for visual identity)",
+  "visual_world": "1-sentence world description: location, lighting, color palette tied to brand (locked across all shots)",
+  "narration": "${brief.voiceover ? 'full voiceover script in brand tone, ~150 words/min, with hook + 2-3 message pillars + CTA' : ''}",
+  "music_brief": "what music feels like — tempo, instrumentation, energy (1 sentence)",
   "color_grade": "color grade direction tied to brand palette (1 sentence)",
   "shots": [
     {
       "shot": 1,
-      "duration_s": <int seconds, sum of all shots = ${brief.length}>,
-      "visual": "what we see, single sentence",
-      "image_prompt": "detailed prompt for image gen including brand colors + style",
-      "motion_prompt": "what motion happens in the shot (camera move, action)",
-      "narration_chunk": "${brief.voiceover ? 'spoken text for this shot' : 'leave empty string'}"
+      "duration_s": <int seconds, sum across all shots EXACTLY = ${brief.length}>,
+      "segment": "hook | pillar_1 | pillar_2 | pillar_3 | broll | cta",
+      "visual": "1-sentence what-we-see",
+      "camera": "shot size + move (e.g. 'wide static', 'medium 2s push-in', 'close handheld', 'low-angle dolly')",
+      "presenter_action": "what presenter does on screen (or 'no presenter' for b-roll)",
+      "image_prompt": "detailed image-gen prompt — MUST repeat presenter_persona + visual_world verbatim each shot for identity lock, plus shot-specific framing, lens, lighting, brand color hex codes",
+      "motion_prompt": "i2v motion direction — camera move + subject motion (e.g. 'subject smiles and gestures right, camera slow push-in 5%')",
+      "narration_chunk": "${brief.voiceover ? 'spoken text aligned to this shot duration' : ''}",
+      "on_screen_text": "lower-third / supers / logo cue or empty string"
     }
   ]
 }
 
 Constraints:
-- Total shots: ${Math.max(3, Math.min(8, Math.ceil(brief.length / 5)))}
-- Each shot 3-8 seconds
-- Style: ${brief.style}
-- Aspect: ${brief.aspect}
-- Use Brand Tone vocabulary for narration. Never invent facts.`;
+- Total shots: ${shotCount}. Each shot 3-8 seconds. Durations sum EXACTLY to ${brief.length}.
+- Plot arc: shot 1 = hook (curiosity); middle shots = message pillars with evidence; final shot = CTA + logo.
+- Lock presenter_persona and visual_world verbatim in every shot's image_prompt — guarantees identity consistency across generated frames.
+- Style: ${brief.style}. Aspect: ${brief.aspect}.
+- Use Brand Tone vocabulary for narration. Never invent facts beyond Hivemind context.`;
 
   const user = `Build a ${brief.length}-second promo video about: ${brief.subject}
 
@@ -299,6 +370,52 @@ Return the storyboard JSON now.`;
   }
 }
 
+function storyboardToMarkdown(sb: Storyboard, brief: VideoBrief): string {
+  const lines: string[] = [];
+  lines.push(`# ${sb.title}`);
+  lines.push('');
+  lines.push(`**Duration:** ${sb.duration_s}s · **Style:** ${brief.style} · **Aspect:** ${brief.aspect}`);
+  lines.push('');
+  if (sb.presenter_persona) lines.push(`**Presenter:** ${sb.presenter_persona}`);
+  if (sb.visual_world) lines.push(`**Visual world:** ${sb.visual_world}`);
+  if (sb.color_grade) lines.push(`**Color grade:** ${sb.color_grade}`);
+  if (sb.music_brief) lines.push(`**Music:** ${sb.music_brief}`);
+  lines.push('');
+  if (sb.narration) {
+    lines.push('## Narration');
+    lines.push('');
+    lines.push(sb.narration);
+    lines.push('');
+  }
+  lines.push('## Storyboard');
+  lines.push('');
+  lines.push('| Shot | Dur | Segment | Camera | Visual | On-screen |');
+  lines.push('|------|-----|---------|--------|--------|-----------|');
+  for (const s of sb.shots) {
+    const row = [
+      String(s.shot),
+      `${s.duration_s}s`,
+      s.segment || '',
+      (s.camera || '').replace(/\|/g, '/'),
+      (s.visual || '').replace(/\|/g, '/'),
+      (s.on_screen_text || '').replace(/\|/g, '/'),
+    ];
+    lines.push(`| ${row.join(' | ')} |`);
+  }
+  lines.push('');
+  lines.push('## Shot details');
+  lines.push('');
+  for (const s of sb.shots) {
+    lines.push(`### Shot ${s.shot} — ${s.segment || ''} (${s.duration_s}s)`);
+    if (s.presenter_action) lines.push(`- **Action:** ${s.presenter_action}`);
+    if (s.camera) lines.push(`- **Camera:** ${s.camera}`);
+    if (s.motion_prompt) lines.push(`- **Motion:** ${s.motion_prompt}`);
+    if (s.narration_chunk) lines.push(`- **Narration:** "${s.narration_chunk}"`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
 /** Main pipeline. */
 export async function renderVideo(
   brief: VideoBrief,
@@ -319,6 +436,11 @@ export async function renderVideo(
   const storyboard = await generateStoryboard(brief, ctx.brandTone, ctx.brandDna, ctx.hivemindContext);
   await fs.writeFile(path.join(projectDir, 'storyboard.json'), JSON.stringify(storyboard, null, 2));
   onProgress({ stage: 'script', status: 'done', storyboard });
+
+  // Push human-readable script to chat (renders in left chat pane while frames generate)
+  const md = storyboardToMarkdown(storyboard, brief);
+  await fs.writeFile(path.join(projectDir, 'script.md'), md);
+  onProgress({ stage: 'chat-script', markdown: md });
 
   // Stage 4: ref frames per shot (parallel)
   onProgress({ stage: 'ref-frames', status: 'start' });
@@ -358,10 +480,10 @@ export async function renderVideo(
     storyboard.shots.map(async (shot) => {
       if (!shot.refFramePath) return;
       const imgBuf = await fs.readFile(shot.refFramePath);
-      const imgB64 = imgBuf.toString('base64');
-      const motion = `${shot.motion_prompt}. Camera: smooth, ${brief.style}.`;
+      const imgDataUri = `data:image/png;base64,${imgBuf.toString('base64')}`;
+      const motion = `${shot.motion_prompt}. Camera: ${brief.style}. Maintain identity from reference frame: subject, wardrobe, environment, palette.`;
       try {
-        const vidBuf = await orVideo(imgB64, motion, VIDEO_MODEL, shot.duration_s);
+        const vidBuf = await orVideo(imgDataUri, motion, VIDEO_MODEL, shot.duration_s);
         const vp = path.join(projectDir, `shot${shot.shot}.mp4`);
         await fs.writeFile(vp, vidBuf);
         shot.videoPath = vp;
