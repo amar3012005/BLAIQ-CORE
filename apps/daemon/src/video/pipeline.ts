@@ -20,7 +20,7 @@ const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
 
 const SCRIPT_MODEL = process.env.BLAIQ_VIDEO_SCRIPT_MODEL || 'anthropic/claude-sonnet-4.6';
 const ROUTER_MODEL = process.env.BLAIQ_VIDEO_ROUTER_MODEL || 'google/gemini-2.5-flash';
-const IMAGE_MODEL = process.env.BLAIQ_VIDEO_IMAGE_MODEL || 'openai/gpt-5.4-image-2';
+const IMAGE_MODEL = process.env.BLAIQ_VIDEO_IMAGE_MODEL || 'google/gemini-3.1-flash-image-preview';
 const VIDEO_MODEL = process.env.BLAIQ_VIDEO_I2V_MODEL || 'google/veo-3';
 
 export interface VideoBrief {
