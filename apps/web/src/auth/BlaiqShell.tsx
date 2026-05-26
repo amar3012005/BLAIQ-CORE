@@ -490,20 +490,10 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
         )}
         <div style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* When text mode active, hide OD's .workspace pane via injected CSS so our preview replaces it inline */}
-          {(showArtifactPanel || showVideoPanel) && (
+          {(showArtifactPanel || showVideoPanel || showImagePanel) && (
             <style>{`
               /* Collapse OD's workspace + resize handle so our preview replaces them */
               .split { grid-template-columns: 45% 0 0 !important; }
-              .split > .workspace,
-              .split > .split-resize-handle { display: none !important; }
-            `}</style>
-          )}
-          {showImagePanel && (
-            <style>{`
-              /* Image kind: hide OD chat + workspace entirely. Image panel
-                 owns the whole pane with its own composer + draw tools. */
-              .split { grid-template-columns: 0 0 0 !important; }
-              .split > .chat,
               .split > .workspace,
               .split > .split-resize-handle { display: none !important; }
             `}</style>
@@ -567,9 +557,10 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
               style={{
                 position: 'absolute',
                 top: 0,
-                left: 0,
                 right: 0,
                 bottom: 0,
+                width: '55%',
+                borderLeft: `1px solid ${PAL.divider}`,
                 background: PAL.bg,
                 zIndex: 10,
               }}
