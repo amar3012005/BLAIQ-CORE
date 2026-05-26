@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback, type CSSProperties } from 'react';
+import React, { useEffect, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { Play, RefreshCcw, CheckCircle2, Loader2, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Music, FileText, Film, LayoutGrid } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -93,6 +93,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [hitlAnswers, setHitlAnswers] = useState<Record<string, string>>({});
   const [hitlNotes, setHitlNotes] = useState('');
   const [hitlSubmitting, setHitlSubmitting] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ fileName: string; url: string; label: string } | null>(null);
 
   const start = useCallback(async () => {
     setRunning(true);
@@ -460,16 +461,26 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 18 }}>
                 {subjectSheets.map((s) => (
                   <div key={s.id} style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
-                      SUBJECT — {s.id} · 4-photo grid
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>SUBJECT — {s.id} · 4-photo grid</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget({ fileName: `subject_${s.id}_sheet.png`, url: s.url, label: `subject ${s.id}` })}
+                        style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${P.border}`, color: P.ink, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}
+                      >Edit</button>
                     </div>
                     <img src={s.url} alt={`subject ${s.id}`} style={{ width: '100%', display: 'block' }} />
                   </div>
                 ))}
                 {scenerySheet && (
                   <div style={{ background: P.card, border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted }}>
-                      SCENERY — establishing location
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${P.border}`, ...mono, color: P.muted, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>SCENERY — establishing location</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget({ fileName: 'scenery_sheet.png', url: scenerySheet, label: 'scenery' })}
+                        style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${P.border}`, color: P.ink, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}
+                      >Edit</button>
                     </div>
                     <img src={scenerySheet} alt="scenery" style={{ width: '100%', display: 'block' }} />
                   </div>
@@ -501,6 +512,13 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
                       <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 6px', background: 'rgba(0,0,0,0.7)', color: P.white, ...mono, fontSize: 8 }}>
                         SHOT {s.shot}
                       </div>
+                      {s.refFrame && !s.videoClip && (
+                        <button
+                          type="button"
+                          onClick={() => setEditTarget({ fileName: `ref_shot${s.shot}.png`, url: s.refFrame!, label: `shot ${s.shot}` })}
+                          style={{ position: 'absolute', top: 6, right: 6, padding: '3px 8px', background: 'rgba(0,0,0,0.7)', color: P.white, border: 'none', cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}
+                        >Edit</button>
+                      )}
                     </div>
                     <div style={{ padding: 10, fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink, lineHeight: 1.4, maxHeight: 60, overflow: 'hidden' }}>
                       {s.narration || s.imagePrompt?.slice(0, 80)}
@@ -640,9 +658,227 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
         </div>
       )}
 
+      {/* Asset edit modal — masked refine of subject/scenery sheets and shot frames */}
+      {editTarget && (
+        <AssetEditModal
+          projectId={projectId}
+          fileName={editTarget.fileName}
+          url={editTarget.url}
+          label={editTarget.label}
+          onClose={() => setEditTarget(null)}
+          onUpdated={(newUrl) => {
+            // Update local state with the cache-busted url so the image
+            // reloads in place.
+            if (editTarget.fileName === 'scenery_sheet.png') {
+              setScenerySheet(newUrl);
+            } else if (editTarget.fileName.startsWith('subject_')) {
+              const id = editTarget.fileName.replace(/^subject_/, '').replace(/_sheet\.png$/, '');
+              setSubjectSheets((prev) => prev.map((s) => s.id === id ? { ...s, url: newUrl } : s));
+            } else if (editTarget.fileName.startsWith('ref_shot')) {
+              const m = editTarget.fileName.match(/^ref_shot(\d+)\.png$/);
+              if (m && m[1]) {
+                const shotNum = Number(m[1]);
+                setShots((prev) => prev.map((s) => s.shot === shotNum ? { ...s, refFrame: newUrl } : s));
+              }
+            }
+            setEditTarget(null);
+          }}
+        />
+      )}
+
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
+    </div>
+  );
+}
+
+function AssetEditModal({
+  projectId,
+  fileName,
+  url,
+  label,
+  onClose,
+  onUpdated,
+}: {
+  projectId: string;
+  fileName: string;
+  url: string;
+  label: string;
+  onClose: () => void;
+  onUpdated: (newUrl: string) => void;
+}): JSX.Element {
+  const [prompt, setPrompt] = useState('');
+  const [strokes, setStrokes] = useState<Array<{ x: number; y: number; size: number; erase: boolean }[]>>([]);
+  const [brushSize, setBrushSize] = useState(40);
+  const [erasing, setErasing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const cvsRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef<{ x: number; y: number; size: number; erase: boolean }[] | null>(null);
+
+  useEffect(() => {
+    const c = cvsRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const stroke of strokes) {
+      if (stroke.length === 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0]!.x, stroke[0]!.y);
+      for (const pt of stroke) ctx.lineTo(pt.x, pt.y);
+      ctx.strokeStyle = stroke[0]!.erase ? 'rgba(0,0,0,1)' : 'rgba(255,106,42,0.5)';
+      ctx.globalCompositeOperation = stroke[0]!.erase ? 'destination-out' : 'source-over';
+      ctx.lineWidth = stroke[0]!.size;
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }, [strokes]);
+
+  const onDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    const c = cvsRef.current;
+    if (!c) return;
+    c.setPointerCapture(e.pointerId);
+    const rect = c.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * c.width;
+    const y = ((e.clientY - rect.top) / rect.height) * c.height;
+    drawingRef.current = [{ x, y, size: brushSize, erase: erasing }];
+    setStrokes((prev) => [...prev, drawingRef.current!]);
+  };
+  const onMove = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (!drawingRef.current) return;
+    const c = cvsRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * c.width;
+    const y = ((e.clientY - rect.top) / rect.height) * c.height;
+    drawingRef.current.push({ x, y, size: brushSize, erase: erasing });
+    setStrokes((prev) => [...prev]);
+  };
+  const onUp = (): void => { drawingRef.current = null; };
+
+  const buildComposite = async (): Promise<string | null> => {
+    if (strokes.length === 0) return null;
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const out = document.createElement('canvas');
+    out.width = img.naturalWidth;
+    out.height = img.naturalHeight;
+    const octx = out.getContext('2d');
+    if (!octx) return null;
+    octx.drawImage(img, 0, 0);
+    // canvas (overlay) was sized to image natural size on load
+    const overlayCanvas = cvsRef.current;
+    if (!overlayCanvas) return null;
+    const sx = overlayCanvas.width;
+    const sy = overlayCanvas.height;
+    const scaleX = out.width / sx;
+    const scaleY = out.height / sy;
+    octx.globalCompositeOperation = 'destination-out';
+    octx.lineCap = 'round'; octx.lineJoin = 'round';
+    for (const stroke of strokes) {
+      if (stroke.length === 0 || stroke[0]!.erase) continue;
+      octx.beginPath();
+      octx.moveTo(stroke[0]!.x * scaleX, stroke[0]!.y * scaleY);
+      for (const pt of stroke) octx.lineTo(pt.x * scaleX, pt.y * scaleY);
+      octx.lineWidth = stroke[0]!.size * ((scaleX + scaleY) / 2);
+      octx.stroke();
+    }
+    octx.globalCompositeOperation = 'source-over';
+    const comp = document.createElement('canvas');
+    comp.width = out.width;
+    comp.height = out.height;
+    const cctx = comp.getContext('2d');
+    if (!cctx) return null;
+    cctx.fillStyle = '#888888';
+    cctx.fillRect(0, 0, comp.width, comp.height);
+    cctx.drawImage(out, 0, 0);
+    return comp.toDataURL('image/png');
+  };
+
+  const submit = useCallback(async (): Promise<void> => {
+    if (!prompt.trim() || strokes.length === 0 || submitting) return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const masked = await buildComposite();
+      if (!masked) throw new Error('mask composite failed');
+      const r = await fetch(`/api/v1/video/${projectId}/asset-edit`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_name: fileName, prompt: prompt.trim(), masked_ref: masked }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || `edit failed (${r.status})`);
+      onUpdated(d.file_path);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [prompt, strokes, submitting, projectId, fileName, onUpdated]);
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(17,17,17,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
+      <div style={{ background: P.bg, border: `1px solid ${P.border}`, borderRadius: 10, width: '100%', maxWidth: 820, maxHeight: '95vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${P.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ ...mono, color: P.accent }}>EDIT · {label}</div>
+          <button type="button" onClick={onClose} style={{ background: 'transparent', border: 'none', color: P.muted, cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
+          <div style={{ position: 'relative', maxWidth: '100%' }}>
+            <img
+              src={url}
+              alt={label}
+              style={{ display: 'block', maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain' }}
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                const c = cvsRef.current;
+                if (c) { c.width = img.naturalWidth; c.height = img.naturalHeight; }
+              }}
+            />
+            <canvas
+              ref={cvsRef}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: erasing ? 'cell' : 'crosshair', touchAction: 'none' }}
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, padding: '8px 16px', borderTop: `1px solid ${P.border}`, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => setErasing(false)} style={{ padding: '5px 10px', background: !erasing ? P.ink : 'transparent', color: !erasing ? P.white : P.ink, border: `1px solid ${!erasing ? P.ink : P.border}`, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 600 }}>Paint</button>
+          <button type="button" onClick={() => setErasing(true)} style={{ padding: '5px 10px', background: erasing ? P.ink : 'transparent', color: erasing ? P.white : P.ink, border: `1px solid ${erasing ? P.ink : P.border}`, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 600 }}>Erase</button>
+          <button type="button" onClick={() => setStrokes([])} disabled={strokes.length === 0} style={{ padding: '5px 10px', background: 'transparent', color: P.ink, border: `1px solid ${P.border}`, opacity: strokes.length === 0 ? 0.4 : 1, cursor: strokes.length === 0 ? 'not-allowed' : 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 600 }}>Clear mask</button>
+          <span style={{ ...mono, color: P.muted, marginLeft: 8 }}>BRUSH</span>
+          <input type="range" min={6} max={150} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} style={{ width: 80 }} />
+        </div>
+        {err && (
+          <div style={{ padding: '6px 16px', background: 'rgba(220,38,38,0.08)', color: P.red, fontSize: 12 }}>{err}</div>
+        )}
+        <div style={{ padding: '10px 16px 14px 16px', borderTop: `1px solid ${P.border}`, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe what should fill the masked area…"
+            style={{ flex: 1, minHeight: 56, padding: '8px 10px', background: P.white, border: `1px solid ${P.border}`, fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink, resize: 'vertical', outline: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting || !prompt.trim() || strokes.length === 0}
+            style={{ padding: '10px 14px', background: submitting ? P.muted : P.ink, color: P.white, border: 'none', cursor: submitting ? 'wait' : 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 11, fontWeight: 700 }}
+          >{submitting ? 'EDITING…' : 'APPLY EDIT'}</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -139,4 +139,108 @@ export function registerVideoRoutes(router: Router): void {
     }
     res.json({ ok: true });
   });
+
+  // POST /api/v1/video/:projectId/asset-edit
+  //   body: { file_name: string, prompt: string, masked_ref: string (data URI) }
+  // Refines a single video-pipeline asset (subject sheet, scenery sheet, or
+  // shot frame) using image-to-image with the user's masked reference. The
+  // result OVERWRITES the original file so subsequent stages and the UI's
+  // cache-busted reload pick up the edited version.
+  router.post('/api/v1/video/:projectId/asset-edit', async (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) {
+      res.status(401).json({ error: 'not authenticated' });
+      return;
+    }
+    const projectId = req.params.projectId;
+    const body = (req.body ?? {}) as { file_name?: string; prompt?: string; masked_ref?: string };
+    if (!projectId || !body.file_name || !body.prompt || !body.masked_ref) {
+      res.status(400).json({ error: 'projectId, file_name, prompt, masked_ref required' });
+      return;
+    }
+    // Whitelist filenames the pipeline produces (no path traversal).
+    if (!/^(subject_[A-Za-z0-9_-]+_sheet|scenery_sheet|ref_shot\d+)\.png$/.test(body.file_name)) {
+      res.status(400).json({ error: 'invalid file_name' });
+      return;
+    }
+    const projectDir = path.join(PROJECTS_DIR, projectId);
+    const filePath = path.join(projectDir, body.file_name);
+    try {
+      await fs.access(filePath);
+    } catch {
+      res.status(404).json({ error: 'asset not found' });
+      return;
+    }
+    try {
+      const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+      const OR_KEY = process.env.OPENROUTER_API_KEY || '';
+      const IMAGE_MODEL = process.env.BLAIQ_VIDEO_IMAGE_MODEL || 'google/gemini-3.1-flash-image-preview';
+      if (!OR_KEY) throw new Error('OPENROUTER_API_KEY not set');
+      const refineInstruction = `Refine the attached image. The image has a region painted out to neutral grey — fill ONLY that hole, leaving every other pixel byte-for-byte unchanged. Match identity, palette, lighting, and style of the surrounding area exactly.\n\nFill instruction:\n${body.prompt}\n\nPhotoreal, sharp.`;
+      const r = await fetch(`${OR_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OR_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: IMAGE_MODEL,
+          modalities: ['image', 'text'],
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: refineInstruction },
+              { type: 'image_url', image_url: { url: body.masked_ref } },
+            ],
+          }],
+        }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`openrouter image ${r.status}: ${text.slice(0, 300)}`);
+      }
+      const data = (await r.json()) as {
+        choices?: Array<{ message?: {
+          content?: string | Array<{ image_url?: { url?: string } | string }>;
+          images?: Array<{ image_url?: { url?: string } | string; url?: string }>;
+        } }>;
+      };
+      const msg = data.choices?.[0]?.message;
+      if (!msg) throw new Error('no message in response');
+      const decodeDataOrUrl = async (u: string): Promise<Buffer> => {
+        if (u.startsWith('data:')) {
+          const m = u.match(/^data:[^;]+;base64,(.+)$/);
+          if (m && m[1]) return Buffer.from(m[1], 'base64');
+          throw new Error('malformed data URI');
+        }
+        const rr = await fetch(u);
+        if (!rr.ok) throw new Error(`fetch image ${rr.status}`);
+        return Buffer.from(await rr.arrayBuffer());
+      };
+      let buf: Buffer | null = null;
+      for (const img of msg.images ?? []) {
+        const u = typeof img.image_url === 'string' ? img.image_url
+          : (img.image_url as { url?: string } | undefined)?.url ?? img.url;
+        if (u) { buf = await decodeDataOrUrl(u); break; }
+      }
+      if (!buf && Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          const u = typeof part.image_url === 'string' ? part.image_url
+            : (part.image_url as { url?: string } | undefined)?.url;
+          if (u) { buf = await decodeDataOrUrl(u); break; }
+        }
+      }
+      if (!buf && typeof msg.content === 'string') {
+        const dataUri = msg.content.match(/data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/);
+        if (dataUri && dataUri[1]) buf = Buffer.from(dataUri[1], 'base64');
+      }
+      if (!buf) throw new Error('no image returned');
+      await fs.writeFile(filePath, buf);
+      res.json({
+        ok: true,
+        file_path: `/api/projects/${projectId}/files/${body.file_name}?v=${Date.now()}`,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[video-asset-edit] failed:', (err as Error).message);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
 }
