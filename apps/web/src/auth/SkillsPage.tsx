@@ -47,6 +47,18 @@ const MISSION_FILTERS: Array<{ id: string; label: string }> = [
   { id: 'text', label: 'Text' },
 ];
 
+function errToText(err: unknown): string {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object') {
+    const o = err as { message?: unknown; error?: unknown; code?: unknown };
+    if (typeof o.message === 'string') return o.code ? `${String(o.code)}: ${o.message}` : o.message;
+    if (typeof o.error === 'string') return o.error;
+    try { return JSON.stringify(err); } catch { return String(err); }
+  }
+  return String(err);
+}
+
 export default function SkillsPage(): JSX.Element {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [filter, setFilter] = useState<string>('all');
@@ -71,12 +83,12 @@ export default function SkillsPage(): JSX.Element {
   // refreshes automatically.
   useEffect(() => {
     const handler = (e: Event): void => {
-      const detail = (e as CustomEvent).detail as { ok?: boolean; error?: string; skill?: SkillEntry } | undefined;
+      const detail = (e as CustomEvent).detail as { ok?: boolean; error?: unknown; skill?: SkillEntry } | undefined;
       if (detail?.ok) {
         setToast({ kind: 'ok', text: `Skill "${detail.skill?.name || detail.skill?.id}" created` });
         fetchSkills();
       } else if (detail?.error) {
-        setToast({ kind: 'err', text: detail.error });
+        setToast({ kind: 'err', text: errToText(detail.error) });
       }
       window.setTimeout(() => setToast(null), 4000);
     };
@@ -107,7 +119,7 @@ export default function SkillsPage(): JSX.Element {
       });
       const d = await r.json();
       if (!r.ok || !d.ok) {
-        setToast({ kind: 'err', text: d?.error || `failed (${r.status})` });
+        setToast({ kind: 'err', text: errToText(d?.error) || `failed (${r.status})` });
         return;
       }
       setToast({ kind: 'ok', text: `Skill "${d.skill?.name || d.skill?.id}" created` });

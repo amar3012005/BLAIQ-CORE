@@ -18,6 +18,7 @@ import { renderDesignSystemPreview } from './design-system-preview.js';
 import { renderDesignSystemShowcase } from './design-system-showcase.js';
 import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { readAppConfig } from './app-config.js';
+import { jsonrepair } from 'jsonrepair';
 import { installFromTarget, uninstallById } from './library-install.js';
 import type { RouteDeps } from './server-context.js';
 
@@ -216,8 +217,12 @@ Constraints:
       let parsed: { name?: unknown; description?: unknown; triggers?: unknown; body?: unknown };
       try {
         parsed = JSON.parse(raw);
-      } catch (err) {
-        return sendApiError(res, 502, 'UPSTREAM_ERROR', `model JSON parse failed: ${(err as Error).message}`);
+      } catch {
+        try {
+          parsed = JSON.parse(jsonrepair(raw));
+        } catch (err2) {
+          return sendApiError(res, 502, 'UPSTREAM_ERROR', `model JSON parse failed: ${(err2 as Error).message} · head: ${raw.slice(0, 200)}`);
+        }
       }
       const skillInput = {
         name: parsed.name,

@@ -444,7 +444,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           });
           const d = await r.json();
           if (!r.ok || !d.ok) {
-            window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: false, error: d?.error || `failed (${r.status})` } }));
+            const rawErr = d?.error;
+            const msg = typeof rawErr === 'string'
+              ? rawErr
+              : (rawErr && typeof rawErr === 'object' && typeof (rawErr as { message?: unknown }).message === 'string')
+                ? (rawErr as { message: string }).message
+                : `failed (${r.status})`;
+            window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: false, error: msg } }));
             return;
           }
           window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: true, skill: d.skill } }));
