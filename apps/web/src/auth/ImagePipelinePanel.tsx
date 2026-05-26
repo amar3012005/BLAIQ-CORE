@@ -67,6 +67,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
+  const [useRef_, setUseRef] = useState(true);   // false = fresh gen ignoring active version
   const [strokes, setStrokes] = useState<Array<{ x: number; y: number; size: number; erase: boolean }[]>>([]);
   const [brushSize, setBrushSize] = useState(24);
   const [erasing, setErasing] = useState(false);
@@ -113,6 +114,16 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     }
     ctx.globalCompositeOperation = 'source-over';
   }, [strokes]);
+
+  // When the active version changes, also fully clear the canvas. The img
+  // onLoad resizes the canvas which wipes its bitmap, but on quick tab
+  // toggles the old strokes can flash through; force a blank render here.
+  useEffect(() => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, cvs.width, cvs.height);
+  }, [activeVersion]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawMode) return;
@@ -185,6 +196,52 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     });
   };
 
+  // Composite the ref image with the drawn mask BLACKED OUT. Sending a single
+  // image-with-hole to the model gets cleaner edits than sending a separate
+  // mask image, which gemini-3.1-flash-image sometimes paints in literally.
+  const buildMaskedRefDataUri = useCallback(async (refUrl: string): Promise<string | null> => {
+    if (strokes.length === 0) return null;
+    // Load ref image natural size
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = refUrl;
+    });
+    const out = document.createElement('canvas');
+    out.width = img.naturalWidth;
+    out.height = img.naturalHeight;
+    const octx = out.getContext('2d');
+    if (!octx) return null;
+    octx.drawImage(img, 0, 0);
+    // Erase the painted regions so the model sees a hole.
+    octx.lineCap = 'round';
+    octx.lineJoin = 'round';
+    octx.globalCompositeOperation = 'destination-out';
+    for (const stroke of strokes) {
+      if (stroke.length === 0) continue;
+      if (stroke[0]!.erase) continue; // erase strokes don't punch holes
+      octx.beginPath();
+      octx.moveTo(stroke[0]!.x, stroke[0]!.y);
+      for (const pt of stroke) octx.lineTo(pt.x, pt.y);
+      octx.lineWidth = stroke[0]!.size;
+      octx.stroke();
+    }
+    octx.globalCompositeOperation = 'source-over';
+    // Paint the transparent area solid neutral grey so the model has a clean
+    // target to fill (some models ignore alpha and prefer an explicit colour).
+    const composited = document.createElement('canvas');
+    composited.width = out.width;
+    composited.height = out.height;
+    const cctx = composited.getContext('2d');
+    if (!cctx) return null;
+    cctx.fillStyle = '#888888';
+    cctx.fillRect(0, 0, composited.width, composited.height);
+    cctx.drawImage(out, 0, 0);
+    return composited.toDataURL('image/png');
+  }, [strokes]);
+
   const generate = useCallback(async () => {
     if (!prompt.trim() || !model || generating) return;
     setGenerating(true);
@@ -196,14 +253,21 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
         model,
         aspect,
       };
-      // If we have an active image AND the user drew on it, send as refine.
-      if (activeImage && strokes.length > 0) {
-        body.ref_image = await fetchAsDataUri(activeImage.url);
-        const mask = await exportMaskDataUri();
-        if (mask) body.mask = mask;
-      } else if (activeImage) {
-        // Plain refine (no mask) — model decides what to change.
-        body.ref_image = await fetchAsDataUri(activeImage.url);
+      // Three modes:
+      //   - Fresh: useRef_=false → no ref, no mask → daemon enriches prompt.
+      //   - Refine (no mask): useRef_=true, strokes=0 → send ref only.
+      //   - Masked edit: useRef_=true, strokes>0 → composite mask into ref
+      //     (black out edit region) and send the composited image as ref.
+      //     No separate mask image — models like gemini-flash-image paint the
+      //     mask in literally when sent as a second attachment.
+      if (useRef_ && activeImage) {
+        if (strokes.some((s) => s[0] && !s[0].erase)) {
+          const refUri = await fetchAsDataUri(activeImage.url);
+          const masked = await buildMaskedRefDataUri(refUri);
+          body.ref_image = masked || refUri;
+        } else {
+          body.ref_image = await fetchAsDataUri(activeImage.url);
+        }
       }
       const r = await fetch('/api/v1/image/render', {
         method: 'POST',
@@ -232,7 +296,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     } finally {
       setGenerating(false);
     }
-  }, [prompt, model, generating, projectId, aspect, activeImage, strokes, exportMaskDataUri]);
+  }, [prompt, model, generating, projectId, aspect, activeImage, strokes, useRef_, buildMaskedRefDataUri]);
 
   // Listen for Enter on the prompt textarea (Cmd/Ctrl+Enter to submit)
   const onPromptKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -490,7 +554,39 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
           </select>
           <span style={{ ...mono, color: P.muted, marginLeft: 12 }}>ASPECT</span>
           <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink }}>{aspect}</span>
-          {activeImage && strokes.length > 0 && (
+          {activeImage && (
+            <>
+              <span style={{ ...mono, color: P.muted, marginLeft: 12 }}>MODE</span>
+              <div style={{ display: 'inline-flex', border: `1px solid ${P.border}` }}>
+                <button
+                  type="button"
+                  onClick={() => setUseRef(true)}
+                  style={{
+                    padding: '4px 10px',
+                    background: useRef_ ? P.ink : 'transparent',
+                    color: useRef_ ? P.white : P.ink,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600,
+                  }}
+                >Refine v{activeVersion}</button>
+                <button
+                  type="button"
+                  onClick={() => setUseRef(false)}
+                  style={{
+                    padding: '4px 10px',
+                    background: !useRef_ ? P.ink : 'transparent',
+                    color: !useRef_ ? P.white : P.ink,
+                    border: 'none',
+                    borderLeft: `1px solid ${P.border}`,
+                    cursor: 'pointer',
+                    fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600,
+                  }}
+                >Fresh gen</button>
+              </div>
+            </>
+          )}
+          {activeImage && strokes.length > 0 && useRef_ && (
             <span style={{ ...mono, color: P.accent, marginLeft: 12 }}>
               MASK · {strokes.length} {strokes.length === 1 ? 'STROKE' : 'STROKES'}
             </span>

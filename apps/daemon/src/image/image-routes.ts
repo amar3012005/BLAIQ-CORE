@@ -10,6 +10,8 @@ import type { Request, Response, Router } from 'express';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { AuthenticatedRequest } from '../db/tenant-context.js';
+import { getTenantBrand } from '../brand/brand-store.js';
+import { hivemindRecall } from '../brand/hivemind-client.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = (): string => process.env.OPENROUTER_API_KEY || '';
@@ -20,6 +22,69 @@ const PROJECTS_DIR = process.env.OD_DATA_DIR
 
 const DEFAULT_IMAGE_MODEL = process.env.BLAIQ_IMAGE_DEFAULT_MODEL
   || 'google/gemini-3.1-flash-image-preview';
+const SCRIPT_MODEL = process.env.BLAIQ_VIDEO_SCRIPT_MODEL || 'anthropic/claude-sonnet-4.6';
+
+async function orChat(messages: Array<{ role: string; content: string }>, model: string, maxTokens = 2000): Promise<string> {
+  const r = await fetch(`${OR_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OR_KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`openrouter ${r.status}: ${text.slice(0, 200)}`);
+  }
+  const data = (await r.json()) as {
+    choices?: Array<{ message?: { content?: string; reasoning?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning || '';
+}
+
+async function enrichPrompt(
+  brief: string,
+  brandTone: string,
+  brandDna: string,
+  hivemindContext: string,
+  aspect: string,
+): Promise<string> {
+  // Expand the user's terse brief into a richly-specified visual prompt
+  // grounded in brand tone + DNA + Hivemind facts. Plain text out, no JSON.
+  const system = `You are a senior art director. Transform the user's short brief into a single richly detailed visual prompt for a text-to-image model.
+
+Output:
+- Plain prose, one to two paragraphs, English.
+- Specify subject, composition, framing, camera/lens feel, lighting, mood, color palette (use brand colors from Brand DNA verbatim where relevant), materials/textures, environmental details, and any typography/layout the brief implies.
+- Photoreal, cinematic, sharp, no text/watermark/logo unless the brief asks for typography.
+- Do NOT invent product names, customer quotes, or features beyond the Hivemind facts.
+- No preamble. No headings. No "Sure, here is…". Output ONLY the prompt itself.`;
+  const user = `User brief:
+${brief}
+
+Aspect ratio: ${aspect}
+
+Brand DNA (visual identity, palette, materials):
+${brandDna.slice(0, 2000)}
+
+Brand tone (voice):
+${brandTone.slice(0, 800)}
+
+Hivemind org facts (use ONLY these for product/people/customer claims):
+${hivemindContext.slice(0, 2000) || '(none)'}
+
+Write the expanded visual prompt now.`;
+  try {
+    const out = await orChat(
+      [{ role: 'system', content: system }, { role: 'user', content: user }],
+      SCRIPT_MODEL,
+      1800,
+    );
+    const trimmed = out.trim().replace(/^["'`]+|["'`]+$/g, '');
+    return trimmed || brief;
+  } catch (err) {
+    console.warn('[image-pipeline] prompt enrich failed:', (err as Error).message);
+    return brief;
+  }
+}
 
 async function fetchImageBuffer(url: string): Promise<Buffer> {
   if (url.startsWith('data:')) {
@@ -132,13 +197,34 @@ export function registerImageRoutes(router: Router): void {
     if (body.ref_image) refs.push(body.ref_image);
     if (body.mask) refs.push(body.mask);
 
-    let prompt = body.prompt.trim();
+    const rawBrief = body.prompt.trim();
+    let prompt = rawBrief;
+    let enrichedPrompt = '';
     if (refs.length === 1 && body.ref_image) {
-      prompt = `Refine the attached image based on this instruction (keep identity, composition, palette intact unless instructed otherwise):\n${prompt}\n\nAspect ${aspect}. Photoreal, sharp.`;
+      prompt = `Refine the attached image based on this instruction (keep identity, composition, palette intact unless instructed otherwise):\n${rawBrief}\n\nAspect ${aspect}. Photoreal, sharp.`;
     } else if (refs.length === 2) {
-      prompt = `Refine the FIRST attached image using the SECOND attached image as an EDIT MASK (white = areas to change, black = areas to keep). Instruction:\n${prompt}\n\nAspect ${aspect}. Photoreal, sharp.`;
+      prompt = `Refine the FIRST attached image using the SECOND attached image as an EDIT MASK (white = areas to change, black = areas to keep). Apply the instruction ONLY inside the white regions; leave black regions byte-for-byte unchanged.\n\nInstruction:\n${rawBrief}\n\nAspect ${aspect}. Photoreal, sharp.`;
     } else {
-      prompt = `${prompt}\n\nAspect ${aspect}. Photoreal, sharp, high detail, no text, no watermark.`;
+      // First gen (no ref) — enrich the user's brief with brand DNA + Hivemind
+      // facts so the model has the rich context the user expects.
+      try {
+        const brand = await getTenantBrand(authed.tenantId);
+        let hivemindContext = '';
+        if (brand.hivemindEnabled && brand.hivemindApiKey) {
+          const recall = await hivemindRecall(
+            brand.hivemindUrl,
+            brand.hivemindApiKey,
+            rawBrief,
+            6,
+          );
+          if (recall.ok && recall.text) hivemindContext = recall.text.slice(0, 4000);
+        }
+        enrichedPrompt = await enrichPrompt(rawBrief, brand.brandToneMd || '', brand.brandDnaMd || '', hivemindContext, aspect);
+      } catch (err) {
+        console.warn('[image-pipeline] enrich path failed:', (err as Error).message);
+      }
+      const finalBrief = enrichedPrompt || rawBrief;
+      prompt = `${finalBrief}\n\nAspect ${aspect}. Photoreal, sharp, high detail, no text overlay or watermark unless the prompt explicitly asks for typography.`;
     }
 
     try {
@@ -150,7 +236,16 @@ export function registerImageRoutes(router: Router): void {
       // Persist the prompt + model alongside for history
       await fs.writeFile(
         path.join(projectDir, `image_v${version}.meta.json`),
-        JSON.stringify({ version, prompt: body.prompt, model, aspect, ts: Date.now() }, null, 2),
+        JSON.stringify({
+          version,
+          prompt: rawBrief,
+          enriched_prompt: enrichedPrompt || undefined,
+          model,
+          aspect,
+          had_ref: Boolean(body.ref_image),
+          had_mask: Boolean(body.mask),
+          ts: Date.now(),
+        }, null, 2),
       );
       res.json({
         ok: true,
@@ -158,6 +253,7 @@ export function registerImageRoutes(router: Router): void {
         file_name: fileName,
         file_path: `/api/projects/${body.project_id}/files/${fileName}`,
         model,
+        enriched_prompt: enrichedPrompt || undefined,
       });
     } catch (err) {
       const msg = (err as Error).message;
