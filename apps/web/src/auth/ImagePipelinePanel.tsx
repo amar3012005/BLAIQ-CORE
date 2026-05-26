@@ -73,6 +73,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   const [erasing, setErasing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef<{ x: number; y: number; size: number; erase: boolean }[] | null>(null);
+  const generateRef = useRef<(() => Promise<void>) | null>(null);
 
   // Fetch available image models on mount
   useEffect(() => {
@@ -90,6 +91,24 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   const activeImage = activeVersion != null
     ? versions.find((v) => v.version === activeVersion)
     : null;
+
+  // Cross-component bridge: AssistantMessage's "Generate Image" button
+  // dispatches a `blaiq:image-gen` CustomEvent. We pick it up, paste the
+  // prompt into the composer, and (when detail.autorun === true) auto-fire.
+  useEffect(() => {
+    const onGen = (e: Event): void => {
+      const detail = (e as CustomEvent).detail as { prompt?: string; autorun?: boolean } | undefined;
+      const p = typeof detail?.prompt === 'string' ? detail.prompt.trim() : '';
+      if (!p) return;
+      setPrompt(p);
+      if (detail?.autorun) {
+        // queue one tick so prompt state lands before generate runs
+        setTimeout(() => { generateRef.current?.(); }, 0);
+      }
+    };
+    window.addEventListener('blaiq:image-gen', onGen);
+    return () => window.removeEventListener('blaiq:image-gen', onGen);
+  }, []);
 
   // Redraw mask overlay whenever strokes change
   useEffect(() => {
@@ -297,6 +316,12 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       setGenerating(false);
     }
   }, [prompt, model, generating, projectId, aspect, activeImage, strokes, useRef_, buildMaskedRefDataUri]);
+
+  // Keep generateRef pointing at the latest generate closure so the
+  // event-listener effect (mounted once) always invokes the current one.
+  useEffect(() => {
+    generateRef.current = generate;
+  }, [generate]);
 
   // Listen for Enter on the prompt textarea (Cmd/Ctrl+Enter to submit)
   const onPromptKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

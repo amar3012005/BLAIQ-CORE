@@ -384,6 +384,16 @@ export function composeSystemPrompt({
     parts.push(MEDIA_GENERATION_CONTRACT);
   }
 
+  // BLAIQ image-kind override — the right-side ImagePipelinePanel owns the
+  // actual generation. The chat agent must NOT dispatch any CLI, must NOT
+  // pick a model, and must NOT block on question-form discovery. Its only
+  // job is to refine the user's brief into a single final image prompt and
+  // emit it inside an ```image-prompt fenced block so the UI can render a
+  // "Generate Image" button under it.
+  if (metadata?.kind === 'image') {
+    parts.push(BLAIQ_IMAGE_PROMPT_OVERRIDE);
+  }
+
   if (includeCodexImagegenOverride) {
     const codexImagegenOverride = renderCodexImagegenOverride(
       agentId,
@@ -488,6 +498,39 @@ function renderConnectedExternalMcpDirective(
     'If a real tool actually fails with an auth-related error, report the exact tool name and error text and stop — the user will reconnect the server in Settings → External MCP. Do not retry by invoking any `*_authenticate` tool.\n',
   ].join('');
 }
+
+// BLAIQ image override — pinned after MEDIA_GENERATION_CONTRACT for image-kind
+// projects only. Tells the agent: do not dispatch CLI, do not pick model, do
+// not ask question-form discovery questions. Refine the brief to a single
+// final image prompt and emit it in an ```image-prompt fence so the UI shows
+// a "Generate Image" button that copies it into the right-side panel.
+const BLAIQ_IMAGE_PROMPT_OVERRIDE = `
+
+---
+
+## BLAIQ image project — prompt-only mode (overrides every media instruction above)
+
+This is a BLAIQ image project. The right-side panel ("IMAGE PIPELINE") owns the actual rendering. Your single job is to refine the user's brief into a strong, brand-aware visual prompt and emit it once. **Do not dispatch any CLI. Do not pick a model. Do not run question-form discovery.**
+
+**Forbidden output:**
+- \`<question-form>\` blocks. The user picks the model in the right-side panel, not here.
+- Any \`media generate\` / \`"$OD_NODE_BIN" "$OD_BIN" media\` bash block. The right-side panel calls the daemon directly.
+- "I am currently operating in a text-only API mode, I cannot directly trigger the image-rendering daemon" disclaimers. You are not expected to trigger it.
+- Suggestions to "paste this into your terminal" or "Photoshop the text on top".
+
+**Required output:**
+1. One short paragraph of plain prose: acknowledge the brief, name the angle / mood / palette you locked in.
+2. Exactly one fenced code block tagged \`image-prompt\` containing the FINAL visual prompt the user should run. Make it specific: subject, composition, framing, lighting, palette (use brand DNA colours verbatim where relevant), materials/textures, typography lockup if any, mood. Photoreal/cinematic unless the brief asks otherwise. No CLI flags inside the block — just the prompt body.
+3. (Optional) One short paragraph below the fence with two or three quick-tune suggestions ("tighter crop", "swap to 9:16", "try a darker base") so the user knows what to ask for on the next turn.
+
+**Fence shape (exact tag must be \`image-prompt\`):**
+
+\`\`\`image-prompt
+<full visual prompt here — 2 to 5 sentences>
+\`\`\`
+
+The UI parses that fence and renders a "Generate Image" button beneath it. Clicking the button copies the prompt into the right-side panel and runs it with whichever model the user has selected there. Emit the fence exactly once per turn.
+`;
 
 const CODEX_IMAGEGEN_MODEL_IDS = new Set(
   IMAGE_MODELS.filter(

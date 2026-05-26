@@ -813,7 +813,7 @@ function ProseBlock({
           return <SystemReminderBlock key={seg.key} text={seg.text} />;
         }
         if (seg.kind === "text") {
-          return <Fragment key={seg.key}>{renderMarkdown(seg.text)}</Fragment>;
+          return <Fragment key={seg.key}>{renderTextWithImagePrompt(seg.text, seg.key)}</Fragment>;
         }
         return (
           <FormBlock
@@ -1244,4 +1244,122 @@ function formatElapsedMs(ms: number): string {
   const m = Math.floor(s / 60);
   const rem = Math.floor(s - m * 60);
   return `${m}m ${rem.toString().padStart(2, "0")}s`;
+}
+
+// BLAIQ image projects: detect ```image-prompt fenced blocks in assistant
+// messages and render a "Generate Image" button below each one. Clicking the
+// button copies the prompt body into the right-side ImagePipelinePanel and
+// triggers a generation. The panel listens for the `blaiq:image-gen` custom
+// event on window.
+function renderTextWithImagePrompt(text: string, keyBase: string): React.ReactNode[] {
+  const fence = /```image-prompt\s*\n([\s\S]+?)```/g;
+  const out: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
+  while ((match = fence.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      const chunk = text.slice(lastIndex, match.index);
+      out.push(<Fragment key={`${keyBase}-md-${i}`}>{renderMarkdown(chunk)}</Fragment>);
+    }
+    const prompt = (match[1] || "").trim();
+    out.push(<ImagePromptBlock key={`${keyBase}-ip-${i}`} prompt={prompt} />);
+    lastIndex = match.index + match[0].length;
+    i += 1;
+  }
+  if (lastIndex < text.length) {
+    const tail = text.slice(lastIndex);
+    out.push(<Fragment key={`${keyBase}-md-end`}>{renderMarkdown(tail)}</Fragment>);
+  }
+  if (out.length === 0) out.push(<Fragment key={`${keyBase}-md-only`}>{renderMarkdown(text)}</Fragment>);
+  return out;
+}
+
+function ImagePromptBlock({ prompt }: { prompt: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        margin: "10px 0",
+        border: "1px solid #D8D3CB",
+        borderRadius: 8,
+        background: "#FAFAF7",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          padding: "6px 10px",
+          borderBottom: "1px solid #D8D3CB",
+          fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace',
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: "0.18em",
+          textTransform: "uppercase",
+          color: "#6E6A63",
+        }}
+      >
+        IMAGE PROMPT
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: "10px 12px",
+          fontFamily: '"Inter", sans-serif',
+          fontSize: 12,
+          lineHeight: 1.55,
+          color: "#111111",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
+        {prompt}
+      </pre>
+      <div style={{ padding: "8px 10px", borderTop: "1px solid #D8D3CB", display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              window.dispatchEvent(new CustomEvent("blaiq:image-gen", { detail: { prompt, autorun: true } }));
+            } catch {
+              /* noop */
+            }
+          }}
+          style={{
+            padding: "6px 12px",
+            background: "#111111",
+            color: "#FFFFFF",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: '"Inter", sans-serif',
+            fontSize: 11,
+            fontWeight: 700,
+          }}
+        >
+          Generate Image
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              window.dispatchEvent(new CustomEvent("blaiq:image-gen", { detail: { prompt, autorun: false } }));
+            } catch {
+              /* noop */
+            }
+          }}
+          style={{
+            padding: "6px 12px",
+            background: "transparent",
+            color: "#111111",
+            border: "1px solid #D8D3CB",
+            cursor: "pointer",
+            fontFamily: '"Inter", sans-serif',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          Copy to panel
+        </button>
+      </div>
+    </div>
+  );
 }
