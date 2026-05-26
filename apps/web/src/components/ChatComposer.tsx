@@ -421,6 +421,40 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       return true;
     }
 
+    // Parse @create-skill <brief> — generate a SKILL.md via the daemon's
+    // LLM-skill endpoint and add to user library. Does NOT send the prompt
+    // to the project agent.
+    function tryHandleCreateSkill(_prompt: string): boolean {
+      const trimmed = draft.trim();
+      const m = /^@create-skill\s+([\s\S]+)$/i.exec(trimmed);
+      if (!m) return false;
+      const brief = m[1]?.trim();
+      if (!brief) return false;
+      setDraft('');
+      reset();
+      // Fire-and-forget POST. UI surfaces success via a window CustomEvent
+      // so the Skills page can refresh + the chat can echo a notice.
+      (async () => {
+        try {
+          const r = await fetch('/api/v1/skills/generate', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brief, mission_type: projectMetadata?.kind || '', artifact_type: (projectMetadata as { textSubtype?: string } | undefined)?.textSubtype || '' }),
+          });
+          const d = await r.json();
+          if (!r.ok || !d.ok) {
+            window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: false, error: d?.error || `failed (${r.status})` } }));
+            return;
+          }
+          window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: true, skill: d.skill } }));
+        } catch (err) {
+          window.dispatchEvent(new CustomEvent('blaiq:skill-generated', { detail: { ok: false, error: (err as Error).message } }));
+        }
+      })();
+      return true;
+    }
+
     function expandSearchCommand(input: string): { prompt: string; query: string } | null {
       const m = /^\/search(?:\s+([\s\S]*))?$/i.exec(input.trim());
       if (!m) return null;
@@ -823,6 +857,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       // never hits the agent — these are local UX hooks, not model prompts.
       if (tryHandlePetSlash()) return;
       if (tryHandleMcpSlash()) return;
+      // Intercept @create-skill <brief> — generates a SKILL.md via LLM and
+      // adds it to the user skill library. Local UX hook, never hits the
+      // project agent.
+      if (tryHandleCreateSkill(prompt)) return;
       // `/hatch <concept>` expands into the canonical hatch-pet skill
       // prompt and *is* sent to the agent — the agent runs the skill,
       // packages a Codex pet under `~/.codex/pets/`, and the user

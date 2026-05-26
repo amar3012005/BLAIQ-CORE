@@ -17,6 +17,7 @@ import {
 import { useAuth } from './AuthProvider';
 import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
+import SkillsPage from './SkillsPage';
 import TextArtifactPanel from './TextArtifactPanel';
 import VideoPipelinePanel from './VideoPipelinePanel';
 import ImagePipelinePanel from './ImagePipelinePanel';
@@ -48,6 +49,7 @@ const NAV_ITEMS: Array<{ id: string; label: string; to: string }> = [
   { id: 'agents', label: 'Agents', to: '/agents' },
   { id: 'artifacts', label: 'Artifacts', to: '/artifacts' },
   { id: 'brand', label: 'Brand', to: '/brand' },
+  { id: 'skills', label: 'Skills', to: '/skills' },
   { id: 'memory', label: 'Memory', to: '/memory' },
   { id: 'settings', label: 'Settings', to: '/settings' },
 ];
@@ -372,6 +374,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
   const pathname = usePathname() ?? '/';
   const isHome = pathname === '/' || pathname === '';
   const isBrand = pathname === '/brand' || pathname.startsWith('/brand/');
+  const isSkills = pathname === '/skills' || pathname.startsWith('/skills/');
 
   // Detect text-kind project route → render TextArtifactPanel overlay.
   // Pathnames: /projects/<id> or /projects/<id>/conversations/<cid>
@@ -498,7 +501,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
               .split > .split-resize-handle { display: none !important; }
             `}</style>
           )}
-          {isBrand ? <BrandPage /> : children}
+          {isBrand ? <BrandPage /> : isSkills ? <SkillsPage /> : children}
           {showArtifactPanel && projectId && conversationId && (
             <div
               className="blaiq-text-preview-anchor"

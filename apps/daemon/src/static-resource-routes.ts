@@ -149,6 +149,103 @@ export function registerStaticResourceRoutes(app: Express, ctx: RegisterStaticRe
     }
   });
 
+  // POST /api/v1/skills/generate — LLM-authored skill from a natural-language
+  // brief. Body: { brief, mission_type?, artifact_type? }. Calls SCRIPT_MODEL
+  // to produce a structured SKILL.md (name + description + triggers + body),
+  // then writes it via importUserSkill so it shows up in /api/skills.
+  app.post('/api/v1/skills/generate', async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        brief?: unknown;
+        mission_type?: unknown;
+        artifact_type?: unknown;
+      };
+      const brief = typeof body.brief === 'string' ? body.brief.trim() : '';
+      const missionType = typeof body.mission_type === 'string' ? body.mission_type.trim() : '';
+      const artifactType = typeof body.artifact_type === 'string' ? body.artifact_type.trim() : '';
+      if (!brief) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'brief required');
+      }
+      const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+      const OR_KEY = process.env.OPENROUTER_API_KEY || '';
+      const MODEL = process.env.BLAIQ_VIDEO_SCRIPT_MODEL || 'anthropic/claude-sonnet-4.6';
+      if (!OR_KEY) {
+        return sendApiError(res, 500, 'INTERNAL_ERROR', 'OPENROUTER_API_KEY not set');
+      }
+      const system = `You are a senior prompt engineer authoring a Claude-Code-style SKILL.md.
+
+Output ONE valid JSON object, no preamble, no code fence, with exactly these keys:
+{
+  "name": "<kebab-case slug-friendly skill name, 2-5 words>",
+  "description": "<1 short sentence — what this skill helps the agent accomplish, and when it should fire>",
+  "triggers": ["<3-6 short trigger phrases or commands the user might type or that match the intent>"],
+  "body": "<the full markdown body of the SKILL.md. Use H2 sections like ## When to use, ## How to apply, ## Output contract, ## Examples. Include explicit instructions to the agent on style/structure/voice; concrete do/don'ts; an output shape the agent must follow; and at least one worked example. Aim for 300-700 words.>"
+}
+
+Constraints:
+- Skill must be reusable and not tied to one specific project.
+- If mission_type is given (image|video|text|deck|prototype|audio|other), tailor the body to that type and mention it in the description.
+- If artifact_type is given (e.g. linkedin_post, hero_image, promo_video), reference it in the body as the expected output kind.
+- "body" is plain markdown. No code-fenced JSON inside it that wraps the whole thing. No <todo-list> markup.
+- Avoid generic filler. Be specific about what to do and what to avoid.`;
+      const user = `User brief:\n${brief}\n\nMission type: ${missionType || '(unspecified)'}\nArtifact type: ${artifactType || '(unspecified)'}\n\nReturn the JSON object now.`;
+      const r = await fetch(`${OR_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OR_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 4000,
+        }),
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        return sendApiError(res, 502, 'UPSTREAM_ERROR', `openrouter ${r.status}: ${text.slice(0, 200)}`);
+      }
+      const data = (await r.json()) as {
+        choices?: Array<{ message?: { content?: string; reasoning?: string } }>;
+      };
+      let raw = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning || '';
+      raw = raw.trim();
+      const fence = raw.match(/```(?:json)?\s*([\s\S]+?)```/);
+      if (fence && fence[1]) raw = fence[1].trim();
+      let parsed: { name?: unknown; description?: unknown; triggers?: unknown; body?: unknown };
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err) {
+        return sendApiError(res, 502, 'UPSTREAM_ERROR', `model JSON parse failed: ${(err as Error).message}`);
+      }
+      const skillInput = {
+        name: parsed.name,
+        description: parsed.description,
+        body: parsed.body,
+        triggers: parsed.triggers,
+      };
+      const result = await importUserSkill(USER_SKILLS_DIR, skillInput);
+      const skills = await listAllSkills();
+      const skill = findSkillById(skills, result.id);
+      if (!skill) {
+        return sendApiError(res, 500, 'INTERNAL_ERROR', 'generated skill not found in catalog');
+      }
+      const { dir: _dir, body: _body, ...serializable } = skill;
+      res.status(201).json({
+        ok: true,
+        skill: { ...serializable, hasBody: typeof skill.body === 'string' && skill.body.length > 0 },
+        raw_body: parsed.body,
+      });
+    } catch (err: any) {
+      if (err instanceof SkillImportError) {
+        const status = err.code === 'CONFLICT' ? 409 : err.code === 'BAD_REQUEST' ? 400 : 500;
+        return sendApiError(res, status, err.code, err.message);
+      }
+      sendApiError(res, 500, 'INTERNAL_ERROR', String(err?.message ?? err));
+    }
+  });
+
   // PUT /api/skills/:id — update an existing user-managed skill's
   // SKILL.md (and, when the user edits a built-in for the first time,
   // clone its side files into USER_SKILLS_DIR/<slug>/ so subsequent
