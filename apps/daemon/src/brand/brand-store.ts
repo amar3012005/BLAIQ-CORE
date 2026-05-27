@@ -9,6 +9,9 @@ export interface TenantBrand {
   hivemindUrl: string;
   hivemindApiKey: string;
   hivemindEnabled: boolean;
+  higgsfieldUrl: string;
+  higgsfieldApiKey: string;
+  higgsfieldEnabled: boolean;
   updatedAt: number;
 }
 
@@ -67,13 +70,13 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
   return withTenant(tenantId, async (client) => {
     const result = await client.query(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
-              hivemind_enabled, updated_at
+              hivemind_enabled, higgsfield_url, higgsfield_api_key,
+              higgsfield_enabled, updated_at
        FROM tenant_brand
        WHERE tenant_id = $1`,
       [tenantId],
     );
     if (result.rows.length === 0) {
-      // Seed default row
       const now = Date.now();
       await client.query(
         `INSERT INTO tenant_brand
@@ -88,6 +91,9 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
         hivemindUrl: 'https://core.hivemind.davinciai.eu:8050/api/mcp',
         hivemindApiKey: '',
         hivemindEnabled: false,
+        higgsfieldUrl: 'https://higgsfield.ai/mcp',
+        higgsfieldApiKey: '',
+        higgsfieldEnabled: false,
         updatedAt: now,
       };
     }
@@ -98,6 +104,9 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       hivemindUrl: row.hivemind_url ?? '',
       hivemindApiKey: row.hivemind_api_key ?? '',
       hivemindEnabled: Boolean(row.hivemind_enabled),
+      higgsfieldUrl: row.higgsfield_url ?? 'https://higgsfield.ai/mcp',
+      higgsfieldApiKey: row.higgsfield_api_key ?? '',
+      higgsfieldEnabled: Boolean(row.higgsfield_enabled),
       updatedAt: Number(row.updated_at),
     };
   });
@@ -133,13 +142,26 @@ export async function updateTenantBrand(
       params.push(patch.hivemindEnabled);
       sets.push(`hivemind_enabled = $${params.length}`);
     }
+    if (patch.higgsfieldUrl !== undefined) {
+      params.push(patch.higgsfieldUrl);
+      sets.push(`higgsfield_url = $${params.length}`);
+    }
+    if (patch.higgsfieldApiKey !== undefined) {
+      params.push(patch.higgsfieldApiKey);
+      sets.push(`higgsfield_api_key = $${params.length}`);
+    }
+    if (patch.higgsfieldEnabled !== undefined) {
+      params.push(patch.higgsfieldEnabled);
+      sets.push(`higgsfield_enabled = $${params.length}`);
+    }
     await client.query(
       `UPDATE tenant_brand SET ${sets.join(', ')} WHERE tenant_id = $1`,
       params,
     );
     const out = await client.query(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
-              hivemind_enabled, updated_at
+              hivemind_enabled, higgsfield_url, higgsfield_api_key,
+              higgsfield_enabled, updated_at
        FROM tenant_brand WHERE tenant_id = $1`,
       [tenantId],
     );
@@ -150,6 +172,9 @@ export async function updateTenantBrand(
       hivemindUrl: row.hivemind_url ?? '',
       hivemindApiKey: row.hivemind_api_key ?? '',
       hivemindEnabled: Boolean(row.hivemind_enabled),
+      higgsfieldUrl: row.higgsfield_url ?? 'https://higgsfield.ai/mcp',
+      higgsfieldApiKey: row.higgsfield_api_key ?? '',
+      higgsfieldEnabled: Boolean(row.higgsfield_enabled),
       updatedAt: Number(row.updated_at),
     };
   });

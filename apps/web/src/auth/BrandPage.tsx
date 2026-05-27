@@ -34,10 +34,14 @@ interface BrandData {
   hivemind_api_key_set: boolean;
   hivemind_api_key_preview: string;
   hivemind_enabled: boolean;
+  higgsfield_url?: string;
+  higgsfield_api_key_set?: boolean;
+  higgsfield_api_key_preview?: string;
+  higgsfield_enabled?: boolean;
   updated_at: number;
 }
 
-type Tab = 'dna' | 'tone' | 'hivemind';
+type Tab = 'dna' | 'tone' | 'hivemind' | 'higgsfield';
 
 export default function BrandPage(): JSX.Element {
   const [tab, setTab] = useState<Tab>('dna');
@@ -55,6 +59,10 @@ export default function BrandPage(): JSX.Element {
   const [hvKeyVisible, setHvKeyVisible] = useState(false);
   const [hvTesting, setHvTesting] = useState(false);
   const [hvTestResult, setHvTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [hfUrl, setHfUrl] = useState('https://higgsfield.ai/mcp');
+  const [hfKey, setHfKey] = useState('');
+  const [hfEnabled, setHfEnabled] = useState(false);
+  const [hfKeyVisible, setHfKeyVisible] = useState(false);
 
   useEffect(() => {
     void loadBrand();
@@ -73,6 +81,9 @@ export default function BrandPage(): JSX.Element {
       setHvUrl(data.hivemind_url);
       setHvEnabled(data.hivemind_enabled);
       setHvKey('');
+      if (data.higgsfield_url) setHfUrl(data.higgsfield_url);
+      setHfEnabled(Boolean(data.higgsfield_enabled));
+      setHfKey('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -93,6 +104,9 @@ export default function BrandPage(): JSX.Element {
       };
       // Only send API key if user typed a new one (don't clobber with empty)
       if (hvKey.trim().length > 0) body.hivemind_api_key = hvKey.trim();
+      body.higgsfield_url = hfUrl;
+      body.higgsfield_enabled = hfEnabled;
+      if (hfKey.trim().length > 0) body.higgsfield_api_key = hfKey.trim();
       const r = await fetch('/api/v1/org/brand', {
         method: 'PUT',
         credentials: 'include',
@@ -103,6 +117,7 @@ export default function BrandPage(): JSX.Element {
       const data = (await r.json()) as BrandData;
       setBrand(data);
       setHvKey(''); // clear after save
+      setHfKey('');
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
@@ -239,7 +254,7 @@ export default function BrandPage(): JSX.Element {
         borderBottom: `1px solid ${P.divider}`,
         flexShrink: 0,
       }}>
-        {(['dna', 'tone', 'hivemind'] as const).map((id) => {
+        {(['dna', 'tone', 'hivemind', 'higgsfield'] as const).map((id) => {
           const active = tab === id;
           const label = id === 'dna' ? 'Brand DNA · Visual' : id === 'tone' ? 'Brand Tone · Voice' : 'Hivemind · Memory';
           return (
@@ -324,7 +339,87 @@ export default function BrandPage(): JSX.Element {
             testResult={hvTestResult}
           />
         )}
+        {tab === 'higgsfield' && (
+          <HiggsfieldSection
+            url={hfUrl}
+            onUrlChange={setHfUrl}
+            keyInput={hfKey}
+            onKeyChange={setHfKey}
+            keySet={brand?.higgsfield_api_key_set ?? false}
+            keyPreview={brand?.higgsfield_api_key_preview ?? ''}
+            enabled={hfEnabled}
+            onEnabledChange={setHfEnabled}
+            visible={hfKeyVisible}
+            onVisibleChange={setHfKeyVisible}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+function HiggsfieldSection({
+  url, onUrlChange, keyInput, onKeyChange, keySet, keyPreview,
+  enabled, onEnabledChange, visible, onVisibleChange,
+}: {
+  url: string;
+  onUrlChange: (v: string) => void;
+  keyInput: string;
+  onKeyChange: (v: string) => void;
+  keySet: boolean;
+  keyPreview: string;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  visible: boolean;
+  onVisibleChange: (v: boolean) => void;
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 720 }}>
+      <div>
+        <h2 style={{ fontFamily: '"Inter", sans-serif', fontSize: 16, fontWeight: 700, color: P.ink, margin: 0 }}>Higgsfield MCP</h2>
+        <p style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.muted, marginTop: 6, lineHeight: 1.5 }}>
+          When enabled, the BLAIQ video pipeline routes per-shot image-to-video through Higgsfield (https://higgsfield.ai/mcp) instead of OpenRouter. Native i2v + character presets give tighter identity lock for cinematic shots. Separate API key + billing.
+        </p>
+      </div>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 600, color: P.ink }}>MCP endpoint</span>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          placeholder="https://higgsfield.ai/mcp"
+          style={{ padding: '8px 10px', background: P.white, border: `1px solid ${P.divider}`, fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink, outline: 'none' }}
+        />
+      </label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 600, color: P.ink }}>
+          API key {keySet && <span style={{ color: P.muted, fontWeight: 400 }}>· current: {keyPreview}</span>}
+        </span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            type={visible ? 'text' : 'password'}
+            value={keyInput}
+            onChange={(e) => onKeyChange(e.target.value)}
+            placeholder={keySet ? 'enter to replace' : 'paste your Higgsfield API key'}
+            style={{ flex: 1, padding: '8px 10px', background: P.white, border: `1px solid ${P.divider}`, fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace', fontSize: 12, color: P.ink, outline: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={() => onVisibleChange(!visible)}
+            style={{ padding: '8px 12px', background: 'transparent', border: `1px solid ${P.divider}`, fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink, cursor: 'pointer' }}
+          >{visible ? 'Hide' : 'Show'}</button>
+        </div>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink }}>
+          Enable Higgsfield for i2v (overrides OpenRouter video model)
+        </span>
+      </label>
     </div>
   );
 }

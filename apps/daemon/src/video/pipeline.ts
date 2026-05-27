@@ -16,6 +16,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { jsonrepair } from 'jsonrepair';
 import { waitForReply, type HitlGate, type HitlReply } from './hitl-store.js';
+import { renderVideoOnce as higgsfieldRender } from './higgsfield-client.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
@@ -536,6 +537,7 @@ export async function renderVideo(
     voice?: string;
     projectId: string;
     hitlEnabled?: boolean;
+    higgsfield?: { url: string; apiKey: string };
   },
   onProgress: ProgressCallback,
 ): Promise<{ finalPath: string; storyboard: Storyboard }> {
@@ -955,7 +957,23 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
       let motion = motionParts.join(' ');
       if (motion.length > 3900) motion = motion.slice(0, 3900);
       try {
-        const vidBuf = await orVideo(imgDataUri, motion, VIDEO_MODEL, shot.duration_s);
+        let vidBuf: Buffer;
+        if (ctx.higgsfield?.apiKey) {
+          // Route i2v through Higgsfield MCP. Native i2v + character presets
+          // give tighter identity lock than OpenRouter's grok-imagine.
+          vidBuf = await higgsfieldRender(
+            ctx.higgsfield.url,
+            ctx.higgsfield.apiKey,
+            {
+              prompt: motion,
+              image_url: imgDataUri,
+              duration_s: shot.duration_s,
+              aspect: brief.aspect,
+            },
+          );
+        } else {
+          vidBuf = await orVideo(imgDataUri, motion, VIDEO_MODEL, shot.duration_s);
+        }
         const vp = path.join(projectDir, `shot${shot.shot}.mp4`);
         await fs.writeFile(vp, vidBuf);
         shot.videoPath = vp;

@@ -23,6 +23,12 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.hivemindApiKey.slice(0, 4)}…${brand.hivemindApiKey.slice(-4)}`
           : '',
         hivemind_enabled: brand.hivemindEnabled,
+        higgsfield_url: brand.higgsfieldUrl,
+        higgsfield_api_key_set: brand.higgsfieldApiKey.length > 0,
+        higgsfield_api_key_preview: brand.higgsfieldApiKey
+          ? `${brand.higgsfieldApiKey.slice(0, 4)}…${brand.higgsfieldApiKey.slice(-4)}`
+          : '',
+        higgsfield_enabled: brand.higgsfieldEnabled,
         updated_at: brand.updatedAt,
       });
     } catch (err) {
@@ -44,6 +50,9 @@ export function registerBrandRoutes(router: Router): void {
       hivemind_url?: string;
       hivemind_api_key?: string;
       hivemind_enabled?: boolean;
+      higgsfield_url?: string;
+      higgsfield_api_key?: string;
+      higgsfield_enabled?: boolean;
     };
     const patch: Parameters<typeof updateTenantBrand>[2] = {};
     if (typeof body.brand_dna_md === 'string') patch.brandDnaMd = body.brand_dna_md;
@@ -51,6 +60,9 @@ export function registerBrandRoutes(router: Router): void {
     if (typeof body.hivemind_url === 'string') patch.hivemindUrl = body.hivemind_url;
     if (typeof body.hivemind_api_key === 'string') patch.hivemindApiKey = body.hivemind_api_key;
     if (typeof body.hivemind_enabled === 'boolean') patch.hivemindEnabled = body.hivemind_enabled;
+    if (typeof body.higgsfield_url === 'string') patch.higgsfieldUrl = body.higgsfield_url;
+    if (typeof body.higgsfield_api_key === 'string') patch.higgsfieldApiKey = body.higgsfield_api_key;
+    if (typeof body.higgsfield_enabled === 'boolean') patch.higgsfieldEnabled = body.higgsfield_enabled;
     try {
       const brand = await updateTenantBrand(authed.tenantId, authed.user.userId, patch);
       res.status(200).json({
@@ -62,6 +74,12 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.hivemindApiKey.slice(0, 4)}…${brand.hivemindApiKey.slice(-4)}`
           : '',
         hivemind_enabled: brand.hivemindEnabled,
+        higgsfield_url: brand.higgsfieldUrl,
+        higgsfield_api_key_set: brand.higgsfieldApiKey.length > 0,
+        higgsfield_api_key_preview: brand.higgsfieldApiKey
+          ? `${brand.higgsfieldApiKey.slice(0, 4)}…${brand.higgsfieldApiKey.slice(-4)}`
+          : '',
+        higgsfield_enabled: brand.higgsfieldEnabled,
         updated_at: brand.updatedAt,
       });
     } catch (err) {

@@ -87,7 +87,15 @@ export function registerVideoRoutes(router: Router): void {
 
       // Stages 3-7
       const voiceMatch = brand.brandToneMd.match(/voice[: ]+([a-z0-9-]+)/i)?.[1];
-      const ctxOpts: { brandTone: string; brandDna: string; hivemindContext: string; voice?: string; projectId: string; hitlEnabled?: boolean } = {
+      const ctxOpts: {
+        brandTone: string;
+        brandDna: string;
+        hivemindContext: string;
+        voice?: string;
+        projectId: string;
+        hitlEnabled?: boolean;
+        higgsfield?: { url: string; apiKey: string };
+      } = {
         brandTone: brand.brandToneMd || '',
         brandDna: brand.brandDnaMd || '',
         hivemindContext,
@@ -95,6 +103,12 @@ export function registerVideoRoutes(router: Router): void {
         hitlEnabled: true,
       };
       if (voiceMatch) ctxOpts.voice = voiceMatch;
+      if (brand.higgsfieldEnabled && brand.higgsfieldApiKey) {
+        ctxOpts.higgsfield = {
+          url: brand.higgsfieldUrl || 'https://higgsfield.ai/mcp',
+          apiKey: brand.higgsfieldApiKey,
+        };
+      }
       const result = await renderVideo(brief, projectDir, ctxOpts, onProgress);
 
       send('done', {
