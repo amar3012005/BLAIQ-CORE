@@ -18,6 +18,7 @@ export function generateStaticParams() {
     { slug: ['swarm'] },
     { slug: ['agents'] },
     { slug: ['artifacts'] },
+    { slug: ['admin'] },
     { slug: ['settings'] },
   ];
 }

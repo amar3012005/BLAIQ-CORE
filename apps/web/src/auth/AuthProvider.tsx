@@ -87,13 +87,17 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       setAuthState('authenticated');
     } catch (err) {
       const status = err instanceof HttpError ? err.response.status : undefined;
+      // In dev the daemon runs without OD_SESSION_SECRET → /api/v1/auth/*
+      // returns 404. Treat as backend-unreachable so the dev fallback
+      // below kicks in instead of redirecting to a non-existent /login.
+      const devNoAuth = status === 404 && process.env.NODE_ENV !== 'production';
       if (status === 401) {
         setAuthState('anonymous');
       } else if (status === 403) {
         setAuthState('forbidden');
       } else if (status === 502 || status === 503) {
         setAuthState('backend_unreachable');
-      } else if (status === undefined) {
+      } else if (status === undefined || devNoAuth) {
         if (process.env.NODE_ENV !== 'production') {
           // eslint-disable-next-line no-console
           console.warn('[AuthProvider] backend unreachable in dev — using fallback');

@@ -74,14 +74,19 @@ export async function hivemindRecall(
   apiKey: string,
   query: string,
   limit = 8,
+  projectId?: string,
+  memoryType?: string,
 ): Promise<HivemindRecallResult> {
   if (!url || !apiKey || !query || query.trim().length === 0) {
     return { ok: false, text: '', error: 'missing url/key/query' };
   }
   try {
+    const args: Record<string, unknown> = { query, limit };
+    if (projectId) args.project_id = projectId;
+    if (memoryType) args.memory_type = memoryType;
     const resp = await postMcp<ToolsCallResult>(url, apiKey, 'tools/call', {
       name: 'hivemind_recall',
-      arguments: { query, limit },
+      arguments: args,
     });
     if (resp.error) {
       return { ok: false, text: '', error: resp.error.message };
@@ -107,16 +112,96 @@ export async function hivemindSave(
   apiKey: string,
   fact: string,
   tags: string[] = [],
+  projectId?: string,
+  memoryType?: string,
+  title?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!url || !apiKey || !fact) return { ok: false, error: 'missing args' };
   try {
+    const args: Record<string, unknown> = { content: fact, tags };
+    if (projectId) args.project_id = projectId;
+    if (memoryType) args.memory_type = memoryType;
+    if (title) args.title = title;
     const resp = await postMcp(url, apiKey, 'tools/call', {
       name: 'hivemind_save_memory',
-      arguments: { content: fact, tags },
+      arguments: args,
     });
     if (resp.error) return { ok: false, error: resp.error.message };
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
+  }
+}
+
+export interface HivemindListResult {
+  ok: boolean;
+  text: string;
+  error?: string;
+}
+
+/** List memories scoped to a project, optionally filtered. */
+export async function hivemindListByProject(
+  url: string,
+  apiKey: string,
+  projectId: string,
+  filters?: { memoryType?: string; tags?: string[]; limit?: number },
+): Promise<HivemindListResult> {
+  if (!url || !apiKey || !projectId) {
+    return { ok: false, text: '', error: 'missing url/key/projectId' };
+  }
+  try {
+    const args: Record<string, unknown> = { project_id: projectId };
+    if (filters?.memoryType) args.memory_type = filters.memoryType;
+    if (filters?.tags && filters.tags.length > 0) args.tags = filters.tags;
+    if (typeof filters?.limit === 'number') args.limit = filters.limit;
+    const resp = await postMcp<ToolsCallResult>(url, apiKey, 'tools/call', {
+      name: 'hivemind_list_memories',
+      arguments: args,
+    });
+    if (resp.error) return { ok: false, text: '', error: resp.error.message };
+    const content = resp.result?.content ?? [];
+    const text = content
+      .filter((c) => c.type === 'text' && typeof c.text === 'string')
+      .map((c) => c.text as string)
+      .join('\n\n')
+      .trim();
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, text: '', error: (err as Error).message };
+  }
+}
+
+export interface HivemindTraverseResult {
+  ok: boolean;
+  text: string;
+  error?: string;
+}
+
+/** Traverse the memory graph from a seed memory id. */
+export async function hivemindTraverse(
+  url: string,
+  apiKey: string,
+  memoryId: string,
+  depth = 2,
+  relationship: string = 'all',
+): Promise<HivemindTraverseResult> {
+  if (!url || !apiKey || !memoryId) {
+    return { ok: false, text: '', error: 'missing url/key/memoryId' };
+  }
+  try {
+    const resp = await postMcp<ToolsCallResult>(url, apiKey, 'tools/call', {
+      name: 'hivemind_traverse_graph',
+      arguments: { memory_id: memoryId, depth, relationship },
+    });
+    if (resp.error) return { ok: false, text: '', error: resp.error.message };
+    const content = resp.result?.content ?? [];
+    const text = content
+      .filter((c) => c.type === 'text' && typeof c.text === 'string')
+      .map((c) => c.text as string)
+      .join('\n\n')
+      .trim();
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, text: '', error: (err as Error).message };
   }
 }

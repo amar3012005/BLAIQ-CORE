@@ -12,6 +12,9 @@ export interface TenantBrand {
   higgsfieldUrl: string;
   higgsfieldApiKey: string;
   higgsfieldEnabled: boolean;
+  pooolUrl: string;
+  pooolApiKey: string;
+  pooolEnabled: boolean;
   updatedAt: number;
 }
 
@@ -71,7 +74,8 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
     const result = await client.query(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
-              higgsfield_enabled, updated_at
+              higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
+              updated_at
        FROM tenant_brand
        WHERE tenant_id = $1`,
       [tenantId],
@@ -94,6 +98,9 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
         higgsfieldUrl: 'https://higgsfield.ai/mcp',
         higgsfieldApiKey: '',
         higgsfieldEnabled: false,
+        pooolUrl: 'http://poool-mcp:8888',
+        pooolApiKey: '',
+        pooolEnabled: false,
         updatedAt: now,
       };
     }
@@ -107,6 +114,9 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       higgsfieldUrl: row.higgsfield_url ?? 'https://higgsfield.ai/mcp',
       higgsfieldApiKey: row.higgsfield_api_key ?? '',
       higgsfieldEnabled: Boolean(row.higgsfield_enabled),
+      pooolUrl: row.poool_url ?? 'http://poool-mcp:8888',
+      pooolApiKey: row.poool_api_key ?? '',
+      pooolEnabled: Boolean(row.poool_enabled),
       updatedAt: Number(row.updated_at),
     };
   });
@@ -154,6 +164,18 @@ export async function updateTenantBrand(
       params.push(patch.higgsfieldEnabled);
       sets.push(`higgsfield_enabled = $${params.length}`);
     }
+    if (patch.pooolUrl !== undefined) {
+      params.push(patch.pooolUrl);
+      sets.push(`poool_url = $${params.length}`);
+    }
+    if (patch.pooolApiKey !== undefined) {
+      params.push(patch.pooolApiKey);
+      sets.push(`poool_api_key = $${params.length}`);
+    }
+    if (patch.pooolEnabled !== undefined) {
+      params.push(patch.pooolEnabled);
+      sets.push(`poool_enabled = $${params.length}`);
+    }
     await client.query(
       `UPDATE tenant_brand SET ${sets.join(', ')} WHERE tenant_id = $1`,
       params,
@@ -161,7 +183,8 @@ export async function updateTenantBrand(
     const out = await client.query(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
-              higgsfield_enabled, updated_at
+              higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
+              updated_at
        FROM tenant_brand WHERE tenant_id = $1`,
       [tenantId],
     );
@@ -175,6 +198,9 @@ export async function updateTenantBrand(
       higgsfieldUrl: row.higgsfield_url ?? 'https://higgsfield.ai/mcp',
       higgsfieldApiKey: row.higgsfield_api_key ?? '',
       higgsfieldEnabled: Boolean(row.higgsfield_enabled),
+      pooolUrl: row.poool_url ?? 'http://poool-mcp:8888',
+      pooolApiKey: row.poool_api_key ?? '',
+      pooolEnabled: Boolean(row.poool_enabled),
       updatedAt: Number(row.updated_at),
     };
   });

@@ -2186,15 +2186,27 @@ export async function startServer({
     const { requireSession } = await import('./auth/cookie-middleware.js');
     const { registerAuthRoutes } = await import('./auth/routes.js');
     const { registerBrandRoutes } = await import('./brand/brand-routes.js');
+    const { registerErpRoutes } = await import('./erp/erp-routes.js');
     const { registerOpenRouterRoutes } = await import('./brand/openrouter-routes.js');
     const { registerVideoRoutes } = await import('./video/video-routes.js');
     const { registerImageRoutes } = await import('./image/image-routes.js');
     registerAuthRoutes(app);
     app.use(requireSession());
     registerBrandRoutes(app);
+    registerErpRoutes(app);
     registerOpenRouterRoutes(app);
     registerVideoRoutes(app);
     registerImageRoutes(app);
+  }
+
+  // Admin proxy works in both auth-on and local-dev modes. Inside the
+  // session-secret block it sees the authed tenantId; outside it falls
+  // back to a dev tenant header so the iframe loads locally.
+  {
+    const { registerAdminRoutes } = await import('./admin/admin-routes.js');
+    registerAdminRoutes(app);
+    const { registerClickupRoutes } = await import('./integrations/clickup-routes.js');
+    registerClickupRoutes(app);
   }
 
   // Multi-directory scanning shared by every skill / template surface. The

@@ -1,0 +1,72 @@
+version: "3.9"
+
+# BLAIQ Coolify deployment composition.
+# All services share the `blaiq` network so the daemon can reach Postgres
+# and the Ops Brain sidecar by service name.
+
+networks:
+  blaiq:
+    driver: bridge
+
+volumes:
+  open-design-postgres-data:
+
+services:
+  open-design-postgres:
+    image: postgres:16-alpine
+    container_name: open-design-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: open_design
+      POSTGRES_DB: open_design
+      POSTGRES_PASSWORD: ${OD_PG_PASSWORD}
+    volumes:
+      - open-design-postgres-data:/var/lib/postgresql/data
+    networks:
+      - blaiq
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_design -d open_design"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  blaiq-daemon:
+    build:
+      context: .
+      dockerfile: apps/daemon/Dockerfile
+    container_name: blaiq-daemon
+    restart: unless-stopped
+    depends_on:
+      open-design-postgres:
+        condition: service_healthy
+    environment:
+      OD_PG_HOST: open-design-postgres
+      OD_PG_PORT: "5432"
+      OD_PG_USER: open_design
+      OD_PG_DATABASE: open_design
+      OD_PG_PASSWORD: ${OD_PG_PASSWORD}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      BLAIQ_OPS_BRAIN_URL: http://blaiq-ops-brain:8010
+      BLAIQ_OPS_BRAIN_DASHBOARD_URL: http://blaiq-ops-brain:8010
+      OPS_BRAIN_TRUST_TOKEN: ${OPS_BRAIN_TRUST_TOKEN}
+    networks:
+      - blaiq
+
+  blaiq-ops-brain:
+    build:
+      context: ./apps/ops-brain
+      dockerfile: Dockerfile
+    container_name: blaiq-ops-brain
+    restart: unless-stopped
+    depends_on:
+      open-design-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://open_design:${OD_PG_PASSWORD}@open-design-postgres:5432/open_design
+      AITEAM_DB_URL: postgres://open_design:${OD_PG_PASSWORD}@open-design-postgres:5432/open_design
+      OPS_BRAIN_TRUST_TOKEN: ${OPS_BRAIN_TRUST_TOKEN}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    networks:
+      - blaiq
+    expose:
+      - "8010"

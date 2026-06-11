@@ -1,0 +1,33 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
+
+// https://vite.dev/config/
+export default defineConfig({
+  // Served under /admin-iframe/ by the BLAIQ daemon proxy.
+  base: '/admin-iframe/',
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    port: 5174,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8010',
+        changeOrigin: true,
+      },
+      '/mcp': {
+        target: 'http://localhost:8010',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8010',
+        ws: true,
+      },
+    },
+  },
+})

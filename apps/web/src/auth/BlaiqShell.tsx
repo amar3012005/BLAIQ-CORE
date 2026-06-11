@@ -18,6 +18,7 @@ import { useAuth } from './AuthProvider';
 import MissionBuilder from './MissionBuilder';
 import BrandPage from './BrandPage';
 import SkillsPage from './SkillsPage';
+import AdminPage from './AdminPage';
 import TextArtifactPanel from './TextArtifactPanel';
 import VideoPipelinePanel from './VideoPipelinePanel';
 import ImagePipelinePanel from './ImagePipelinePanel';
@@ -51,6 +52,7 @@ const NAV_ITEMS: Array<{ id: string; label: string; to: string }> = [
   { id: 'brand', label: 'Brand', to: '/brand' },
   { id: 'skills', label: 'Skills', to: '/skills' },
   { id: 'memory', label: 'Memory', to: '/memory' },
+  { id: 'admin', label: 'Admin', to: '/admin' },
   { id: 'settings', label: 'Settings', to: '/settings' },
 ];
 
@@ -375,6 +377,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
   const isHome = pathname === '/' || pathname === '';
   const isBrand = pathname === '/brand' || pathname.startsWith('/brand/');
   const isSkills = pathname === '/skills' || pathname.startsWith('/skills/');
+  const isAdmin = pathname === '/admin' || pathname.startsWith('/admin/');
 
   // Detect text-kind project route → render TextArtifactPanel overlay.
   // Pathnames: /projects/<id> or /projects/<id>/conversations/<cid>
@@ -404,6 +407,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
   const showArtifactPanel =
     !isHome &&
     !isBrand &&
+    !isAdmin &&
     projectId &&
     conversationId &&
     textProjectMeta?.kind === 'text';
@@ -411,11 +415,13 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
   const showVideoPanel =
     !isHome &&
     !isBrand &&
+    !isAdmin &&
     projectId &&
     textProjectMeta?.kind === 'video';
   const showImagePanel =
     !isHome &&
     !isBrand &&
+    !isAdmin &&
     projectId &&
     textProjectMeta?.kind === 'image';
   const [skills, setSkills] = useState<SkillSummary[]>([]);
@@ -501,7 +507,7 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
               .split > .split-resize-handle { display: none !important; }
             `}</style>
           )}
-          {isBrand ? <BrandPage /> : isSkills ? <SkillsPage /> : children}
+          {isBrand ? <BrandPage /> : isSkills ? <SkillsPage /> : isAdmin ? <AdminPage /> : children}
           {showArtifactPanel && projectId && conversationId && (
             <div
               className="blaiq-text-preview-anchor"

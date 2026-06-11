@@ -1,0 +1,572 @@
+"""AI Team OS — Watchdog checker + background patrol service.
+
+Rule-driven quality gate that checks agent health, task health, and system health.
+WatchdogChecker: Triggered on-demand by API endpoints, returns a list of alerts.
+WatchdogRunner: Background asyncio.Task that periodically runs checks on all active teams.
+
+Multi-DB support: WatchdogRunner scans all per-project databases in addition to the
+default database each patrol cycle, with per-project error isolation.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+from aiteam.config.settings import WATCHDOG_CHECK_INTERVAL
+class FailureAlchemist:  # removed in BLAIQ unification (Track G); no-op stub
+    def __init__(self, *_args: object, **_kwargs: object) -> None: ...
+    async def process_failure(self, *_args: object, **_kwargs: object) -> dict:
+        return {"status": "disabled", "reason": "failure_alchemy_removed"}
+from aiteam.storage.repository import StorageRepository
+from aiteam.types import AgentStatus, TaskStatus, TeamStatus
+
+if TYPE_CHECKING:
+    from aiteam.api.event_bus import EventBus
+
+logger = logging.getLogger(__name__)
+
+# Threshold constants
+AGENT_BUSY_TIMEOUT_MINUTES = 30
+TASK_PENDING_TIMEOUT_MINUTES = 30
+
+# Heartbeat constants
+HEARTBEAT_TIMEOUT_MINUTES = 5
+_HEARTBEAT_ROOT = os.path.join(
+    os.path.expanduser("~"), ".claude", "data", "ai-team-os", "heartbeats"
+)
+
+
+def _heartbeat_dir(tenant_id: str | None) -> str:
+    """Heartbeat directory for a tenant; falls back to a shared dir if unset.
+
+    Track D segregates heartbeats by tenant so two BLAIQ tenants running
+    agents with the same id do not clobber each other's liveness signal.
+    Callers that have no tenant context (legacy CLI smoke tests) write
+    into the root dir.
+    """
+    if not tenant_id:
+        return _HEARTBEAT_ROOT
+    safe_tenant = tenant_id.replace("/", "_").replace("\\", "_")
+    return os.path.join(_HEARTBEAT_ROOT, safe_tenant)
+
+
+# ============================================================
+# Heartbeat helpers (file-based, no DB dependency)
+# ============================================================
+
+
+def agent_heartbeat(
+    agent_id: str,
+    agent_name: str = "",
+    team_id: str = "",
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """Record a heartbeat for an agent — call periodically to signal liveness.
+
+    Stores a JSON file under ``~/.claude/data/ai-team-os/heartbeats/<tenant>/``
+    so the same agent id in two BLAIQ tenants does not collide. If
+    ``tenant_id`` is omitted the function falls back to the current
+    ContextVar binding and finally to the shared root dir.
+
+    Args:
+        agent_id: Unique agent identifier
+        agent_name: Human-readable agent name (optional, for display)
+        team_id: Team the agent belongs to (optional)
+        tenant_id: Tenant scope; defaults to ``current_tenant_id`` ContextVar.
+
+    Returns:
+        Heartbeat record with agent_id and timestamp
+    """
+    if tenant_id is None:
+        from aiteam.storage.connection import current_tenant_id
+
+        tenant_id = current_tenant_id.get()
+    target_dir = _heartbeat_dir(tenant_id)
+    os.makedirs(target_dir, exist_ok=True)
+    safe_id = agent_id.replace("/", "_").replace("\\", "_")
+    path = os.path.join(target_dir, f"{safe_id}.json")
+    now = datetime.now(UTC).isoformat()
+    record = {
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "team_id": team_id,
+        "tenant_id": tenant_id,
+        "last_heartbeat": now,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(record, f)
+    logger.debug("Heartbeat recorded: agent=%s at %s", agent_id, now)
+    return {"success": True, "data": record}
+
+
+def watchdog_check_heartbeats(tenant_id: str | None = None) -> dict[str, Any]:
+    """Check all registered agent heartbeats and report stale ones.
+
+    Scoped to ``tenant_id`` (defaults to the ContextVar). An agent is
+    considered dead if its last heartbeat is older than
+    HEARTBEAT_TIMEOUT_MINUTES (default 5 minutes).
+
+    Returns:
+        Dict with alive/dead agent lists and summary counts
+    """
+    if tenant_id is None:
+        from aiteam.storage.connection import current_tenant_id
+
+        tenant_id = current_tenant_id.get()
+    target_dir = _heartbeat_dir(tenant_id)
+    if not os.path.isdir(target_dir):
+        return {
+            "success": True,
+            "data": {
+                "alive": [],
+                "dead": [],
+                "total": 0,
+                "alive_count": 0,
+                "dead_count": 0,
+                "checked_at": datetime.now(UTC).isoformat(),
+            },
+        }
+
+    now = datetime.now(UTC)
+    alive: list[dict[str, Any]] = []
+    dead: list[dict[str, Any]] = []
+
+    for fname in os.listdir(target_dir):
+        if not fname.endswith(".json"):
+            continue
+        path = os.path.join(target_dir, fname)
+        try:
+            with open(path, encoding="utf-8") as f:
+                record = json.load(f)
+        except Exception:
+            continue
+
+        last_hb_str = record.get("last_heartbeat", "")
+        try:
+            last_hb = datetime.fromisoformat(last_hb_str)
+            # Ensure tz-aware comparison
+            if last_hb.tzinfo is None:
+                last_hb = last_hb.replace(tzinfo=UTC)
+            elapsed_minutes = (now - last_hb).total_seconds() / 60
+        except Exception:
+            elapsed_minutes = float("inf")
+
+        entry = {**record, "elapsed_minutes": round(elapsed_minutes, 1)}
+        if elapsed_minutes > HEARTBEAT_TIMEOUT_MINUTES:
+            entry["status"] = "dead"
+            dead.append(entry)
+        else:
+            entry["status"] = "alive"
+            alive.append(entry)
+
+    return {
+        "success": True,
+        "data": {
+            "alive": alive,
+            "dead": dead,
+            "total": len(alive) + len(dead),
+            "alive_count": len(alive),
+            "dead_count": len(dead),
+            "timeout_minutes": HEARTBEAT_TIMEOUT_MINUTES,
+            "checked_at": now.isoformat(),
+        },
+    }
+
+
+class WatchdogChecker:
+    """Watchdog checker — rule-driven quality gate."""
+
+    def __init__(self, repo: StorageRepository) -> None:
+        self._repo = repo
+
+    async def run_all_checks(self, team_id: str) -> list[dict[str, Any]]:
+        """Run all checks and return a list of alerts."""
+        alerts: list[dict[str, Any]] = []
+
+        alerts.extend(await self.check_agent_health(team_id))
+        alerts.extend(await self.check_task_health(team_id))
+        alerts.extend(await self.check_system_health())
+
+        return alerts
+
+    async def auto_recover_stuck_agents(self, team_id: str) -> list[dict]:
+        """Detect and automatically recover stuck agents and their tasks."""
+        recovered: list[dict] = []
+        now = datetime.now()
+        agents = await self._repo.list_agents(team_id)
+        all_tasks = await self._repo.list_tasks(team_id, status=TaskStatus.RUNNING)
+
+        # Build agent_id -> running tasks index
+        running_tasks_by_agent: dict[str, list] = {}
+        for task in all_tasks:
+            if task.assigned_to:
+                running_tasks_by_agent.setdefault(task.assigned_to, []).append(task)
+
+        for agent in agents:
+            if agent.status != AgentStatus.BUSY:
+                continue
+
+            ref_time = agent.last_active_at or agent.created_at
+            elapsed_minutes = (now - ref_time).total_seconds() / 60
+
+            if elapsed_minutes <= AGENT_BUSY_TIMEOUT_MINUTES:
+                continue
+
+            # Reset agent: WAITING + clear current_task
+            await self._repo.update_agent(
+                agent.id,
+                status=AgentStatus.WAITING.value,
+                current_task=None,
+            )
+
+            # Reset all running tasks for this agent to pending
+            reset_tasks = []
+            for task in running_tasks_by_agent.get(agent.id, []):
+                await self._repo.update_task(
+                    task.id,
+                    status=TaskStatus.PENDING.value,
+                    assigned_to=None,
+                )
+                reset_tasks.append(task.id)
+
+                # Record recovery event to memory (agent scope)
+                memo_content = (
+                    f"因agent '{agent.name}' 卡死（无活动 {elapsed_minutes:.0f} 分钟）"
+                    f"被自动重置，任务从RUNNING退回PENDING。"
+                )
+                await self._repo.create_memory(
+                    scope="agent",
+                    scope_id=agent.id,
+                    content=memo_content,
+                    metadata={
+                        "type": "auto_recover",
+                        "task_id": task.id,
+                        "elapsed_minutes": round(elapsed_minutes, 1),
+                    },
+                )
+
+            record = {
+                "agent_id": agent.id,
+                "agent_name": agent.name,
+                "elapsed_minutes": round(elapsed_minutes, 1),
+                "reset_tasks": reset_tasks,
+            }
+            recovered.append(record)
+            logger.warning(
+                "Watchdog自动恢复: Agent '%s' 卡死 %.0f 分钟，重置 %d 个任务",
+                agent.name,
+                elapsed_minutes,
+                len(reset_tasks),
+            )
+
+        return recovered
+
+    async def recover_failed_tasks(
+        self,
+        team_id: str,
+        event_bus: EventBus | None = None,
+    ) -> list[dict[str, Any]]:
+        """Selector-pattern failed task recovery.
+
+        retry_count < 2 -> reset to pending for retry
+        retry_count >= 2 -> keep as failed, emit alert event
+        retry_count is stored in task.config["retry_count"].
+        """
+        results: list[dict[str, Any]] = []
+        failed_tasks = await self._repo.list_tasks(team_id, status=TaskStatus.FAILED)
+
+        for task in failed_tasks:
+            retry_count: int = int(task.config.get("retry_count", 0))
+            title = task.title or task.description[:60]
+
+            if retry_count < 2:
+                # Retry: reset to pending, increment retry_count
+                new_config = {**task.config, "retry_count": retry_count + 1}
+                await self._repo.update_task(
+                    task.id,
+                    status=TaskStatus.PENDING.value,
+                    assigned_to=None,
+                    config=new_config,
+                )
+                record: dict[str, Any] = {
+                    "task_id": task.id,
+                    "title": title,
+                    "action": "retried",
+                    "retry_count": retry_count + 1,
+                }
+                results.append(record)
+                logger.info(
+                    "失败任务重试: '%s' (retry=%d)",
+                    title,
+                    retry_count + 1,
+                )
+            else:
+                # Exceeded retry limit: trigger failure alchemy, extract learning artifacts
+                alchemist = FailureAlchemist(self._repo)
+                alchemy_result = await alchemist.process_failure(task.id, team_id)
+
+                record = {
+                    "task_id": task.id,
+                    "title": title,
+                    "action": "max_retries_exceeded",
+                    "retry_count": retry_count,
+                    "alchemy": alchemy_result,
+                }
+                results.append(record)
+                if event_bus is not None:
+                    await event_bus.emit(
+                        "watchdog.task_failed_permanently",
+                        f"task:{task.id}",
+                        {
+                            "task_id": task.id,
+                            "title": title,
+                            "team_id": team_id,
+                            "retry_count": retry_count,
+                            "trigger": "recover_failed_tasks",
+                        },
+                    )
+                logger.warning(
+                    "失败任务超过重试上限: '%s' (retry=%d)，需Leader介入",
+                    title,
+                    retry_count,
+                )
+
+        return results
+
+    async def check_agent_health(self, team_id: str) -> list[dict[str, Any]]:
+        """Check agent health: BUSY timeout (>30min), frequent crashes."""
+        alerts: list[dict[str, Any]] = []
+        now = datetime.now()
+        agents = await self._repo.list_agents(team_id)
+
+        for agent in agents:
+            # Check BUSY timeout
+            if agent.status == AgentStatus.BUSY:
+                ref_time = agent.last_active_at or agent.created_at
+                elapsed_minutes = (now - ref_time).total_seconds() / 60
+
+                if elapsed_minutes > AGENT_BUSY_TIMEOUT_MINUTES:
+                    alerts.append(
+                        {
+                            "severity": "warning",
+                            "category": "agent",
+                            "title": f"Agent BUSY超时: {agent.name}",
+                            "description": (
+                                f"Agent '{agent.name}' 已处于BUSY状态 "
+                                f"{elapsed_minutes:.0f} 分钟（阈值 {AGENT_BUSY_TIMEOUT_MINUTES} 分钟）。"
+                                f"上次活动: {ref_time.isoformat()}"
+                            ),
+                            "suggested_action": (
+                                f"检查Agent '{agent.name}' 是否卡死，"
+                                "考虑通过StateReaper重置或手动设为IDLE"
+                            ),
+                            "agent_id": agent.id,
+                            "agent_name": agent.name,
+                        }
+                    )
+
+        return alerts
+
+    async def check_task_health(self, team_id: str) -> list[dict[str, Any]]:
+        """Check task health: long-pending (>30min), BLOCKED but dependencies completed."""
+        alerts: list[dict[str, Any]] = []
+        now = datetime.now()
+        all_tasks = await self._repo.list_tasks(team_id)
+
+        # Build task_id -> task index
+        task_map = {t.id: t for t in all_tasks}
+
+        for task in all_tasks:
+            # Check long-pending tasks
+            if task.status == TaskStatus.PENDING:
+                elapsed_minutes = (now - task.created_at).total_seconds() / 60
+
+                if elapsed_minutes > TASK_PENDING_TIMEOUT_MINUTES:
+                    alerts.append(
+                        {
+                            "severity": "warning",
+                            "category": "task",
+                            "title": f"任务长时间PENDING: {task.title}",
+                            "description": (
+                                f"任务 '{task.title}' 已等待 {elapsed_minutes:.0f} 分钟"
+                                f"（阈值 {TASK_PENDING_TIMEOUT_MINUTES} 分钟），"
+                                f"优先级: {task.priority}"
+                            ),
+                            "suggested_action": ("分配Agent执行此任务，或降低优先级"),
+                            "task_id": task.id,
+                        }
+                    )
+
+            # Check BLOCKED tasks whose dependencies are all completed
+            if task.status == TaskStatus.BLOCKED and task.depends_on:
+                deps_all_done = True
+                for dep_id in task.depends_on:
+                    dep_task = task_map.get(dep_id)
+                    if dep_task is None:
+                        continue
+                    if dep_task.status != TaskStatus.COMPLETED:
+                        deps_all_done = False
+                        break
+
+                if deps_all_done:
+                    alerts.append(
+                        {
+                            "severity": "warning",
+                            "category": "task",
+                            "title": f"任务可解除阻塞: {task.title}",
+                            "description": (
+                                f"任务 '{task.title}' 状态为BLOCKED，但所有依赖任务已完成"
+                            ),
+                            "suggested_action": ("将此任务状态从BLOCKED更新为PENDING"),
+                            "task_id": task.id,
+                        }
+                    )
+
+        return alerts
+
+    async def check_system_health(self) -> list[dict[str, Any]]:
+        """Check system health: database reachability."""
+        alerts: list[dict[str, Any]] = []
+
+        # Check database connection
+        try:
+            await self._repo.list_teams()
+        except Exception as e:
+            alerts.append(
+                {
+                    "severity": "critical",
+                    "category": "system",
+                    "title": "数据库连接异常",
+                    "description": f"无法查询数据库: {e}",
+                    "suggested_action": "检查数据库配置和连接状态",
+                }
+            )
+
+        return alerts
+
+
+class WatchdogRunner:
+    """Background watchdog patrol service — asyncio.Task pattern.
+
+    Periodically iterates over all active teams, runs all WatchdogChecker checks,
+    and emits alerts to EventBus. Pattern modeled after StateReaper.
+    """
+
+    def __init__(
+        self,
+        checker: WatchdogChecker,
+        event_bus: EventBus,
+        tenant_id: str | None = None,
+    ) -> None:
+        self._checker = checker
+        self._event_bus = event_bus
+        self._tenant_id = tenant_id
+        self._task: asyncio.Task | None = None
+        self._running = False
+
+    def start(self) -> None:
+        """Start the background patrol loop."""
+        if self._task is not None:
+            logger.warning("WatchdogRunner已在运行，跳过重复启动")
+            return
+        self._running = True
+        self._task = asyncio.create_task(self._run_loop(), name="watchdog-runner")
+        logger.info("WatchdogRunner已启动，间隔=%ds", WATCHDOG_CHECK_INTERVAL)
+
+    async def stop(self) -> None:
+        """Stop the background patrol loop."""
+        self._running = False
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+            logger.info("WatchdogRunner已停止")
+
+    async def _run_loop(self) -> None:
+        """Main patrol loop — executes once every WATCHDOG_CHECK_INTERVAL seconds."""
+        while self._running:
+            try:
+                await asyncio.wait_for(self._run_cycle(), timeout=30.0)
+            except TimeoutError:
+                logger.warning("Watchdog巡检周期超时（30s），跳过本轮")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Watchdog巡检周期异常")
+
+            try:
+                await asyncio.sleep(WATCHDOG_CHECK_INTERVAL)
+            except asyncio.CancelledError:
+                break
+
+    async def _run_cycle(self) -> None:
+        """Patrol cycle — runs under the owning tenant's ContextVar."""
+        from aiteam.storage.connection import (
+            reset_current_tenant,
+            set_current_tenant,
+        )
+
+        token = set_current_tenant(self._tenant_id) if self._tenant_id else None
+        try:
+            await self._run_cycle_for_repo(self._checker._repo)
+        except Exception:
+            logger.exception(
+                "Watchdog cycle failed (tenant=%s)", self._tenant_id
+            )
+        finally:
+            if token is not None:
+                reset_current_tenant(token)
+
+    async def _run_cycle_for_repo(self, repo: StorageRepository) -> None:
+        """Single patrol cycle for a specific repository — iterate all active teams."""
+        teams = await repo.list_teams()
+        active_teams = [t for t in teams if t.status == TeamStatus.ACTIVE]
+        alert_count = 0
+
+        # Use a checker scoped to the given repo
+        checker = WatchdogChecker(repo)
+
+        for team in active_teams:
+            # First execute stuck-agent auto-recovery
+            recovered = await checker.auto_recover_stuck_agents(team.id)
+            for record in recovered:
+                await self._event_bus.emit(
+                    "watchdog.agent_recovered",
+                    f"team:{team.id}",
+                    record,
+                )
+
+            # Failed task retry/alert
+            failed_results = await checker.recover_failed_tasks(
+                team.id,
+                event_bus=self._event_bus,
+            )
+            for record in failed_results:
+                if record.get("action") == "retried":
+                    await self._event_bus.emit(
+                        "watchdog.task_retried",
+                        f"team:{team.id}",
+                        record,
+                    )
+
+            alerts = await checker.run_all_checks(team.id)
+            for alert in alerts:
+                await self._event_bus.emit(
+                    "watchdog.alert",
+                    f"team:{team.id}",
+                    alert,
+                )
+                alert_count += 1
+
+        if alert_count > 0:
+            logger.warning("Watchdog巡检发现 %d 个告警", alert_count)
+        else:
+            logger.debug("Watchdog巡检完成，无告警")

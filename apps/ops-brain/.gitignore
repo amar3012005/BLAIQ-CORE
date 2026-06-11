@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Internal documents (keep local, not for public repo)
+# Only docs/screenshots/ is tracked for README images
+docs/*
+!docs/screenshots/
+
+# Node (Dashboard)
+dashboard/node_modules/
+# dashboard/dist/ — committed so marketplace users get pre-built dashboard
+dashboard/.next/
+
+# Database
+*.db
+*.sqlite3
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Linter cache
+.ruff_cache/
+
+# Temp
+*.tmp
+*.log
+tmp_*
+tempnpm-cache/
+dashboard/tempnpm-cache/
+test-screenshots/
+aiteam.db.migrated
+
+# MCP config (generated per-user, see .mcp.json.example)
+.mcp.json
+
+# Claude settings (generated per-user, see .claude/settings.json.example)
+.claude/settings.json
+.claude/settings.local.json
+scripts/sandbox_test.py
+scripts/hn_monitor.py
+scripts/.hn_monitor_state.json
+.audit_findings.md
+.audit_findings_phase2.md
+.fix_context_resolve_and_hook_translator.md
+pip/

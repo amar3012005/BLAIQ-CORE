@@ -38,10 +38,14 @@ interface BrandData {
   higgsfield_api_key_set?: boolean;
   higgsfield_api_key_preview?: string;
   higgsfield_enabled?: boolean;
+  poool_url?: string;
+  poool_api_key_set?: boolean;
+  poool_api_key_preview?: string;
+  poool_enabled?: boolean;
   updated_at: number;
 }
 
-type Tab = 'dna' | 'tone' | 'hivemind' | 'higgsfield';
+type Tab = 'dna' | 'tone' | 'hivemind' | 'higgsfield' | 'poool';
 
 export default function BrandPage(): JSX.Element {
   const [tab, setTab] = useState<Tab>('dna');
@@ -63,6 +67,12 @@ export default function BrandPage(): JSX.Element {
   const [hfKey, setHfKey] = useState('');
   const [hfEnabled, setHfEnabled] = useState(false);
   const [hfKeyVisible, setHfKeyVisible] = useState(false);
+  const [ppUrl, setPpUrl] = useState('http://poool-mcp:8888');
+  const [ppKey, setPpKey] = useState('');
+  const [ppEnabled, setPpEnabled] = useState(false);
+  const [ppKeyVisible, setPpKeyVisible] = useState(false);
+  const [ppTesting, setPpTesting] = useState(false);
+  const [ppTestResult, setPpTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     void loadBrand();
@@ -84,6 +94,9 @@ export default function BrandPage(): JSX.Element {
       if (data.higgsfield_url) setHfUrl(data.higgsfield_url);
       setHfEnabled(Boolean(data.higgsfield_enabled));
       setHfKey('');
+      if (data.poool_url) setPpUrl(data.poool_url);
+      setPpEnabled(Boolean(data.poool_enabled));
+      setPpKey('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -107,6 +120,9 @@ export default function BrandPage(): JSX.Element {
       body.higgsfield_url = hfUrl;
       body.higgsfield_enabled = hfEnabled;
       if (hfKey.trim().length > 0) body.higgsfield_api_key = hfKey.trim();
+      body.poool_url = ppUrl;
+      body.poool_enabled = ppEnabled;
+      if (ppKey.trim().length > 0) body.poool_api_key = ppKey.trim();
       const r = await fetch('/api/v1/org/brand', {
         method: 'PUT',
         credentials: 'include',
@@ -118,6 +134,7 @@ export default function BrandPage(): JSX.Element {
       setBrand(data);
       setHvKey(''); // clear after save
       setHfKey('');
+      setPpKey('');
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
@@ -155,6 +172,38 @@ export default function BrandPage(): JSX.Element {
       setHvTestResult({ ok: false, msg: (err as Error).message });
     } finally {
       setHvTesting(false);
+    }
+  }
+
+  async function testPoool(): Promise<void> {
+    setPpTesting(true);
+    setPpTestResult(null);
+    try {
+      if (ppKey.trim().length > 0 || ppUrl !== brand?.poool_url) {
+        await fetch('/api/v1/org/erp', {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poool_url: ppUrl,
+            ...(ppKey.trim().length > 0 ? { poool_api_key: ppKey.trim() } : {}),
+          }),
+        });
+      }
+      const r = await fetch('/api/v1/org/erp/test', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = (await r.json()) as { ok: boolean; server?: string; error?: string };
+      if (data.ok) {
+        setPpTestResult({ ok: true, msg: `OK · ${data.server ?? 'connected'}` });
+      } else {
+        setPpTestResult({ ok: false, msg: data.error ?? 'unknown error' });
+      }
+    } catch (err) {
+      setPpTestResult({ ok: false, msg: (err as Error).message });
+    } finally {
+      setPpTesting(false);
     }
   }
 
@@ -254,9 +303,14 @@ export default function BrandPage(): JSX.Element {
         borderBottom: `1px solid ${P.divider}`,
         flexShrink: 0,
       }}>
-        {(['dna', 'tone', 'hivemind', 'higgsfield'] as const).map((id) => {
+        {(['dna', 'tone', 'hivemind', 'higgsfield', 'poool'] as const).map((id) => {
           const active = tab === id;
-          const label = id === 'dna' ? 'Brand DNA · Visual' : id === 'tone' ? 'Brand Tone · Voice' : 'Hivemind · Memory';
+          const label =
+            id === 'dna' ? 'Brand DNA · Visual'
+            : id === 'tone' ? 'Brand Tone · Voice'
+            : id === 'hivemind' ? 'Hivemind · Memory'
+            : id === 'higgsfield' ? 'Higgsfield · Video'
+            : 'Poool · ERP';
           return (
             <button
               key={id}
@@ -339,6 +393,23 @@ export default function BrandPage(): JSX.Element {
             testResult={hvTestResult}
           />
         )}
+        {tab === 'poool' && (
+          <PooolSection
+            url={ppUrl}
+            onUrlChange={setPpUrl}
+            keyInput={ppKey}
+            onKeyChange={setPpKey}
+            keySet={brand?.poool_api_key_set ?? false}
+            keyPreview={brand?.poool_api_key_preview ?? ''}
+            enabled={ppEnabled}
+            onEnabledChange={setPpEnabled}
+            visible={ppKeyVisible}
+            onVisibleChange={setPpKeyVisible}
+            onTest={testPoool}
+            testing={ppTesting}
+            testResult={ppTestResult}
+          />
+        )}
         {tab === 'higgsfield' && (
           <HiggsfieldSection
             url={hfUrl}
@@ -418,6 +489,111 @@ function HiggsfieldSection({
         />
         <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink }}>
           Enable Higgsfield for i2v (overrides OpenRouter video model)
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function PooolSection({
+  url, onUrlChange, keyInput, onKeyChange, keySet, keyPreview,
+  enabled, onEnabledChange, visible, onVisibleChange,
+  onTest, testing, testResult,
+}: {
+  url: string;
+  onUrlChange: (v: string) => void;
+  keyInput: string;
+  onKeyChange: (v: string) => void;
+  keySet: boolean;
+  keyPreview: string;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  visible: boolean;
+  onVisibleChange: (v: boolean) => void;
+  onTest: () => void;
+  testing: boolean;
+  testResult: { ok: boolean; msg: string } | null;
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 720 }}>
+      <div>
+        <h2 style={{ fontFamily: '"Inter", sans-serif', fontSize: 16, fontWeight: 700, color: P.ink, margin: 0 }}>Poool · ERP</h2>
+        <p style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.muted, marginTop: 6, lineHeight: 1.5 }}>
+          Connect your Poool ERP via its MCP gateway. When enabled, the Ops Brain pulls timetrack, orders, and invoices for your projects and computes margin (revenue − labor cost − LLM spend). Read-only.
+        </p>
+      </div>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 600, color: P.ink }}>MCP endpoint</span>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => onUrlChange(e.target.value)}
+          placeholder="http://poool-mcp:8888"
+          style={{ padding: '8px 10px', background: P.white, border: `1px solid ${P.divider}`, fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink, outline: 'none' }}
+        />
+      </label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 600, color: P.ink }}>
+          API key {keySet && <span style={{ color: P.muted, fontWeight: 400 }}>· current: {keyPreview}</span>}
+        </span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            type={visible ? 'text' : 'password'}
+            value={keyInput}
+            onChange={(e) => onKeyChange(e.target.value)}
+            placeholder={keySet ? 'enter to replace' : 'paste your Poool MCP API key'}
+            style={{ flex: 1, padding: '8px 10px', background: P.white, border: `1px solid ${P.divider}`, fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace', fontSize: 12, color: P.ink, outline: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={() => onVisibleChange(!visible)}
+            style={{ padding: '8px 12px', background: 'transparent', border: `1px solid ${P.divider}`, fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink, cursor: 'pointer' }}
+          >{visible ? 'Hide' : 'Show'}</button>
+          <button
+            type="button"
+            onClick={onTest}
+            disabled={testing}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '0 14px',
+              background: P.card,
+              border: `1px solid ${P.divider}`,
+              cursor: testing ? 'wait' : 'pointer',
+              fontFamily: '"Inter", sans-serif',
+              fontSize: 11,
+              fontWeight: 600,
+              color: P.ink,
+              opacity: testing ? 0.5 : 1,
+            }}
+          >
+            {testing ? <Loader2 size={12} style={{ animation: 'brandSpin 1s linear infinite' }} /> : <Zap size={12} />}
+            {testing ? 'TESTING…' : 'TEST'}
+          </button>
+        </div>
+        {testResult && (
+          <div style={{
+            marginTop: 8,
+            padding: '8px 12px',
+            background: testResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(220,38,38,0.08)',
+            border: `1px solid ${testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(220,38,38,0.3)'}`,
+            fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+            fontSize: 10,
+            color: testResult.ok ? P.green : P.red,
+          }}>
+            {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
+          </div>
+        )}
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+        <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, color: P.ink }}>
+          Enable Poool sync for project margin analytics
         </span>
       </label>
     </div>

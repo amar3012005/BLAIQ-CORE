@@ -1,0 +1,825 @@
+"""AI Team OS — Global shared type definitions.
+
+All modules reference types from this file; they do not define their own data models.
+This file is managed by the tech-lead; other engineers only read-reference it.
+"""
+
+from __future__ import annotations
+
+import enum
+from datetime import datetime, timezone
+from typing import Annotated, Any, Literal
+from uuid import uuid4
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
+
+# ============================================================
+# Enum types
+# ============================================================
+
+
+class OrchestrationMode(enum.StrEnum):
+    """Team orchestration mode."""
+
+    COORDINATE = "coordinate"
+    BROADCAST = "broadcast"
+    ROUTE = "route"
+    MEET = "meet"
+
+
+class TaskStatus(enum.StrEnum):
+    """Task status."""
+
+    PENDING = "pending"
+    BLOCKED = "blocked"  # Has unfinished dependencies
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class AgentStatus(enum.StrEnum):
+    """Agent status — three-state model."""
+
+    BUSY = "busy"  # Working — actively executing tool calls
+    WAITING = "waiting"  # Waiting — alive but awaiting input (between turns)
+    OFFLINE = "offline"  # Offline — terminated
+
+
+class MeetingStatus(enum.StrEnum):
+    """Meeting status."""
+
+    ACTIVE = "active"
+    CONCLUDED = "concluded"
+
+
+class PhaseStatus(enum.StrEnum):
+    """Phase status."""
+
+    PLANNING = "planning"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class TeamStatus(enum.StrEnum):
+    """Team lifecycle status."""
+
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class MeetingTemplate(enum.StrEnum):
+    """Meeting template type."""
+
+    BRAINSTORM = "brainstorm"  # Brainstorming (4 rounds)
+    DECISION = "decision"  # Decision meeting (3 rounds)
+    REVIEW = "review"  # Review meeting (3 rounds)
+    RETROSPECTIVE = "retrospective"  # Retrospective meeting (3 rounds)
+    STANDUP = "standup"  # Standup (1 round)
+    DEBATE = "debate"  # Debate mode
+    LEAN_COFFEE = "lean_coffee"  # Lean Coffee
+    FREE = "free"  # Free discussion (default)
+
+
+class LoopPhase(enum.StrEnum):
+    """Company loop phase."""
+
+    IDLE = "idle"
+    PLANNING = "planning"
+    ASSIGNING = "assigning"
+    EXECUTING = "executing"
+    MONITORING = "monitoring"
+    REVIEWING = "reviewing"
+    PAUSED = "paused"
+
+
+class TaskPriority(enum.StrEnum):
+    """Task priority."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class TaskHorizon(enum.StrEnum):
+    """Task time horizon."""
+
+    SHORT = "short"
+    MID = "mid"
+    LONG = "long"
+
+
+class MemoryScope(enum.StrEnum):
+    """Memory scope."""
+
+    GLOBAL = "global"
+    TEAM = "team"
+    AGENT = "agent"
+    USER = "user"
+
+
+class EventType(enum.StrEnum):
+    """System event type."""
+
+    # Team events
+    TEAM_CREATED = "team.created"
+    TEAM_DELETED = "team.deleted"
+    TEAM_MODE_CHANGED = "team.mode_changed"
+
+    # Agent events
+    AGENT_CREATED = "agent.created"
+    AGENT_REMOVED = "agent.removed"
+    AGENT_STATUS_CHANGED = "agent.status_changed"
+
+    # Task events
+    TASK_CREATED = "task.created"
+    TASK_STARTED = "task.started"
+    TASK_COMPLETED = "task.completed"
+    TASK_FAILED = "task.failed"
+
+    # Memory events
+    MEMORY_CREATED = "memory.created"
+    MEMORY_UPDATED = "memory.updated"
+    MEMORY_ACCESSED = "memory.accessed"
+
+    # Meeting events
+    MEETING_STARTED = "meeting.started"
+    MEETING_MESSAGE = "meeting.message"
+    MEETING_ROUND_COMPLETED = "meeting.round_completed"
+    MEETING_CONCLUDED = "meeting.concluded"
+
+    # Hook/CC events
+    AGENT_AUTO_REGISTERED = "agent.auto_registered"
+    CC_TOOL_USE = "cc.tool_use"
+    CC_TOOL_COMPLETE = "cc.tool_complete"
+    CC_SESSION_START = "cc.session_start"
+    CC_SESSION_END = "cc.session_end"
+
+    # File events
+    FILE_EDIT_CONFLICT = "file.edit_conflict"
+
+    # Task lifecycle events
+    TASK_STATUS_CHANGED = "task.status_changed"
+    TASK_ASSIGNED = "task.assigned"
+
+    # Task dependency events
+    TASK_DECOMPOSED = "task.decomposed"
+    TASK_BLOCKED = "task.blocked"
+    TASK_UNBLOCKED = "task.unblocked"
+
+    # System events
+    SYSTEM_STARTED = "system.started"
+    SYSTEM_STOPPED = "system.stopped"
+    SYSTEM_ERROR = "system.error"
+
+    # Decision events (TOP2 cockpit — unified decision event stream)
+    DECISION_TASK_ASSIGNED = "decision.task_assigned"
+    DECISION_APPROACH_CHOSEN = "decision.approach_chosen"
+    DECISION_AGENT_SELECTED = "decision.agent_selected"
+    DECISION_AGENT_CREATED = "decision.agent_created"
+    DECISION_MEETING_STARTED = "decision.meeting_started"
+
+    # Knowledge events
+    KNOWLEDGE_LESSON_LEARNED = "knowledge.lesson_learned"
+
+    # Intent events
+    INTENT_AGENT_WORKING = "intent.agent_working"
+
+    # Enhanced event log (v0.9) — generic update events with state snapshots
+    TASK_UPDATED = "task.updated"
+    AGENT_UPDATED = "agent.updated"
+
+    # Channel events (v1.0 P1-6)
+    CHANNEL_MESSAGE = "channel.message"
+
+
+# ============================================================
+# Data models
+# ============================================================
+
+
+def _new_id() -> str:
+    return str(uuid4())
+
+
+class Project(BaseModel):
+    """Project data model."""
+
+    id: str = Field(default_factory=_new_id)
+    name: str
+    root_path: str = ""
+    description: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class Phase(BaseModel):
+    """Phase data model — execution phase under a Project."""
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str
+    name: str
+    description: str = ""
+    status: PhaseStatus = PhaseStatus.PLANNING
+    order: int = 0
+    config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class Team(BaseModel):
+    """Team data model."""
+
+    id: str = Field(default_factory=_new_id)
+    name: str
+    mode: OrchestrationMode = OrchestrationMode.COORDINATE
+    project_id: str | None = None
+    leader_agent_id: str | None = None  # Leader agent for this team
+    status: TeamStatus = TeamStatus.ACTIVE
+    summary: str = ""  # One-line summary after team completion
+    config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    completed_at: datetime | None = None
+
+
+class Agent(BaseModel):
+    """Agent data model."""
+
+    id: str = Field(default_factory=_new_id)
+    team_id: str
+    name: str
+    role: str
+    system_prompt: str = ""
+    model: str = "claude-opus-4-6"
+    status: AgentStatus = AgentStatus.WAITING
+    config: dict[str, Any] = Field(default_factory=dict)
+    source: str = "api"  # "api" = registered via CLAUDE.md, "hook" = auto-captured by hooks
+    session_id: str | None = None  # Associated CC session ID
+    cc_tool_use_id: str | None = None  # Associated CC internal agent ID
+    current_task: str | None = None  # Currently executing task/activity description
+    project_id: str | None = None
+    current_phase_id: str | None = None
+    trust_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    created_at: datetime = Field(default_factory=datetime.now)
+    last_active_at: datetime | None = None
+
+
+class Task(BaseModel):
+    """Task data model."""
+
+    id: str = Field(default_factory=_new_id)
+    team_id: str | None = None
+    title: str
+    description: str = ""
+    status: TaskStatus = TaskStatus.PENDING
+    assigned_to: str | None = None
+    result: str | None = None
+    parent_id: str | None = None
+    project_id: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    depth: int = 0
+    order: int = 0
+    template_id: str | None = None
+    priority: TaskPriority = TaskPriority.MEDIUM
+    horizon: TaskHorizon = TaskHorizon.SHORT
+    tags: list[str] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class LoopState(BaseModel):
+    """Company loop state — one per team."""
+
+    team_id: str
+    phase: LoopPhase = LoopPhase.IDLE
+    prev_phase: LoopPhase | None = None
+    current_cycle: int = 0
+    completed_tasks_count: int = 0
+    current_task_id: str | None = None
+    review_interval: int = 5  # Trigger review every N tasks
+
+
+class Memory(BaseModel):
+    """Memory data model."""
+
+    id: str = Field(default_factory=_new_id)
+    scope: MemoryScope
+    scope_id: str
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    accessed_at: datetime = Field(default_factory=datetime.now)
+
+
+class Event(BaseModel):
+    """System event data model."""
+
+    id: str = Field(default_factory=_new_id)
+    type: EventType
+    source: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=datetime.now)
+    # Enhanced event context (v0.9)
+    entity_id: str | None = None    # ID of the primary entity involved (task/agent/team)
+    entity_type: str | None = None  # Entity type: "task" / "agent" / "team" / "meeting"
+    state_snapshot: dict[str, Any] | None = None  # Trimmed key fields at event time
+
+
+class Meeting(BaseModel):
+    """Meeting data model."""
+
+    id: str = Field(default_factory=_new_id)
+    team_id: str
+    topic: str
+    status: MeetingStatus = MeetingStatus.ACTIVE
+    participants: list[str] = Field(default_factory=list)
+    project_id: str | None = None
+    meta_json: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    concluded_at: datetime | None = None
+
+
+class MeetingMessage(BaseModel):
+    """Meeting message data model."""
+
+    id: str = Field(default_factory=_new_id)
+    meeting_id: str
+    agent_id: str
+    agent_name: str
+    content: str
+    round_number: int = 1
+    timestamp: datetime = Field(default_factory=datetime.now)
+    msg_metadata: dict[str, Any] = Field(default_factory=dict)  # audit: impersonation, actual_author, etc.
+
+
+class AgentActivity(BaseModel):
+    """Agent activity record — logs each agent tool call."""
+
+    id: str = Field(default_factory=_new_id)
+    agent_id: str
+    session_id: str
+    tool_name: str  # Tool name (Bash, Edit, Read, Agent, etc.)
+    input_summary: str = ""  # Input summary (e.g. command, file path)
+    output_summary: str = ""  # Output summary (truncated to 500 chars)
+    timestamp: datetime = Field(default_factory=datetime.now)
+    duration_ms: int | None = None  # Tool call duration (ms), populated by Pre->Post correlation
+    status: str = "completed"  # "running" | "completed" | "error"
+    error: str | None = None  # Error message
+
+
+class CrossMessageType(enum.StrEnum):
+    """Cross-project message type."""
+
+    NOTIFICATION = "notification"
+    REQUEST = "request"
+    RESPONSE = "response"
+    BROADCAST = "broadcast"
+
+
+class CrossMessage(BaseModel):
+    """Cross-project message — shared across all projects in the global DB."""
+
+    id: str = Field(default_factory=_new_id)
+    from_project_id: str
+    from_project_dir: str
+    to_project_id: str | None = None  # None means broadcast to all projects
+    sender_name: str
+    content: str
+    message_type: CrossMessageType = CrossMessageType.NOTIFICATION
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+    read_at: datetime | None = None
+
+
+class ScheduledTask(BaseModel):
+    """Scheduled task — periodic automation trigger."""
+
+    id: str = Field(default_factory=_new_id)
+    team_id: str | None = None
+    name: str
+    description: str = ""
+    interval_seconds: int  # minimum 300 (5 min)
+    action_type: str  # create_task / inject_reminder / emit_event
+    action_config: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    last_run_at: datetime | None = None
+    next_run_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class WakeSession(BaseModel):
+    """Record of a single wake_agent subprocess execution."""
+
+    id: str = Field(default_factory=_new_id)
+    scheduled_task_id: str
+    agent_name: str
+    team_id: str = ""
+    started_at: datetime = Field(default_factory=datetime.now)
+    finished_at: datetime | None = None
+    outcome: str = ""  # completed / skipped_triage / timeout / error / fused / skipped_concurrent
+    triage_result: str = ""
+    stdout_summary: str = ""  # last 500 chars
+    exit_code: int | None = None
+    consecutive_failures: int = 0
+    duration_seconds: float = 0.0
+
+
+class LeaderBriefing(BaseModel):
+    """Leader Briefing — pending decision items for user review."""
+
+    id: str = Field(default_factory=_new_id)
+    title: str
+    description: str = ""
+    options: str = ""  # A/B/C options description
+    recommendation: str = ""  # Leader's suggested option
+    urgency: str = "medium"  # high / medium / low
+    status: str = "pending"  # pending / resolved / dismissed
+    resolution: str = ""  # user's decision
+    project_id: str = ""
+    created_at: datetime = Field(default_factory=datetime.now)
+    resolved_at: datetime | None = None
+
+
+class Report(BaseModel):
+    """Research/analysis report — stored in database with project isolation."""
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str = ""
+    author: str = ""
+    topic: str = ""
+    report_type: str = "research"  # research / design / analysis / meeting-minutes
+    date: str = ""  # YYYY-MM-DD
+    content: str = ""
+    task_id: str = ""
+    team_id: str = ""
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class PipelineState(BaseModel):
+    """Task 上的 pipeline 运行时状态。存于 task.config['pipeline']。"""
+
+    template: str | None = None
+    current_stage: str | None = None
+    current_stage_class: str | None = None
+    autopilot_active: bool = False
+    stage_started_at: datetime | None = None
+
+
+class StageTransition(BaseModel):
+    """Pipeline stage 转换事件。存独立表 pipeline_stage_history（append-only）。"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    task_id: str
+    from_stage: str | None = None
+    to_stage: str
+    transitioned_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    triggered_by: Literal["manual", "auto", "force", "system"] = "manual"
+    reason: str = ""
+
+
+class ChannelMessage(BaseModel):
+    """Channel message — supports cross-team broadcasting with @mention semantics."""
+
+    id: str = Field(default_factory=_new_id)
+    channel: str  # "team:<name>" / "project:<id>" / "global"
+    sender: str
+    content: str
+    mentions: list[str] = Field(default_factory=list)  # ["@agent-name", "@team-name"]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class EcosystemRepoProfile(BaseModel):
+    """Claude 生态仓档案 — 广索引检索 + 周期更新。
+
+    项目隔离: project_id=None 表示全局/未归属，每个项目拥有独立的快照行。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    repo_full_name: str  # "owner/repo"
+    name: str
+    owner: str
+    description: str | None = None
+    stars: int = 0
+    language: str | None = None
+    topics: list[str] = Field(default_factory=list)
+    homepage: str | None = None
+    last_commit_at: datetime | None = None
+    needs_deep_review: bool = False  # True when stars < 15000
+    relevance_category: str | None = None  # "agent-framework" / "mcp-server" / "memory-system" / "skill-system" / "tooling"
+    relevance_score: int = 0  # 0-10
+    one_line_summary: str | None = None
+    last_scanned_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    first_seen_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    # Stage B 扩展字段
+    pushed_at: datetime | None = None  # GitHub 仓最后 push 时间，用于判活跃度
+    is_archived: bool = False  # > 365 天未 push 标记为 deprecated
+    scan_run_id: str | None = None  # 关联到扫描批次 EcosystemScanRun.id
+    description_excerpt: str = ""  # 描述摘要，用于二次相关性过滤
+    # v1.5.0-A 扩展：渐进式漏斗 Stage 0 浅扫 + 失败追踪 + 活跃集
+    shallow_summary: str = ""  # Stage 0 agent 浅扫总结（200-400 字，区分 description_excerpt）
+    last_shallow_refreshed_at: datetime | None = None  # 上次浅扫刷新时间
+    is_deleted: bool = False  # GitHub 端仓被删（API 404）
+    is_private_now: bool = False  # GitHub 端仓被设私密（API 403 forbidden, not rate limit）
+    last_fetch_error: str = ""  # 最近一次抓取错误的短消息
+    fetch_failure_count: int = 0  # 累计失败次数
+    is_active: bool = True  # 是否在当前项目活跃集（top_n by stars，动态计算 + 缓存）
+    active_rank: int | None = None  # 当前项目内排名（按 stars，None=不在 top_n）
+
+
+# ============================================================
+# Ecosystem 扩展模型 (Stage B)
+# ============================================================
+
+
+class EcosystemDeepReviewStatus(enum.StrEnum):
+    """深扫报告状态。"""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class IntegrationRecommendation(enum.StrEnum):
+    """集成建议级别。"""
+
+    INTEGRATE = "integrate"
+    REFERENCE = "reference"
+    LEARN = "learn"
+    SKIP = "skip"
+
+
+class DemoResult(enum.StrEnum):
+    """Demo 运行结果。"""
+
+    SUCCESS = "success"
+    FAIL = "fail"
+    SKIPPED = "skipped"
+
+
+class EcosystemTagCategory(enum.StrEnum):
+    """生态标签分类。"""
+
+    CAPABILITY = "capability"
+    TECH_STACK = "tech_stack"
+    MATURITY = "maturity"
+    POSITIONING = "positioning"
+
+
+class EcosystemTagSource(enum.StrEnum):
+    """标签来源。
+
+    v1.5.0-A 新增 LIFECYCLE — 用于漏斗 Stage 3 标记 reference / integrated /
+    deleted / private_now / evaluating，由 ecosystem lifecycle 自动写入。
+    """
+
+    GITHUB_TOPIC = "github_topic"
+    AUTO_RULE = "auto_rule"
+    AUTO_LLM = "auto_llm"
+    MANUAL = "manual"
+    LIFECYCLE = "lifecycle"
+
+
+class EcosystemStageStatus(enum.StrEnum):
+    """生态仓深扫漏斗 stage 状态 (v1.5.0)。
+
+    渐进式累加：queued → shallow_done → architecture_done → debated →
+    referenced / integrated。每个 *_failed 子状态表示该阶段重试 5 次仍失败，
+    不影响其他 stage 推进。
+    """
+
+    QUEUED = "queued"
+    SHALLOW_DONE = "shallow_done"
+    SHALLOW_FAILED = "shallow_failed"
+    ARCHITECTURE_DONE = "architecture_done"
+    ARCHITECTURE_FAILED = "architecture_failed"
+    DEBATED = "debated"
+    DEBATED_FAILED = "debated_failed"
+    REFERENCED = "referenced"
+    INTEGRATED = "integrated"
+
+
+class EcosystemRelationType(enum.StrEnum):
+    """仓与仓的关联类型。"""
+
+    INSPIRED_BY = "inspired_by"
+    FORKS = "forks"
+    EXTENDS = "extends"
+    COMPETES = "competes"
+    DEPENDS_ON = "depends_on"
+
+
+class EcosystemScanStrategy(enum.StrEnum):
+    """扫描策略。"""
+
+    INCREMENTAL = "incremental"
+    FULL = "full"
+    TOPIC = "topic"
+    TRENDING = "trending"
+
+
+class EcosystemDeepReview(BaseModel):
+    """生态仓深扫报告 — 针对单个仓的结构化分析。
+
+    FK 关系：repo_id → EcosystemRepoProfile.id (CASCADE)，report_id → Report.id (可选)。
+    项目隔离: project_id=None 表示全局/未归属，深扫报告归属于发起项目。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    repo_id: str  # FK -> EcosystemRepoProfile.id
+    status: EcosystemDeepReviewStatus = EcosystemDeepReviewStatus.QUEUED
+    agent_id: str | None = None  # 执行此次深扫的 agent
+    summary_md: str = ""
+    architecture_md: str = ""
+    demo_result: DemoResult | None = None
+    demo_log_excerpt: str = ""
+    risks_md: str = ""
+    learnings_md: str = ""
+    integration_recommendation: IntegrationRecommendation | None = None
+    report_id: str | None = None  # FK -> Report.id
+    dispatch_prompt: str = ""  # sub-agent dispatch prompt (separate from demo_log_excerpt)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    duration_seconds: float = 0.0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    # v1.5.0-A 扩展：渐进式漏斗 stage 状态机 + 关联会议/集成任务
+    stage_status: EcosystemStageStatus = EcosystemStageStatus.QUEUED  # 漏斗 stage 状态
+    integration_md: str = ""  # Stage 2 详细集成建议（不只是 enum）
+    shallow_completed_at: datetime | None = None  # Stage 0 完成时间
+    architecture_completed_at: datetime | None = None  # Stage 1 完成时间
+    debated_at: datetime | None = None  # Stage 2 辩论结束时间
+    stage3_completed_at: datetime | None = None  # Stage 3 referenced/integrated 完成时间
+    debate_meeting_id: str | None = None  # FK -> Meeting.id (Stage 2 触发会议)
+    integration_task_id: str | None = None  # FK -> Task.id (Stage 3 integrate 派任务)
+
+
+class EcosystemTag(BaseModel):
+    """能力标签字典 — 描述生态仓的能力 / 技术栈 / 成熟度 / 定位。"""
+
+    id: str = Field(default_factory=_new_id)
+    name: str  # unique，如 "memory_system"
+    aliases: list[str] = Field(default_factory=list)
+    category: EcosystemTagCategory
+    description: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+class EcosystemRepoTag(BaseModel):
+    """仓-标签多对多关联。
+
+    FK 关系：repo_id → EcosystemRepoProfile.id (CASCADE)，tag_id → EcosystemTag.id (RESTRICT)。
+    Unique constraint: (repo_id, tag_id)。
+    项目隔离: project_id 跟随 repo_id 所属项目。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    repo_id: str  # FK -> EcosystemRepoProfile.id
+    tag_id: str  # FK -> EcosystemTag.id
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    source: EcosystemTagSource = EcosystemTagSource.MANUAL
+    agent_id: str | None = None  # 打标人
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+class EcosystemRelation(BaseModel):
+    """仓与仓的引用 / 衍生关系。
+
+    FK 关系：from_repo_id / to_repo_id → EcosystemRepoProfile.id (CASCADE)。
+    项目隔离: 项目内部的研究产出，不跨项目共享。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    from_repo_id: str  # FK -> EcosystemRepoProfile.id
+    to_repo_id: str  # FK -> EcosystemRepoProfile.id
+    relation_type: EcosystemRelationType
+    evidence: str = ""  # 来源说明
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    agent_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+class EcosystemScanRun(BaseModel):
+    """扫描批次记录 — 一次扫描任务的执行元数据与统计。
+
+    项目隔离: 扫描历史归属于发起扫描的项目。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    strategy: EcosystemScanStrategy = EcosystemScanStrategy.INCREMENTAL
+    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    completed_at: datetime | None = None
+    duration_seconds: float = 0.0
+    repos_added: int = 0
+    repos_updated: int = 0
+    repos_skipped: int = 0
+    errors: list[str] = Field(default_factory=list)
+    notes: str = ""
+    triggered_by: str = "manual"  # "manual" / "cron"
+    agent_id: str | None = None
+
+
+class EcosystemRepoStatusSnapshot(BaseModel):
+    """每次 scan 的仓状态快照 (v1.5.0-A 决策 D — append-only 永不清理)。
+
+    用于追踪 stars 涨跌、push 频率、激活/退出活跃集等历史变化。
+    每次 scan 跑完为活跃集中每个仓写一行；用户可通过 UI 看历史 timeline。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    project_id: str | None = None
+    repo_id: str  # FK -> EcosystemRepoProfile.id
+    scan_run_id: str  # FK -> EcosystemScanRun.id (触发的扫描批次)
+    snapshot_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    stars: int = 0
+    pushed_at: datetime | None = None
+    is_archived: bool = False  # GitHub archived 状态
+    is_active: bool = True  # 当时是否在项目活跃集
+    summary_at_time: str = ""  # 当时的 shallow_summary (供历史比对)
+
+
+class EcosystemProjectSettings(BaseModel):
+    """每个项目的 ecosystem 配置 (v1.5.0-A 决策 C — 项目自定义阈值)。
+
+    项目首次访问 ecosystem 时由系统自动创建默认行；
+    AI Team OS 项目使用更严格的默认值 (min_stars=5000, top_n=200)。
+    """
+
+    project_id: str  # 主键 — 一项目一行
+    min_stars: int = 1000  # 入档阈值
+    top_n: int = 200  # 活跃集大小（按 stars 排序前 N）
+    refresh_interval_days: int = 7  # 浅扫刷新间隔
+    auto_shallow_on_archive: bool = True  # 入档时是否自动跑 Stage 0
+    focus_topics: list[str] = Field(default_factory=list)  # 关注 topic 白名单（空=全 topic）
+    focus_languages: list[str] = Field(default_factory=list)  # 关注语言白名单（空=全语言）
+    # 决策 F：测试驱动调整的并发配置
+    shallow_concurrency: int = 5
+    deep_concurrency: int = 3
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+# ============================================================
+# Result types
+# ============================================================
+
+
+class TaskResult(BaseModel):
+    """Task execution result."""
+
+    task_id: str
+    status: TaskStatus
+    result: str
+    agent_outputs: dict[str, str] = Field(default_factory=dict)
+    duration_seconds: float = 0.0
+
+
+class TeamStatusSummary(BaseModel):
+    """Team status summary."""
+
+    team: Team
+    agents: list[Agent]
+    active_tasks: list[Task]
+    completed_tasks: int = 0
+    total_tasks: int = 0
+
+
+# ============================================================
+# LangGraph state types
+# ============================================================
+
+
+class TeamState(dict):
+    """LangGraph StateGraph state definition.
+
+    Uses TypedDict style but inherits from dict for LangGraph compatibility.
+    """
+
+    pass
+
+
+# TeamState field definitions (used for StateGraph channels)
+TEAM_STATE_CHANNELS = {
+    "team_id": str,
+    "current_task": str,
+    "messages": Annotated[list[BaseMessage], add_messages],
+    "agent_outputs": dict[str, str],
+    "leader_plan": str | None,
+    "consensus_reached": bool,
+    "round_number": int,
+    "final_result": str | None,
+    "approval_status": str | None,
+}

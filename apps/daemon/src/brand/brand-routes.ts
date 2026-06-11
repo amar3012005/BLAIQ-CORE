@@ -29,6 +29,12 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.higgsfieldApiKey.slice(0, 4)}…${brand.higgsfieldApiKey.slice(-4)}`
           : '',
         higgsfield_enabled: brand.higgsfieldEnabled,
+        poool_url: brand.pooolUrl,
+        poool_api_key_set: brand.pooolApiKey.length > 0,
+        poool_api_key_preview: brand.pooolApiKey
+          ? `${brand.pooolApiKey.slice(0, 4)}…${brand.pooolApiKey.slice(-4)}`
+          : '',
+        poool_enabled: brand.pooolEnabled,
         updated_at: brand.updatedAt,
       });
     } catch (err) {
@@ -53,6 +59,9 @@ export function registerBrandRoutes(router: Router): void {
       higgsfield_url?: string;
       higgsfield_api_key?: string;
       higgsfield_enabled?: boolean;
+      poool_url?: string;
+      poool_api_key?: string;
+      poool_enabled?: boolean;
     };
     const patch: Parameters<typeof updateTenantBrand>[2] = {};
     if (typeof body.brand_dna_md === 'string') patch.brandDnaMd = body.brand_dna_md;
@@ -63,6 +72,9 @@ export function registerBrandRoutes(router: Router): void {
     if (typeof body.higgsfield_url === 'string') patch.higgsfieldUrl = body.higgsfield_url;
     if (typeof body.higgsfield_api_key === 'string') patch.higgsfieldApiKey = body.higgsfield_api_key;
     if (typeof body.higgsfield_enabled === 'boolean') patch.higgsfieldEnabled = body.higgsfield_enabled;
+    if (typeof body.poool_url === 'string') patch.pooolUrl = body.poool_url;
+    if (typeof body.poool_api_key === 'string') patch.pooolApiKey = body.poool_api_key;
+    if (typeof body.poool_enabled === 'boolean') patch.pooolEnabled = body.poool_enabled;
     try {
       const brand = await updateTenantBrand(authed.tenantId, authed.user.userId, patch);
       res.status(200).json({
@@ -80,6 +92,12 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.higgsfieldApiKey.slice(0, 4)}…${brand.higgsfieldApiKey.slice(-4)}`
           : '',
         higgsfield_enabled: brand.higgsfieldEnabled,
+        poool_url: brand.pooolUrl,
+        poool_api_key_set: brand.pooolApiKey.length > 0,
+        poool_api_key_preview: brand.pooolApiKey
+          ? `${brand.pooolApiKey.slice(0, 4)}…${brand.pooolApiKey.slice(-4)}`
+          : '',
+        poool_enabled: brand.pooolEnabled,
         updated_at: brand.updatedAt,
       });
     } catch (err) {

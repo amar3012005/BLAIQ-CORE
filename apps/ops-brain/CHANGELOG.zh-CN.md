@@ -1,0 +1,571 @@
+# 变更日志
+
+AI Team OS 的所有重要变更均记录在此文件中。
+格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/)
+
+## [1.5.0] — 2026-05-08
+
+### 新增 — 生态研究平台 v2：渐进式深扫漏斗
+
+把 v1.4.0 的"一次性 5 段深扫"重构为 **4 阶段渐进式知识库漏斗**，让生态仓研究产物**累加而非一次性产出**。基于用户敲定语义实施，避免低价值仓浪费 token，并支持研究产物跨周期复用召回。
+
+- **Stage 0 — 入档即浅扫（Stage A/B）**
+  - 新建 `EcosystemShallowQueueWorker`（552 行），自动派 `ai-engineer` agent（5 并发）总结新入档仓
+  - 浅扫内容：核心功能 / 定位 / 优势 / 适用场景（200-400 字）
+  - Worker 每 5 分钟跑一次，返回 `DispatchIntent[]`（不直接 spawn agent — Leader 用 Agent 工具 + `team_name=ecosystem-platform` 实际派遣）
+  - **8 类失败分类处理**：404→mark_deleted / 403_私密→mark_private / rate_limit→backoff+重试 / 5xx→指数退避重试 / agent_read→重试+换 agent / agent_timeout / json_parse→带示例重试 / fetch_style→pattern_record
+  - **失败自学习机制**：同类 `fetch_style` 失败 ≥ 3 个不同仓 → 自动 `pattern_record(type='failure')`，未来 agent 通过 `pattern_search` 读到 lessons 优化策略
+
+- **Stage 1 — 按需架构分析（Stage C）**
+  - 新增 `ecosystem_deep_review_request_batch(tags, min_stars, limit)` MCP 工具
+  - 用户挑研究方向（如 "memory_system"）→ 批量派 `backend-architect` 读架构关键文件
+  - 输出：`architecture_md` 字段 + `stage_status='architecture_done'`
+
+- **Stage 2 — 多角度辩论（Stage C）**
+  - 新增 `ecosystem_trigger_debate(repo_ids, research_goal)` 直接调现有 `debate_start`（**不内建辩论引擎**，复用会议系统）
+  - Leader 完全掌控辩论参与者和轮次（保留现有会议系统能力）
+  - **会议→生态库反向写入 hook**（`meeting_ecosystem_writeback.py`）：会议结束 + topic 含生态关键词时，hook 提醒 Leader 派 agent 调 `ecosystem_apply_debate_result(risks_md / learnings_md / integration_md / integration_recommendation)`
+  - 输出：每个 finalist 4 字段 + `stage_status='debated'`
+
+- **Stage 3 — 参考 / 集成标记（Stage C）**
+  - `ecosystem_mark_as_reference` 加 `lifecycle:reference` tag + `stage_status='referenced'`
+  - `ecosystem_start_integration` 加 `lifecycle:integrated` tag + 通过 `task_create` 创建真实集成任务（**不内建实施引擎**，复用任务系统）
+  - 两路径都保留研究产物便于未来快速召回（避免重复深扫）
+
+### 新增 — 项目可定制阈值（Stage A）
+
+- 新建 `EcosystemProjectSettings` 表（每项目独立）：`min_stars` / `top_n` / `refresh_interval_days` / `focus_topics` / `focus_languages` / `shallow_concurrency` / `deep_concurrency`
+- AI Team OS 默认：`min_stars=5000, top_n=200, focus_topics=['claude-code','mcp','agent-framework']`
+- 其他项目默认：`min_stars=1000, top_n=100`
+
+### 新增 — 活跃/全量双视图 + 数据 append-only（Stage A/D）
+
+- **决策 D**：数据**永不删除** — stars 跌出阈值的仓不删，仅 `is_active=False`；stars 涨回 → 自动激活 + 重新入队 Stage 0
+- **决策 E**：周期浅扫**只扫活跃集**（top_n by stars），节省 GitHub API 配额
+- 新建 `EcosystemRepoStatusSnapshot` 表，每次 scan 记录 stars/pushed_at/is_archived/is_active 供历史分析
+- 新建 `EcosystemRefresher` service（480 行）：`shallow_refresh()`（diff 跳过 last_pushed_at 未变的仓）+ `recompute_active_set()` + `resurrect()`（删库/私密复活）
+
+### 新增 — 前端漏斗 UI（Stage E）
+
+- 列表页：stage 颜色徽章（queued/shallow_done/architecture_done/debated/referenced/integrated/_failed）+ 3 tab（活跃/全量/已删除）
+- 详情页：新增"研究历程"timeline tab，显示 stage 推进 + agent 输出 + `shallow_summary_history` 历史快照
+- 新页面 `/ecosystem/research` 候选筛选：输入研究目标 → tags 候选列表 + 浅扫 summary 预览 → 多选触发 Stage 1 → finalists 触发 Stage 2
+- 项目详情页加 "Ecosystem 设置" tab，8 字段（min_stars / top_n / refresh_interval_days / focus_topics / focus_languages / shallow_concurrency / deep_concurrency / auto_shallow_on_archive）
+- 失败仓：红色徽章 + "立即重试"按钮（调 `POST /api/ecosystem/profiles/{id}/retry`）
+
+### 新增 — 11 个新 MCP 工具
+
+- Stage 0: `ecosystem_apply_shallow_summary`, `ecosystem_shallow_queue_status`
+- Stage 1: `ecosystem_deep_review_request_batch`, `ecosystem_apply_architecture_md`
+- Stage 2: `ecosystem_trigger_debate`, `ecosystem_link_debate_meeting`, `ecosystem_apply_debate_result`
+- Stage 3: `ecosystem_mark_as_reference`, `ecosystem_start_integration`, `ecosystem_link_integration_task`
+- Refresh: (扩展 `ecosystem_scan_periodic` 加 refresh 策略)
+
+### 新增 — 8 个新 REST 端点
+
+- `/api/ecosystem/lifecycle/*`（Stage 1/2/3 触发链路）
+- `/api/ecosystem/profiles/{id}/retry`（失败仓手动重试）
+- `GET/PUT /api/ecosystem/projects/{project_id}/settings`
+- `POST /api/ecosystem/shallow_queue/{apply_summary,tick}`, `GET /api/ecosystem/shallow_queue/status`
+
+### Schema 变更（Stage A — 通过 COLUMNS_TO_ENSURE 完全向后兼容）
+
+- `EcosystemDeepReview` +8 字段：`stage_status` enum / `integration_md` / 4 个 stage 时间戳 / `debate_meeting_id` / `integration_task_id`
+- `EcosystemRepoProfile` +8 字段：`shallow_summary` / `last_shallow_refreshed_at` / `is_deleted` / `is_private_now` / `last_fetch_error` / `fetch_failure_count` / `is_active` / `active_rank`
+- 2 张新表：`EcosystemRepoStatusSnapshot`（append-only 历史）/ `EcosystemProjectSettings`（每项目配置）
+- 标签字典：26 → 31（新增 5 个 lifecycle 标签：`evaluating` / `reference` / `integrated` / `deleted` / `private_now`）
+- Tag source enum +1：`lifecycle`（Stage 3 转换自动管理）
+
+### 测试
+
+- 1283+ 单元测试通过（1264 baseline + 110+ 新 ecosystem 测试覆盖 A/B/C/D/E）
+- 0 回归
+- 6 pre-existing failures（CLI version flag / debate template / mcp_autostart / pipeline）经 `git stash` 验证与本次无关
+
+### 架构决策（用户敲定）
+
+- **(A)** Ecosystem 是**知识库不是工作流引擎** — Stage 2 复用 `debate_start`，Stage 3 复用 `task_create`。Ecosystem 只做记录、召回、标注。
+- **(B)** 会议→生态库反向写入 hook 提醒 Leader 把辩论结论回写生态库（保留 Leader 决策权）
+- **(C)** 每个项目独立阈值 + 活跃/全量双视图
+- **(D)** 数据 append-only 永不删除；星标跌出的仓保留以备未来复活
+- **(E)** 周期浅扫只扫活跃集
+- **(F)** Rate limit 测试驱动并发调优（不预设，实测调整）
+
+### 备注
+
+- 本版本**仅发布到 GitHub**（延续 v1.4.0 开发里程碑模式），PyPI 发布留待后续稳定性验证
+
+## [1.4.0] — 2026-05-07
+
+### 新增 — 生态研究平台（Stage A-J）
+
+完整的项目隔离开源生态发现/打标/深度审查平台。专为 Claude/MCP/agent 开源生态设计。首扫入档 188 仓，三层打标平均 2.05 tags/repo，0 标签率仅 1.5%。
+
+- **数据层（Stage B）** — 5 张新表：`EcosystemRepoProfile` 扩展 + `EcosystemDeepReview` 深扫报告 + `EcosystemTag` 标签字典 + `EcosystemRepoTag` 关联 + `EcosystemRelation` 仓与仓关系 + `EcosystemScanRun` 扫描批次。21 个 seed 标签；删除仓档案 CASCADE 删除关联，删标签 RESTRICT；50/50 单元测试。
+
+- **周期扫描（Stage C）** — `EcosystemScanner` 服务，增量策略（< 7 天扫过的跳过）+ 全量策略 + ScanRun 审计 + GitHub API 优雅降级 + owner 黑名单 + 关键词白名单二次过滤。3 个新 MCP 工具（`ecosystem_scan_periodic` / `ecosystem_scan_status` / `ecosystem_scan_history`）+ 5 个 REST 端点 + 31 个新测试。
+
+- **三层打标（Stage D）** — Layer 1 GitHub topics 直接映射（命中 105 仓）+ Layer 2 关键词规则（命中 70 仓）+ Layer 3 LLM dispatch_plan 模式派子 agent。5 个新 MCP 工具 + 26 个标签字典（capability/tech_stack/maturity/positioning 四类）+ 48 个单元测试。
+
+- **多维搜索（Stage E）** — `ecosystem_search` 升级到 11 个参数（query/tags AND/min_stars/language/sort_by/has_deep_review 等），`ecosystem_repo_get` 返回 profile+tags+deep_reviews+relations+scan_run 全息详情，`ecosystem_search_by_capability` 按标签反向检索。SQLite NULLS LAST 模拟 + EXISTS subquery 实现 tag AND 语义。38 新测试，p95 < 50ms 目标。
+
+- **深扫工作流（Stage F）** — 5 段式报告模板（真实定位 / 架构 / 借鉴点 / 风险 / 集成建议）+ `EcosystemDeepReviewer` 服务通过 `dispatch_plan` 派 Explore + backend-architect 子 agent（兼容 CC 子进程模型）+ PostToolUse `deep_review_link.py` hook 自动关联 report 到 `EcosystemDeepReview.report_id`。4 个新 MCP 工具 + 5 个 REST 端点 + 19 个新测试。
+
+- **自动汇总（Stage G）** — 4 个 markdown 汇总工具：`ecosystem_summary_weekly`（周报）/ `ecosystem_summary_by_tag`（按方向）/ `ecosystem_summary_top_n`（Top N 排行）/ `ecosystem_summary_health`（平台自检）。自动 `report_save`（报告类型 `ecosystem-{weekly,by-tag,top-n,health}`）。Join 一次拉完避免 N+1。33 个新测试。
+
+- **前端（Stage H）** — `/ecosystem` 列表页（4 列卡片 + 筛选栏 + 分页），`/ecosystem/:repoId` 详情页 + 4 个新组件（`CapabilityTags` / `DeepReviewSection` / `RelationsSection` / `ScanRunSection`），通过 `useEcosystemRepoFull` hook 消费 v2 API（UUID → full_name 反查 + path 段编码）。响应式 + Playwright 截图验证。
+
+- **项目隔离（Stage J）** — 6 张 ecosystem 表全部加 nullable `project_id` 列；`EcosystemRepoProfile` 用 `(project_id, repo_full_name)` 联合 UNIQUE。`EcosystemTag` 字典保持 `project_id=NULL`（全局共享 21 seed）。`X-Project-Id` HTTP header → `get_scoped_repository` 路由；MCP `_api_call` 自动注入（基于 cwd 推断的 session 项目）。启动时自动 `backfill_ecosystem_to_project` 钩子迁移历史 188 仓到 AI Team OS 项目。前端 `setCurrentProjectId` 切换项目时同步。10 个隔离测试 + 1109 全套 unit 测试通过。
+
+### 新增 — 标签质量打磨（Stage K4）
+
+- **`ecosystem_tag_apply_batch` 加 `replace_auto` 模式** — 替换模式（默认 `False` 向后兼容）：先删除该仓所有 `auto_rule` 和 `github_topic` 来源的 RepoTag 行（保留 `manual` 和 `auto_llm`），再插入新规则的结果。修复了"新规则虽产生新标签但旧 `mcp_framework` 假阳性 99 仓没清"的 bug。
+
+- **5 个新标签 + 边界规则** — `claude_code` / `agent_harness` / `javascript` / `java` / `docs_only` 加入 seed 字典。新增 `LANGUAGE_TAG_MAP`、`DOCS_ONLY_LANGUAGES`、`DOCS_ONLY_NAME_PATTERNS` 三组 Layer 2 子规则。`mcp_framework` 假阳性率从 37%（99/265）降到 **0.8%（2/265）**，平均标签数从 **1.01 → 2.05**，0 标签率从 **28.7% → 1.5%**。
+
+- **18+ 边界仓实地调研** — `docs/ecosystem-tag-edge-cases.md` 记录真实 anomaly（n8n / dify / awesome-mcp-servers / claude-cookbooks / hermes-agent / netdata / JavaGuide 等）+ 根因 + 规则修复。
+
+### 性能 — 搜索优化（Stage K1）
+
+- **`ecosystem_repo_profiles` 加 5 个复合索引**：`(project_id, stars)` / `(project_id, category, stars)` / `(project_id, language, stars)` / `(project_id, pushed_at)` / `(project_id, is_archived, stars)`。EXPLAIN QUERY PLAN 验证 TEMP B-TREE 全部消除。
+
+- **search p95：2057ms → 13.1ms（156x 提升）** — 100 次 random query 实测（真实生产数据，265 仓）。p50 6.6ms / p99 25ms。
+
+- **`ecosystem_search` 缺省行为修复** — `tags=[]` 现在跳过 EXISTS subquery（避免全表扫），返回按 stars 排序的全集而非空。
+
+- `compute_ecosystem_facet_counts` 重构为单次 SELECT 三列 + Python 聚合（IO 减 2/3）。
+
+- 6 个新性能 regression 测试。
+
+### 修复
+
+- **`context_tracker` 新 model 变体的 1M 检测** — `claude-opus-4-7` 等新 opus 模型在 1M 模式下被误判为 200K window，导致 198K tokens 时报告 99% 假警告。两层检测：(1) 精确 `{model}[1m]` 匹配；(2) 同 family 兜底（任意 `claude-{opus|sonnet|haiku}-*[1m]` 历史 → 该 family 视为 1M）。新增 `CLAUDE_CONTEXT_SIZE` env 终极覆盖。4 个新测试 + module 级 autouse fixture 隔离 `~/.claude.json`。
+
+- **新 agent 注册到 completed 团队自动恢复** — hook_translator 现在检测到新 agent 注册到 `status=completed` 的团队时自动恢复为 `active` 并发出 `team.auto_revived` 事件 + 警告日志。替代了之前的硬阻断方式（曾导致历史团队上的长任务被中断）。
+
+### 前端 bug 修复（Stage K2）
+
+- **详情页 `深度档案区` 占位符移除** — 之前详情页硬编码 "TODO: Stage E v2 API" 占位文案，但 v2 API（`/profiles/{name}/full`）从 Stage E 起就已存在。`useEcosystemRepoFull` hook 现在直接消费 v2（含 UUID → full_name 反查 + path 段斜杠编码）。v2 失败时优雅降级到 v1 列表数据。
+
+### 变更
+
+- **Plugin description 升级** — 反映 140+ MCP 工具（含 30+ 生态研究工具）+ 生态研究平台。新增 marketplace 标签：`ecosystem-research`、`github-discovery`、`code-mining`。
+
+## [1.3.4] — 2026-04-14
+
+### 修复
+- **紧急：升级自 1.3.0 之前版本的数据库上 `meeting_send_message` 500** — 1.3.3 的 `_sqlite_migrate()` 补了 `meetings.meta_json`，但漏掉了 `meeting_messages.metadata_json`。老数据库（在该字段加入 ORM 模型前创建）上的所有 `meeting_messages` INSERT/SELECT 都会抛 `OperationalError`。修复方案：将 `_sqlite_migrate()` 重构为数据驱动循环，统一遍历 `COLUMNS_TO_ENSURE` 列表（同时覆盖 `meetings.meta_json`）。所有迁移项均通过 `PRAGMA table_info` 保护，幂等安全。
+- **迁移框架改为数据驱动** — 未来新增字段只需在 `COLUMNS_TO_ENSURE` 列表 append 一行。
+
+## [1.3.3] — 2026-04-14
+
+### 修复
+- **紧急：外部项目调用 `meeting_create` API 崩溃 500** — 三个根因一次修复：
+  1. **`meta_json` 列缺失** — 旧数据库 `meetings` 表没有该列（该字段加入 ORM 模型前创建的库），`init_db` 用 `create_all` 不会为已存在表补列，INSERT 直接报 `OperationalError`。新增 `connection.py` 启动时幂等 SQLite 迁移，缺列则 `ALTER TABLE` 补全。
+  2. **team_id 未按名称解析** — `POST /api/teams/{team_id}/meetings` 路由接收团队名（如 `"repo-insight-build"`）但未转 UUID，直接传给仓储层导致后续查询静默失败。路由现在先按 UUID 查、再按 name 查，都找不到返回 HTTP 404。
+  3. **ORM 异常未捕获导致 worker 假卡** — `create_meeting` 调用外围加 `try/except`，DB 错误以 HTTP 500 JSON 返回，不再让 worker 卡死。
+
+## [1.3.2] — 2026-04-14
+
+### 修复
+- **紧急：MCP 动态端口发现失效** — `plugin/.mcp.json` 把 `AITEAM_API_URL=http://localhost:8000` 硬编码为 env var，覆盖了 `_get_api_url()` 中的动态端口 fallback。当 autostart 因 8000 被占用而选择空闲端口（如 59711）时，MCP 工具仍连接 8000 并报告 `unhealthy`，而 hook 走同一代码路径却正常工作。现已从 plugin 配置、根目录 `.mcp.json` 及所有安装脚本中删除该 env var，MCP 现在正确回退到读取 `api_port.txt` 动态发现端口。用户手动设置的 `AITEAM_API_URL` 仍具最高优先级（用于远程 API 场景）。
+
+## [1.3.1] — 2026-04-13
+
+### 修复
+- **Hotfix: context_tracker 1M context window 检测** — transcript 中 model 字段为 `claude-opus-4-6`（无 `[1m]` 后缀），导致 1M context session 被误判为 200K，出现 342% 等异常百分比。新增 token 数量 fallback：若 `used_tokens > 200K`，自动识别为 1M context window。
+
+## [1.3.0] — 2026-04-13
+
+### 新增
+- **CC 原生集成（Track A）**
+  - `TaskCompleted` hook 硬门控 — `task_completed_gate.py` 在任务缺失 memo/result 时 exit 2 拒绝完成，把 verify_completion 从"软提示"变"硬拦截"
+  - `TaskCreated` hook 桥接 — `cc_task_bridge.py` 把 CC 原生任务自动镜像到 OS 任务墙
+  - `PermissionDenied` hook 接入分类器 — `permission_denied_recovery.py` 调用新 `POST /api/hooks/diagnose_denial` 端点，返回 4 类决策：`recoverable_with_retry` / `recoverable_with_workaround` / `needs_user_approval` / `permanent_denial`
+  - 8 个大数据 MCP 工具添加 `meta={"anthropic/maxResultSizeChars": 500000}` 注解（`taskwall_view` / `task_list_project` / `report_list` / `report_read` / `event_list` / `meeting_read_messages` / `memory_search` / `team_knowledge`）
+  - `wake_agent` 启用 `--bare` + `--exclude-dynamic-system-prompt-sections` 优化，预期启动延迟降 50%；长 prompt 走临时文件 fallback 绕过 Windows 命令行长度限制
+
+- **会议系统完整重设计（Track B）**
+  - `meeting_create` 返回完整 `dispatch_plan[]` — 每个参与者带 ready-to-paste 的 `Agent()` 启动参数，彻底消除 Leader 代打问题
+  - 结构化 `participants` 输入：`{name, agent_template, role, context_files, expected_output}` 替代旧字符串列表（向后兼容）
+  - `meeting_attendance_check(meeting_id)` — 查询当前轮次已发言/未发言参与者 + 超时跟踪
+  - `meeting_send_message` 新增 `caller_agent_id` 参数 — 代打审计，调用者与 agent_id 不一致时打 `impersonation: true` 元数据并记录事件日志
+  - `meeting_conclude` 默认 `validate_attendance: true` — 未全员发言返回 400 + missing 清单；`force=true` 绕过但记录 `meeting.forced_conclude_with_missing` 事件
+  - `Meeting.meta_json` 持久化字段存储 `expected_participants` 和轮次状态
+
+- **会议模板迁移到 Plugin Skills（Track C）**
+  - 8 个模板从硬编码 `templates.py` dict（234 行）迁移到 `plugin/skills/meeting-facilitate/templates/*.md` 文件（brainstorm/decision/review/retrospective/standup/debate/lean_coffee/council）
+  - 每个模板含 YAML frontmatter 结构化轮次数据 + markdown 正文（何时使用 / 参与者建议 / 反模式）
+  - `templates.py` 重写为懒加载 YAML loader（107 行），保持 API 向后兼容
+  - **用户可扩展**：drop 一个 `.md` 文件即可新增自定义会议模板，无需改 Python 代码
+  - 利用 CC 的 progressive disclosure 模式 — 模板仅在需要时加载，零 token 消耗
+  - 完全重写 `plugin/skills/meeting-facilitate/SKILL.md`（355 行）：7 步生命周期对接新 dispatch_plan API + 模板选择决策矩阵 + 3 个端到端场景 + 7 条反模式警告
+
+- **上下文追踪改为 transcript 直读（Plan E）**
+  - 新增 `context_tracker.py` hook 注册到 `UserPromptSubmit` — 从 hook payload 读 `transcript_path`，解析 session jsonl 最后一条 assistant message 的 `usage.input_tokens` + cache tokens，获得 100% 精确的上下文使用率
+  - 自动识别 1M 上下文窗口（通过 model 标识符 `[1m]` 后缀）
+  - `>=80%` 触发 CONTEXT WARNING，`>=90%` 触发 CONTEXT CRITICAL，带 token 明细
+  - **完全不依赖 statusline** — 分发版用户无需安装自定义 statusline 也能工作
+  - **天然项目隔离** — transcript path 本身就编码了项目身份，彻底消除跨项目 monitor 文件 bug
+
+- **项目自动注册流程**
+  - 新增 `POST /api/context/resolve` 端点，支持精确匹配/前缀匹配/自动创建三种策略
+  - `session_bootstrap.py` 检测未注册目录并注入注册询问提示给 Leader（非阻塞）
+  - 新增 `dismiss_project_registration(cwd)` MCP 工具 — 用户可拒绝注册；持久化到 `~/.claude/data/ai-team-os/dismissed_projects.json`
+  - 修复新项目目录（如 `靖安笔试`、`repo-insight`）必须手动触发才能注册的 bug
+
+### 变更
+- **任务墙自动同步（`workflow_reminder.py`）**
+  - PreToolUse：提取 agent prompt + description，与项目任务墙 pending 项做关键词匹配，Leader 派遣未匹配墙上任务时发出警告
+  - PostToolUse：新增 `_post_tool_taskwall_sync()` — Agent 派遣时自动更新匹配任务为 `running`；完成 SendMessage 时自动更新为 `completed`
+  - 报告数据目录警告精确到 `.claude/data/ai-team-os/reports/` 路径，不再对源码误报
+
+- **会话启动上下文工程**
+  - 移除损坏的"读取 `~/.claude/context-monitor.json`"指令（文件已不再维护）
+  - 新指令：hook 已自动监控上下文，Leader 只需专注任务推进
+  - 未注册目录检测到时注入项目自动注册提示块
+
+- **文档更新**
+  - `README.md` / `README.zh-CN.md` 反映新会议系统和模板架构
+  - Skill 文档按 CC progressive disclosure 最佳实践重组
+
+### 修复
+- **分发版同步** — 4 个 hook 脚本在 `src/aiteam/hooks/` 和 `plugin/hooks/` 之间失同步（缺失 `_get_api_url()`、项目注册检查、任务墙自动同步逻辑）。分发版用户会遭遇动态端口失效和功能静默缺失。所有 4 个文件现在在 dev 和分发副本之间字节级一致。
+- **`meeting.py:103`** — `_build_dispatch_plan` 返回类型注解对齐实际三元组（补上 `legacy_warnings`）
+- **`context-monitor.json` 跨项目污染** — 旧 `_find_monitor_file()` 用 glob 扫所有项目按 mtime 取最新，会读到其他 session 的过期数据。已被 `context_tracker.py` 完全替代，后者用 `transcript_path.parent` 天然隔离
+- **定时唤醒误报** — 自动唤醒 prompt 不再读取 9 天前的全局 `context-monitor.json`（它错误地总是报告 <10% 无论实际用量如何）
+
+### 移除
+- `src/aiteam/hooks/context_monitor.py` 和 `plugin/hooks/context_monitor.py` — 被 `context_tracker.py` 取代
+- 全局 `~/.claude/context-monitor.json` 依赖 — OS 不再读也不再写
+
+## [1.2.1] — 2026-04-07
+
+### 新增
+- **报告系统数据库迁移** — 报告从文件系统迁入 SQLite 数据库，消除文件权限问题并支持项目隔离
+- **ReportModel ORM** — 新增 `reports` 表，包含 `project_id`、`author`、`topic`、`report_type`、`content` 字段
+- **报告 REST API** — `POST/GET/DELETE /api/reports`，支持 `project_id`、`report_type`、`author` 查询过滤
+- **Dashboard 全页面项目隔离** — 全部 9 个 Dashboard 页面均有项目选择器：
+  - 报告：项目选择器 + 作者过滤
+  - 事件日志 & 失败分析：events API 新增 project_id 参数
+  - 会议室 & Agent 看板：前端按 team.project_id 过滤
+  - 活动分析 & Pipeline：项目→团队联动选择器
+- **任务墙自动同步** — workflow_reminder 新增 `_post_tool_taskwall_sync()`：Agent 派遣自动关联任务墙项并更新状态（pending→running→completed）
+- **PreToolUse 任务墙匹配** — Agent prompt 与项目任务墙的关键词重叠检查，未在墙上的工作会收到警告
+- **项目级联删除** — `delete_project()` 清理 11 张关联表：meetings、meeting_messages、tasks、agents、teams、phases、reports、briefings、memories、events、cross_messages
+
+### 变更
+- **`report_save` MCP 工具** — 改为调用 `POST /api/reports` 存入数据库，不再直接写文件，无需文件系统权限
+- **`report_list` MCP 工具** — 改为调用 `GET /api/reports`，支持服务端过滤（report_type、author、topic）
+- **`report_read` MCP 工具** — 改为通过报告 ID 从数据库读取，不再按文件名读取
+- **Events API** — `list_events` 端点接受 `project_id` 查询参数，按项目所属团队 ID 过滤
+- **子 Agent 上下文注入** — 加强 report_save 指令："报告必须通过 report_save 工具保存到数据库（直接 Write 不会被系统追踪）"
+- **Workflow reminder 报告检测** — 路径匹配精确到 `.claude/data/ai-team-os/reports/` 数据目录，不再对包含"reports"的源码文件误报
+- **i18n** — 中英文新增 `allProjects`、`filterType`、`types.*` 翻译键
+
+### 修复
+- `app.py` — `_dist_dir` 为 None 时崩溃（无 dashboard dist 目录场景）
+- `test_version_flag` — 版本断言从 `0.8.0` 更新为 `1.2.0`
+- `test_teamcreate_reminds_task` — 放宽 warning 数量断言为 `>= 1`（适配新增的活跃团队提醒）
+- 报告页面无法切换分类和读取报告 — 使用数据库后端完全重写
+- 155 份旧文件系统报告通过 `scripts/migrate_reports.py` 迁入数据库
+
+## [1.2.0] — 2026-04-05
+
+### 新增
+- **Agent 看门狗心跳系统** — `agent_heartbeat` / `watchdog_check` MCP 工具，5 分钟 TTL 超时检测，自动识别卡死的 Agent
+- **SRE 错误预算模型** — 绿色/黄色/橙色/红色四级响应，20 任务滑动窗口，`error_budget_status` / `error_budget_update` 工具
+- **完成验证协议** — `verify_completion` 检查任务状态与备忘录是否存在，防止幻觉完成报告
+- **Alembic 增量迁移** — v1.1 完整 schema 迁移文件（trust_score / channel_messages / entity_id / state_snapshot 等）
+- **生态集成配方文档** — GitHub / Slack / Linear / 全栈团队 4 个预设配方（`docs/ecosystem-recipes.md`）
+- **`ecosystem_recipes()` MCP 工具** — 集成配方发现与查询
+- **MCP 调试日志增强** — 启动锁机制日志，API 启动过程可追踪
+- **自动端口发现** — API 服务器自动寻找空闲端口，避免多项目冲突；端口写入 `api_port.txt` 共享
+- **MCP HTTP Streamable 端点** — `/mcp/` 挂载到 FastAPI（附加能力，CC 连接保持 stdio）
+- **INSTALL.md** — CC 辅助安装指引，含 venv 检测逻辑
+- **PyPI 1.2.0 发布** — `pip install ai-team-os` 可获取最新版
+
+### 变更
+- **会话启动上下文工程** — 规则从 23 条精简为 5 条核心规则（上下文注入量减少 60%）
+- **子 Agent 上下文注入** — 新增 60 行上限裁剪，按优先级自动丢弃低优先内容
+- **`_ensure_api_running` 原子启动锁** — 防止多会话端口竞争（`O_CREAT|O_EXCL` 文件锁）
+- **Hooks 动态读取 API 端口** — 从 `api_port.txt` 读取端口，不再硬编码 8000
+- **`__init__.py` 版本同步为 1.2.0**
+- **`pyproject.toml` 元数据** — 添加 classifiers、keywords 和项目 URLs
+
+### 修复
+- Alembic 集成后 `_run_migrations` 被跳过 — 改为始终执行（幂等安全）
+- 多个 CC 会话同时启动 API 导致端口冲突 — 使用原子文件锁解决
+- StateReaper 级联关闭活跃会议时误关有近期消息的会议 — 增加近期消息检查
+- `_read_pid_file` 在 Windows 上抛出 `SystemError` — 增加异常捕获
+- `install.py` 使用 `sys.executable` 绝对路径 — 解决项目 venv 劫持 hooks/MCP 问题
+- `auto_install.py` 改为从 GitHub 安装 — PyPI 版本滞后时仍能获取最新代码
+- 启动锁 60 秒 TTL — 防止 CC 异常退出后锁文件残留阻塞启动
+- MCP HTTP 挂载修复 — lifespan 传递 + `path='/'` 路由 + 308 重定向处理
+- Plugin marketplace 15 个安装 bug 修复 — hooks 改为 `${CLAUDE_PLUGIN_ROOT}` 路径 + 恢复 `.py` 脚本
+
+## [1.1.0] — 2026-04-05
+
+### 新增
+- **Agent 信任评分系统** — `trust_score` 字段（0-1），任务成功/失败自动调整，`auto_assign` 加权匹配，`agent_trust_scores` / `agent_trust_update` MCP 工具
+- **语义缓存层** — BM25 + Jaccard 相似度匹配，JSON 持久化，TTL 过期机制，`cache_stats` / `cache_clear` MCP 工具
+- **工具分级定义** — 核心工具（15 个必备）与高级工具（46 个领域专用）分类，为未来上下文预算优化做准备
+
+### 变更
+- `TaskModel.status` 新增数据库索引（提升查询性能）
+- `resolve_task_dependencies` 改用批量 IN 查询替换逐条查询（N+1 优化）
+- `detect_dependency_cycle` 改为广度优先搜索 + 批量查询（大规模依赖图性能优化）
+- `task_list_project` 分页 — 新增 `limit` / `offset` / `include_completed` / `status` 参数
+
+### 修复
+- `trust.py` 错误响应改为 `HTTPException`（此前返回裸字典）
+- `git_ops.py` 敏感文件过滤改用 `basename`（避免路径包含关键字时误拦）
+- `channels.py` 死代码清理
+- 修复已存在的 `test_check_for_updates_no_git_repo_silent` 测试
+
+## [1.0.0] — 2026-04-05
+
+### 新增
+- **错误类型到恢复策略映射** — `_api_call` 统一附加 `_recovery` 和 `_error_category`，自动推荐恢复动作
+- **文件锁 / 工作区隔离** — `file_lock_acquire` / `release` / `check` / `list` 4 个 MCP 工具 + TTL=300 秒 + hook 警告，防止并发编辑冲突
+- **频道通讯系统** — `team:` / `project:` / `global` 三种频道格式 + `@mention` 支持，`channel_send` / `channel_read` / `channel_mentions` MCP 工具
+- **执行模式记忆** — 成功/失败模式记录 + BM25 检索 + 子 Agent 上下文注入，`pattern_record` / `pattern_search` MCP 工具
+- **Git 自动化工具** — `git_auto_commit` / `git_create_pr` / `git_status_check` MCP 工具，自动过滤敏感文件
+- **Guardrails 一级防护** — 7 种危险模式检测 + 个人信息警告 + `InputGuardrailMiddleware`，防止无监督运行时的破坏性操作
+- **Alembic 数据库迁移系统** — 初始修订版本 + 双路径初始化（全新/已有数据库），迁移历史可追踪
+- **MCP 调试日志系统** — `~/.claude/data/ai-team-os/mcp-debug.log`，工具调用链路可观测
+
+### 变更
+- **陷阱工具消除** — `team_create` / `agent_register` 描述首行添加警告 + `_warning` 返回值，防止误用
+- **`task_id` 自动注入** — 子 Agent 上下文自动携带当前 task_id，无需手动传递
+- **增强任务分配** — `auto_assign` 加入 `completion_rate` + `trust_score` 加权，优先分配可靠 Agent
+- **`inject_subagent_context` 环境变量统一** — 统一为 `AITEAM_API_URL`
+
+### 修复
+- `context_monitor` 改为读取项目级监控文件（不再读取过时的全局文件）
+- 修复已存在的 `test_check_for_updates_no_git_repo_silent` 测试
+
+### 测试
+- 28 个跨功能集成测试
+- 总测试数：769（从 389 增长）
+
+## [0.9.0] — 2026-04-04
+
+### 新增
+- **Prompt Registry（提示词注册表）** — Agent 模板版本追踪 + 效果统计，3 个 API 端点 + `prompt_version_list` / `prompt_effectiveness` MCP 工具，与 `failure_alchemy` 关联
+- **BM25 搜索升级** — 中文 bigram + 英文分词替代简单关键词匹配，搜索质量提升 3-5 倍，优雅降级（`jieba` 为可选依赖）
+- **事件日志增强** — EventModel 新增 `entity_id` / `entity_type` / `state_snapshot` 三个字段，自动快照 + 实体过滤
+- **辩论模式** — 4 轮结构化辩论（倡导者 -> 批评者 -> 回应 -> 裁判）+ `debate_start` / `debate_code_review` MCP 工具 + 2 个辩论角色模板
+- **3 个仪表盘可观测性页面** — 流水线可视化 / 失败分析 / 提示词注册表
+- **Agent 模板自动安装** — `install.py` 自动安装到 `~/.claude/agents/`（默认 opus 模型）
+- **CC Marketplace 提交** — 正式提交到 Anthropic 官方插件市场
+
+### 变更
+- **server.py 模块化拆分** — 3050 行单文件拆分为 57 行入口 + 14 个工具模块 + 2 个基础模块，可维护性大幅提升
+- **会话启动优化** — 从 15-25 秒缩短至 1-2 秒：并行化 + 异步 git 检查 + 减少重试次数
+- **workflow_reminder 项目隔离** — 所有 API 调用添加 `X-Project-Id` 请求头
+- **install.py 重构** — 支持多 hook 分组/事件、自动设置 `AGENT_TEAMS` 环境变量和 `effortLevel` 推荐配置
+- **`_resolve_project_id` 缓存** — 5 分钟 TTL 文件缓存，减少高频 hook 的 HTTP 调用
+- **inject_subagent_context 环境变量统一** — `AI_TEAM_OS_API` 更名为 `AITEAM_API_URL`
+- **测试导入路径迁移** — `plugin/hooks/` 迁移至 `aiteam.hooks` 包导入
+
+### 修复
+- workflow_reminder 项目级任务查询缺少 `X-Project-Id` 请求头（B1）
+- TeamDelete PUT 请求缺少 `X-Project-Id` 请求头（B2）
+- 测试文件导入路径断裂（plugin/hooks 删除后）
+- `context_monitor` 路径修复 — 改为读取项目级文件而非全局过时文件
+- statusline.py 相关废弃测试清理
+
+### 移除
+- **plugin/hooks/ 死代码清理** — 删除 11 个过时的 `.py` / `.ps1` 文件，仅保留 `hooks.json` + `README`
+- **重复 Agent 模板清理** — 删除旧版 `meeting-facilitator.md` 和 `tech-lead.md`（从 25 个减至 23 个模板）
+- **移除 enforce_model hook** — 保留用户模型选择的灵活性
+- **从 install.py 移除模型设置** — 不再强制新用户配置模型
+
+## [0.8.0] — 2026-04-04
+
+### 新增
+- **成本追踪**：AgentActivity 新增 `tokens_input`/`tokens_output`/`cost_usd` 字段，`GET /api/analytics/token-costs` 接口，`token_costs` MCP 工具
+- **执行追踪**：`GET /api/tasks/{id}/execution-trace` 统一时间线（事件 + 备忘录），`task_execution_trace` MCP 工具
+- **Agent 实时面板**：`AgentLivePage` 仪表盘，状态标签（忙碌/等待/离线），30 秒自动刷新
+- **故障自动诊断**：`FailureAlchemist.diagnose_failure()`，`POST /api/tasks/{id}/diagnose`，`diagnose_task_failure` MCP 工具
+- **Slack/Webhook 通知**：`NotificationService`，EventBus 自动触发，`GET/PUT/DELETE /api/settings/webhook`，`send_notification` MCP 工具
+- **流水线并行执行**：`parallel_with` 字段，完成门控，4 个新增并行测试（共 28 个）
+- **执行回放引擎**：`ReplayEngine`（get_replay + compare_executions），`task_replay`/`task_compare` MCP 工具
+- **成本预算与告警**：每周预算限额（默认 50 美元），80% 告警阈值，`GET /api/analytics/budget`，`budget_status` MCP 工具
+- **Leader 简报页面**：双层标签页（项目 + 状态），项目名称标签，解决/忽略操作界面
+- **79 个 MCP 工具**（原为 72 个）
+
+### 修复
+- **P0 API 进程管理**：PID 文件替换文件锁，`_is_api_healthy()` 替换 `_is_port_open()`，卡死进程 15 秒自动终止
+- **全局项目隔离**：`Repository._apply_project_filter()`，MCP 自动注入 `X-Project-Id` 请求头
+- **会话启动**：使用工作目录匹配的项目（不再使用 `projects[0]`）
+- **简报列表隔离**：使用限定范围的仓储
+- **上下文监控**：按项目隔离文件（不再跨会话覆盖）
+
+### 变更
+- **Hook 脚本**：改用 `python -m aiteam.hooks.*` 模块调用方式（不再使用文件路径）
+- **插件 hooks.json + .mcp.json**：统一为 python -m 命令
+- **install.py**：基于模块的 hook，`~/.mcp.json` 用于跨项目 MCP
+
+## [0.7.2] — 2026-04-02
+
+### 新增
+- **MCP 工具**：`project_update`、`project_delete`、`project_summary`、`task_subtasks`、`team_delete`、`briefing_dismiss`（共 72 个）
+- **仪表盘项目改版**：状态标签（活跃/非活跃），可展开的详情行，唤醒设置标签页
+- **项目摘要 API**：`GET /api/projects/{id}/summary` — 快速状态 + 优先任务
+
+### 变更
+- **项目隔离重新设计**：移除按项目分库方案（死代码，减少 180 行），统一 `context_resolve()` 使用进程级缓存
+- **SQLite WAL 模式**：通过引擎事件监听器启用，支持多会话并发
+- **禁用自动项目注册**：SessionStart 不再自动创建项目，提示用户通过 `project_create` 手动注册
+- **context_resolve()**：移除危险的 `projects[0]` 回退策略，无匹配时返回空值
+
+### 修复
+- 多会话数据库锁：SQLite `journal_mode=WAL` + `busy_timeout=10s` 防止并发写入失败
+- 数据回填：272 个孤立 Agent、57 个任务、72 个会议分配到正确项目
+- 垃圾项目清理：移除 6 个自动创建的项目，去重量化项目
+- 仪表盘 `ProjectSwitcher` 下拉框移除（原先会跳转到空白页）
+- 唤醒 Agent `--output-format stream-json` 错误移除（与 `-p` 标志不兼容）
+- 唤醒熔断器：仅统计真实失败（错误/超时），不统计跳过
+
+## [0.7.1] — 2026-04-02
+
+### 新增
+- **Leader 简报系统** — 自主运行时的决策上报机制
+  - 数据库表 `leader_briefings` + Pydantic 模型 + ORM
+  - 3 个 MCP 工具：`briefing_add`、`briefing_list`、`briefing_resolve`
+  - API 端点：GET/POST `/api/leader-briefings`，PUT `/{id}/resolve`，PUT `/{id}/dismiss`
+  - Leader 在自主工作期间记录待决事项，用户返回后统一审阅
+- **通过 CronCreate 自动唤醒** — SessionStart 启动时注入 CronCreate 指令
+  - 每 3 分钟 Leader 自动检查任务墙并推进工作
+  - 通过 `briefing_add` 上报决策，用户返回时汇报待处理事项
+- **install.py** — 一键安装 hook、MCP 和验证
+  - `python scripts/install.py` — 完整安装（hook + MCP + settings.json）
+  - `python scripts/install.py --check` — 验证 9 个 hook、MCP、API、包
+  - `python scripts/install.py --uninstall` — 移除配置，保留数据
+
+## [0.7.0] — 2026-04-02
+
+### 新增
+- **唤醒 Agent 调度器** — 通过 `claude -p` 子进程自动唤醒 Agent
+  - WakeAgentManager：子进程生命周期管理（communicate + 两阶段终止）
+  - WakeSession 数据模型 + ORM + 7 个仓储 CRUD 方法
+  - 7 层安全机制：数组参数、UUID 验证、按 Agent 加锁、全局信号量（最大=2）、熔断器、提示/数据 XML 分离、环境变量清理
+  - 分诊预检：无可执行任务时跳过唤醒（约 70% 跳过率）
+  - 紧急停止 API：`PUT /wake-pause-all`、`PUT /wake-resume-all`
+  - StateReaper 集成（即发即忘 + 优雅关闭）
+  - allowedTools 预设：安全模式（无 Bash）/ 含 Bash 模式（显式启用）
+- **CronCreate 会话唤醒** — 验证 CC 内置定时任务用于唤醒当前会话
+- 20 个 wake_manager 单元测试（全部通过）
+- 唤醒会话结果追踪（已完成/超时/错误/熔断/分诊跳过）
+
+### 修复
+- `context_resolve()` 自动项目选择：通过工作目录匹配 root_path，不再盲目选择第一个项目
+- Hook 路径编码：将 hook 脚本移至 ASCII 路径（`~/.claude/plugins/ai-team-os/hooks/`）
+- Hook 豁免列表：将 claude-code-guide、tdd-guide、refactor-cleaner 添加到非阻塞 Agent 类型
+- 调度器路由中 `valid_actions` 缺少 "wake_agent"（导致无法创建 API）
+- 信号量私有 API 访问（`_value`）替换为 `locked()`
+- 熔断器：仅统计真实失败（错误/超时），不统计跳过
+- `duration_seconds` 现已正确计算并记录
+- `shutdown()` 字典迭代安全（取消前先快照值）
+- 全局 MCP 配置：添加 `cwd` 字段以支持跨目录使用
+- 数据迁移：将 19 个任务 + 1 个团队从错误项目移至正确项目
+
+### 变更
+- `_clean_env()` 从白名单策略改为黑名单策略（继承全部，排除密钥）
+- 插件清单：添加 `hooks` 字段指向 `hooks/hooks.json`
+- 插件 `.mcp.json`：本地开发模式使用 `python -m aiteam.mcp.server` 并指定 `cwd`
+
+## [0.6.0] — 2026-03-22
+
+### 新增
+- 工作流编排流水线（7 个模板，自动阶段推进）
+- 流水线强制执行：task_type 参数 + 逐步阻塞
+- 跨项目消息系统（v1，单机版）
+- 自动更新机制（scripts/update.py）
+- 团队清理提醒（SessionStart + 规则 15）
+- 独立安装方式（hook 复制到 ~/.claude/hooks/）
+- CC 插件包结构
+- 卸载脚本（scripts/uninstall.py）
+- 仪表盘：活动表格 + 决策时间线增强
+
+### 修复
+- 全局 MCP 配置：使用 ~/.claude.json（而非 settings.json）
+- 安装依赖（fastapi、uvicorn、fastmcp 改为必需依赖）
+- SessionStart API 重试（针对时序问题重试 3 次）
+- B0.9 噪音降低（首次提醒后每 10 次调用提醒一次）
+- Windows UTF-8 编码修复（所有 hook 脚本）
+
+## [0.5.0] — 2026-03-22
+
+### 新增
+- 跨项目消息系统（2 个 MCP 工具 + 4 个 API 端点 + 全局数据库）
+- 自动更新机制（scripts/update.py + install.py --update）
+- SessionStart 24 小时冷却更新检查
+- 独立安装：hook 复制到 ~/.claude/hooks/ai-team-os/
+- 全局 MCP 注册到 ~/.claude/settings.json
+
+### 变更
+- 安装步骤缩减为 3 步（API 随 MCP 自动启动，无需手动启动）
+
+## [0.4.0] — 2026-03-21
+
+### 新增
+- 按项目数据库隔离（阶段 1-4）
+- EnginePool 带 LRU 缓存的多数据库管理
+- ProjectContextMiddleware（X-Project-Dir 请求头路由）
+- 迁移脚本：按 project_id 拆分全局数据库
+- StateReaper + 看门狗多数据库适配
+- 仪表盘项目切换器
+- install.py：完整入门流程（hook + Agent + MCP + 验证）
+- GET /api/health 健康检查端点
+
+### 修复
+- Windows UTF-8 编码修复（所有 hook 脚本从 gbk 转为 utf-8）
+- 团队模板引用实际的 Agent 模板名称
+
+## [0.3.0] — 2026-03-21
+
+### 新增
+- 工作流强制执行：规则 2 任务墙检查 + 模板提醒
+- 本地 Agent 阻塞（B0.4）：所有非只读 Agent 必须有 team_name
+- Council 会议模板（3 轮多视角专家评审）
+- 会议自动选择：跨 8 个模板的关键词匹配
+- 团队关闭时级联关闭会议
+- find_skill MCP 工具，3 层渐进式加载
+- task_update MCP 工具 + PUT /api/tasks/{id}
+- 6 个新增 MCP 工具（共 55 个）
+- 467+ 个测试
+
+### 修复
+- S1 安全正则捕获大写 -R 标志
+- S1 heredoc 误报
+- 规则 7 任务墙计时器初始化
+- 会议过期时间从 2 小时调整为 45 分钟
+- B0.9 基础设施工具豁免于委派计数器
+
+## [0.2.0] — 2026-03-20
+
+### 新增
+- LoopEngine 与 AWARE 循环
+- 任务墙（评分排序 + 看板视图）
+- 调度器系统（周期性任务）
+- React 仪表盘（6 个页面）
+- 会议系统（7 个模板）
+- 26 个 Agent 模板，覆盖 7 个类别
+- 失败炼金术（抗体 + 疫苗 + 催化剂）
+- 假设分析
+- 国际化支持（中文/英文）
+- 研发监控系统（10 个信息源）
+
+## [0.1.0] — 2026-03-12
+
+### 新增
+- MCP 服务器 + FastAPI 后端
+- CC Hooks 集成（7 个生命周期事件）
+- 团队/Agent/任务/项目管理
+- SQLite 存储 + 异步仓储
+- 会话启动时行为规则注入
+- 事件总线 + 决策日志
+- 记忆搜索
