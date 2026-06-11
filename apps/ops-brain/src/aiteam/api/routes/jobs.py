@@ -1,0 +1,287 @@
+"""BLAIQ Admin — Job lifecycle routes.
+
+A Job is the central entity of the BLAIQ project workflow:
+
+  Client inquiry → PM creates Job+JobNumber in POOOL
+      ├─ POOOL track:    quote → costs → invoice → payment
+      ├─ ClickUp track:  folder → ticket → assign → revisions
+      └─ Server track:   folder → creative files → delivery
+
+Jobs are stored in ops.jobs (tenant-scoped, like all other ops.* tables).
+The ClickUp folder/ticket IDs are stamped here once created so the admin
+can navigate directly.  Finance fields mirror what POOOL would report;
+they are updated either via webhook or manual PM update.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Literal
+
+from collections.abc import AsyncGenerator
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import DateTime, String, Text, select
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column
+
+from aiteam.api.schemas import APIListResponse, APIResponse
+from aiteam.storage.connection import current_tenant_id, get_session
+from aiteam.storage.models import Base
+
+router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+async def _get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency that yields a tenant-scoped AsyncSession."""
+    async with get_session() as session:
+        yield session
+
+OPS_SCHEMA = "ops"
+
+# ──────────────────────────────────────────────
+# Domain literals
+# ──────────────────────────────────────────────
+
+PooolStatus = Literal[
+    "quote_pending",
+    "quote_sent",
+    "quote_approved",
+    "invoiced",
+    "partially_paid",
+    "paid",
+    "overdue",
+]
+
+DeliveryStatus = Literal["in_progress", "delivered", "archived"]
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ──────────────────────────────────────────────
+# SQLAlchemy model
+# ──────────────────────────────────────────────
+
+class JobModel(Base):
+    """ops.jobs — BLAIQ project job registry (tri-track)."""
+
+    __tablename__ = "jobs"
+    __table_args__ = {"schema": OPS_SCHEMA}
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), nullable=False, index=True)
+
+    # Core identity
+    job_number: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    client: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # POOOL track
+    poool_status: Mapped[str] = mapped_column(String(32), nullable=False, default="quote_pending")
+    poool_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quote_amount: Mapped[float | None] = mapped_column(nullable=True)
+    third_party_costs: Mapped[float | None] = mapped_column(nullable=True)
+    invoice_amount: Mapped[float | None] = mapped_column(nullable=True)
+
+    # ClickUp track
+    clickup_folder_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    clickup_ticket_ids: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    revision_count: Mapped[int] = mapped_column(nullable=False, default=0)
+
+    # Server track
+    server_folder_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_status: Mapped[str] = mapped_column(String(32), nullable=False, default="in_progress")
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Metadata
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+# ──────────────────────────────────────────────
+# Pydantic schemas
+# ──────────────────────────────────────────────
+
+class Job(BaseModel):
+    id: str
+    job_number: str
+    title: str
+    client: str
+    poool_status: str
+    poool_job_id: str | None = None
+    quote_amount: float | None = None
+    third_party_costs: float | None = None
+    invoice_amount: float | None = None
+    clickup_folder_id: str | None = None
+    clickup_ticket_ids: list[str] = Field(default_factory=list)
+    revision_count: int = 0
+    server_folder_path: str | None = None
+    delivery_status: str
+    delivered_at: str | None = None
+    notes: str = ""
+    created_at: str
+    updated_at: str
+
+
+class JobCreate(BaseModel):
+    job_number: str
+    title: str
+    client: str = ""
+    poool_job_id: str | None = None
+    quote_amount: float | None = None
+    notes: str = ""
+
+
+class JobUpdate(BaseModel):
+    title: str | None = None
+    client: str | None = None
+    poool_status: str | None = None
+    poool_job_id: str | None = None
+    quote_amount: float | None = None
+    third_party_costs: float | None = None
+    invoice_amount: float | None = None
+    clickup_folder_id: str | None = None
+    clickup_ticket_ids: list[str] | None = None
+    revision_count: int | None = None
+    server_folder_path: str | None = None
+    delivery_status: str | None = None
+    notes: str | None = None
+
+
+def _to_pydantic(m: JobModel) -> Job:
+    return Job(
+        id=m.id,
+        job_number=m.job_number,
+        title=m.title,
+        client=m.client,
+        poool_status=m.poool_status,
+        poool_job_id=m.poool_job_id,
+        quote_amount=m.quote_amount,
+        third_party_costs=m.third_party_costs,
+        invoice_amount=m.invoice_amount,
+        clickup_folder_id=m.clickup_folder_id,
+        clickup_ticket_ids=list(m.clickup_ticket_ids or []),
+        revision_count=m.revision_count,
+        server_folder_path=m.server_folder_path,
+        delivery_status=m.delivery_status,
+        delivered_at=m.delivered_at.isoformat() if m.delivered_at else None,
+        notes=m.notes,
+        created_at=m.created_at.isoformat(),
+        updated_at=m.updated_at.isoformat(),
+    )
+
+
+# ──────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────
+
+@router.post("", response_model=APIResponse[Job], status_code=201)
+async def create_job(
+    body: JobCreate,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+
+    job = JobModel(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        job_number=body.job_number,
+        title=body.title,
+        client=body.client,
+        poool_job_id=body.poool_job_id,
+        quote_amount=body.quote_amount,
+        notes=body.notes,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    return APIResponse(data=_to_pydantic(job), message="Job created")
+
+
+@router.get("", response_model=APIListResponse[Job])
+async def list_jobs(
+    db: AsyncSession = Depends(_get_db),
+) -> APIListResponse[Job]:
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel)
+        .where(JobModel.tenant_id == tenant_id)
+        .order_by(JobModel.created_at.desc())
+    )
+    jobs = [_to_pydantic(m) for m in result.scalars().all()]
+    return APIListResponse(data=jobs, total=len(jobs))
+
+
+@router.get("/{job_id}", response_model=APIResponse[Job])
+async def get_job(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(
+            JobModel.id == job_id,
+            JobModel.tenant_id == tenant_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return APIResponse(data=_to_pydantic(job))
+
+
+@router.patch("/{job_id}", response_model=APIResponse[Job])
+async def update_job(
+    job_id: str,
+    body: JobUpdate,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(
+            JobModel.id == job_id,
+            JobModel.tenant_id == tenant_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(job, field, value)
+
+    if body.delivery_status == "delivered" and not job.delivered_at:
+        job.delivered_at = _utcnow()
+
+    job.updated_at = _utcnow()
+    await db.commit()
+    await db.refresh(job)
+    return APIResponse(data=_to_pydantic(job), message="Job updated")
+
+
+@router.delete("/{job_id}", response_model=APIResponse[None])
+async def delete_job(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[None]:
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(
+            JobModel.id == job_id,
+            JobModel.tenant_id == tenant_id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    await db.delete(job)
+    await db.commit()
+    return APIResponse(data=None, message="Job deleted")

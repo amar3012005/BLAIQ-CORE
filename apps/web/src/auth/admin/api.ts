@@ -1,60 +1,77 @@
-// Typed API client for the BLAIQ Admin (Ops Brain) surface.
+// Typed API client for the BLAIQ Admin surface.
 // All calls go through the daemon proxy at /api/v1/admin/*, which injects
 // X-Tenant-Id from the authenticated session.
 
 const BASE = '/api/v1/admin';
 
-export interface AdminProject {
-  id: string;
-  name: string;
-  status?: string;
-  team_id?: string;
-  created_at?: string | number;
-  description?: string | null;
-}
+// ──────────────────────────────────────────────────────────────
+// Job — central entity of the BLAIQ project workflow
+// ──────────────────────────────────────────────────────────────
 
-export interface AdminTask {
+export type PooolStatus =
+  | 'quote_pending'
+  | 'quote_sent'
+  | 'quote_approved'
+  | 'invoiced'
+  | 'partially_paid'
+  | 'paid'
+  | 'overdue';
+
+export type DeliveryStatus = 'in_progress' | 'delivered' | 'archived';
+
+export interface Job {
   id: string;
+  job_number: string;
   title: string;
-  horizon?: 'short' | 'mid' | 'long' | string;
-  priority?: string | number;
-  assignee?: string | null;
-  status?: string;
-  project_id?: string;
+  client: string;
+  // POOOL track
+  poool_status: PooolStatus;
+  poool_job_id?: string | null;
+  quote_amount?: number | null;
+  third_party_costs?: number | null;
+  invoice_amount?: number | null;
+  // ClickUp track
+  clickup_folder_id?: string | null;
+  clickup_ticket_ids: string[];
+  revision_count: number;
+  // Server track
+  server_folder_path?: string | null;
+  delivery_status: DeliveryStatus;
+  delivered_at?: string | null;
+  // Meta
+  notes: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface AdminAgent {
-  id: string;
-  name: string;
-  role?: string;
-  template_id?: string;
-  trust_score?: number;
-  status?: string;
+export interface JobCreate {
+  job_number: string;
+  title: string;
+  client?: string;
+  poool_job_id?: string;
+  quote_amount?: number;
+  notes?: string;
 }
 
-export interface AdminAgentTemplate {
-  id: string;
-  name: string;
-  category?: string;
-  description?: string;
+export interface JobUpdate {
+  title?: string;
+  client?: string;
+  poool_status?: PooolStatus;
+  poool_job_id?: string;
+  quote_amount?: number;
+  third_party_costs?: number;
+  invoice_amount?: number;
+  clickup_folder_id?: string;
+  clickup_ticket_ids?: string[];
+  revision_count?: number;
+  server_folder_path?: string;
+  delivery_status?: DeliveryStatus;
+  notes?: string;
 }
 
-export interface AdminMeeting {
-  id: string;
-  topic: string;
-  template?: string;
-  status?: string;
-  started_at?: string | number;
-  team_id?: string;
-}
-
-export interface AdminMeetingMessage {
-  id: string;
-  agent?: string;
-  role?: string;
-  content: string;
-  created_at?: string | number;
-}
+// ──────────────────────────────────────────────────────────────
+// Activity stream (kept from original — used by ActivityFeed)
+// ──────────────────────────────────────────────────────────────
 
 export interface AdminActivity {
   id: string;
@@ -64,11 +81,20 @@ export interface AdminActivity {
   created_at?: string | number;
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, { credentials: 'include' });
-  if (!r.ok) {
-    throw new Error(`GET ${path} failed: HTTP ${r.status}`);
-  }
+// ──────────────────────────────────────────────────────────────
+// HTTP helpers
+// ──────────────────────────────────────────────────────────────
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!r.ok) throw new Error(`${init?.method ?? 'GET'} ${path} failed: HTTP ${r.status}`);
   return (await r.json()) as T;
 }
 
@@ -77,63 +103,57 @@ function asArray<T>(value: unknown, key?: string): T[] {
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;
     if (key && Array.isArray(obj[key])) return obj[key] as T[];
-    for (const k of ['items', 'data', 'results']) {
+    for (const k of ['data', 'items', 'results']) {
       if (Array.isArray(obj[k])) return obj[k] as T[];
     }
   }
   return [];
 }
 
-export async function listProjects(): Promise<AdminProject[]> {
-  const data = await getJson<unknown>('/api/projects');
-  return asArray<AdminProject>(data, 'projects');
+// ──────────────────────────────────────────────────────────────
+// Job API
+// ──────────────────────────────────────────────────────────────
+
+export async function listJobs(): Promise<Job[]> {
+  const data = await request<unknown>('/api/jobs');
+  return asArray<Job>(data, 'data');
 }
 
-export async function getProject(id: string): Promise<AdminProject | null> {
+export async function getJob(id: string): Promise<Job | null> {
   try {
-    return await getJson<AdminProject>(`/api/projects/${encodeURIComponent(id)}`);
+    const data = await request<{ data?: Job }>(`/api/jobs/${encodeURIComponent(id)}`);
+    return data.data ?? null;
   } catch {
     return null;
   }
 }
 
-export async function listTasksForTeam(teamId: string): Promise<AdminTask[]> {
-  const data = await getJson<unknown>(
-    `/api/teams/${encodeURIComponent(teamId)}/task-wall`,
-  );
-  return asArray<AdminTask>(data, 'tasks');
+export async function createJob(body: JobCreate): Promise<Job> {
+  const data = await request<{ data: Job }>('/api/jobs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return data.data;
 }
 
-export async function listAgentsForTeam(teamId: string): Promise<AdminAgent[]> {
-  const data = await getJson<unknown>(
-    `/api/teams/${encodeURIComponent(teamId)}/agents`,
-  );
-  return asArray<AdminAgent>(data, 'agents');
+export async function updateJob(id: string, body: JobUpdate): Promise<Job> {
+  const data = await request<{ data: Job }>(`/api/jobs/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return data.data;
 }
 
-export async function listAgentTemplates(): Promise<AdminAgentTemplate[]> {
-  const data = await getJson<unknown>('/api/agent-templates');
-  return asArray<AdminAgentTemplate>(data, 'templates');
+export async function deleteJob(id: string): Promise<void> {
+  await request(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-export async function listMeetingsForTeam(teamId: string): Promise<AdminMeeting[]> {
-  const data = await getJson<unknown>(
-    `/api/teams/${encodeURIComponent(teamId)}/meetings`,
-  );
-  return asArray<AdminMeeting>(data, 'meetings');
-}
-
-export async function getMeetingMessages(
-  meetingId: string,
-): Promise<AdminMeetingMessage[]> {
-  const data = await getJson<unknown>(
-    `/api/meetings/${encodeURIComponent(meetingId)}/messages`,
-  );
-  return asArray<AdminMeetingMessage>(data, 'messages');
-}
+// ──────────────────────────────────────────────────────────────
+// Activity API
+// ──────────────────────────────────────────────────────────────
 
 export async function listActivities(): Promise<AdminActivity[]> {
-  const data = await getJson<unknown>('/api/activities');
+  const data = await request<unknown>('/api/activities');
   return asArray<AdminActivity>(data, 'activities');
 }
 
@@ -141,10 +161,6 @@ export interface ActivityStreamHandle {
   close: () => void;
 }
 
-/**
- * Subscribe to live activities. Tries SSE first; falls back to polling
- * every 3 s if EventSource is unavailable or the endpoint 404s.
- */
 export function streamActivities(
   onEvent: (event: AdminActivity) => void,
   onError?: (err: Error) => void,
@@ -170,21 +186,14 @@ export function streamActivities(
       }
     };
     void tick();
-    pollTimer = setInterval(() => {
-      void tick();
-    }, 3000);
+    pollTimer = setInterval(() => { void tick(); }, 3000);
   };
 
   try {
     if (typeof EventSource !== 'undefined') {
       es = new EventSource(`${BASE}/v1/stream`, { withCredentials: true });
       es.onmessage = (ev: MessageEvent<string>): void => {
-        try {
-          const parsed = JSON.parse(ev.data) as AdminActivity;
-          onEvent(parsed);
-        } catch {
-          // ignore malformed frames
-        }
+        try { onEvent(JSON.parse(ev.data) as AdminActivity); } catch { /* ignore */ }
       };
       es.onerror = (): void => {
         if (closed) return;

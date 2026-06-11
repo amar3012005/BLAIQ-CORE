@@ -1,49 +1,43 @@
-// BLAIQ Admin shell — side-nav native UI for the Ops Brain.
+// BLAIQ Admin shell — project workflow nav.
+// Nav mirrors the tri-track job lifecycle:
+//   Jobs (POOOL+ClickUp+Server), Finance (POOOL), Work (ClickUp tasks),
+//   Deliverables (Server), Activity (live stream), Analytics.
 
 'use client';
 
 import React, { useState, type CSSProperties } from 'react';
 import { PAL, monoSmall, sansBold } from './theme';
-import ProjectsBoard from './ProjectsBoard';
+import JobBoard from './JobBoard';
+import FinanceBoard from './FinanceBoard';
 import TasksWall from './TasksWall';
-import AgentsRoster from './AgentsRoster';
-import MeetingsBoard from './MeetingsBoard';
 import ActivityFeed from './ActivityFeed';
-import { CapacityView, PricingView, AnalyticsView } from './Placeholders';
+import { AnalyticsView } from './Placeholders';
 
 type TabId =
-  | 'projects'
-  | 'tasks'
-  | 'agents'
-  | 'meetings'
+  | 'jobs'
+  | 'finance'
+  | 'work'
   | 'activity'
-  | 'pricing'
-  | 'capacity'
   | 'analytics';
 
-type Section = { heading: string; items: Array<{ id: TabId; label: string; hint?: string }> };
+type Section = {
+  heading: string;
+  items: Array<{ id: TabId; label: string; hint?: string }>;
+};
 
 const SECTIONS: Section[] = [
   {
-    heading: 'Operate',
+    heading: 'Project',
     items: [
-      { id: 'projects', label: 'Projects', hint: 'Active engagements' },
-      { id: 'tasks', label: 'Task Wall', hint: 'Short / mid / long horizon' },
-      { id: 'meetings', label: 'Meetings', hint: 'Standups · Decisions · Reviews' },
-    ],
-  },
-  {
-    heading: 'Workforce',
-    items: [
-      { id: 'agents', label: 'Agents', hint: 'Roster + templates + trust' },
-      { id: 'capacity', label: 'Capacity', hint: 'Utilization + slots' },
+      { id: 'jobs', label: 'Jobs', hint: 'All jobs · tri-track status' },
+      { id: 'finance', label: 'Finance', hint: 'POOOL · quotes, invoices, payments' },
+      { id: 'work', label: 'Work', hint: 'ClickUp · tickets + revision rounds' },
     ],
   },
   {
     heading: 'Insight',
     items: [
       { id: 'activity', label: 'Activity', hint: 'Live event stream' },
-      { id: 'pricing', label: 'Pricing', hint: 'Margins + invoices' },
       { id: 'analytics', label: 'Analytics', hint: 'KPIs + trends' },
     ],
   },
@@ -52,7 +46,7 @@ const SECTIONS: Section[] = [
 const NAV_WIDTH = 220;
 
 export default function AdminShell(): JSX.Element {
-  const [tab, setTab] = useState<TabId>('projects');
+  const [tab, setTab] = useState<TabId>('jobs');
 
   return (
     <div
@@ -76,7 +70,21 @@ export default function AdminShell(): JSX.Element {
           gap: 18,
         }}
       >
-        {SECTIONS.map((section) => (
+        {/* Logo / wordmark */}
+        <div
+          style={{
+            ...monoSmall,
+            color: PAL.accent,
+            padding: '0 18px 10px 18px',
+            fontSize: 11,
+            letterSpacing: '0.2em',
+            borderBottom: `1px solid ${PAL.divider}`,
+          }}
+        >
+          BLAIQ ADMIN
+        </div>
+
+        {SECTIONS.map(section => (
           <div key={section.heading} style={{ display: 'flex', flexDirection: 'column' }}>
             <div
               style={{
@@ -88,7 +96,7 @@ export default function AdminShell(): JSX.Element {
             >
               {section.heading}
             </div>
-            {section.items.map((item) => {
+            {section.items.map(item => {
               const active = tab === item.id;
               return (
                 <button
@@ -107,12 +115,7 @@ export default function AdminShell(): JSX.Element {
                     }}
                   />
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-                    <span
-                      style={{
-                        ...sansBold,
-                        color: active ? PAL.ink : PAL.muted,
-                      }}
-                    >
+                    <span style={{ ...sansBold, color: active ? PAL.ink : PAL.muted }}>
                       {item.label}
                     </span>
                     {item.hint ? (
@@ -134,14 +137,12 @@ export default function AdminShell(): JSX.Element {
           </div>
         ))}
       </aside>
+
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
-        {tab === 'projects' && <ProjectsBoard />}
-        {tab === 'tasks' && <TasksWall />}
-        {tab === 'agents' && <AgentsRoster />}
-        {tab === 'meetings' && <MeetingsBoard />}
+        {tab === 'jobs' && <JobBoard />}
+        {tab === 'finance' && <FinanceBoard />}
+        {tab === 'work' && <TasksWall />}
         {tab === 'activity' && <ActivityFeed />}
-        {tab === 'pricing' && <PricingView />}
-        {tab === 'capacity' && <CapacityView />}
         {tab === 'analytics' && <AnalyticsView />}
       </div>
     </div>
