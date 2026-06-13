@@ -48,8 +48,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ops-brain:
+        condition: service_healthy
     environment:
       NODE_ENV: production
+      BLAIQ_OPS_BRAIN_URL: http://ops-brain:8010
+      BLAIQ_OPS_BRAIN_ENABLED: "true"
+      OPS_BRAIN_TRUST_TOKEN: ${OPS_BRAIN_TRUST_TOKEN:?OPS_BRAIN_TRUST_TOKEN required}
       NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=512}
       OD_BIND_HOST: 0.0.0.0
       OD_PORT: 7456
@@ -93,6 +98,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  ops-brain:
+    container_name: ops-brain
+    build:
+      context: ../apps/ops-brain
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${OPS_BRAIN_DATABASE_URL:?OPS_BRAIN_DATABASE_URL required}
+      OPS_BRAIN_TRUST_TOKEN: ${OPS_BRAIN_TRUST_TOKEN:?OPS_BRAIN_TRUST_TOKEN required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   open_design_pg:

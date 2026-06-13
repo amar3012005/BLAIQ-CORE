@@ -1,62 +1,93 @@
-// BLAIQ Admin · Tasks wall (3 horizon columns).
+// BLAIQ Admin · Work wall — ClickUp track view across all jobs.
+// Groups jobs by revision state so open work is visible at a glance.
 
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import {
-  listProjects,
-  listTasksForTeam,
-  type AdminProject,
-  type AdminTask,
-} from './api';
+import { listJobs, type Job } from './api';
 import { PAL, monoSmall, sansBold, sans, pill, emptyText } from './theme';
 import { ErrorBanner, SkeletonList } from './ProjectsBoard';
 
-const HORIZONS: Array<{ id: string; label: string }> = [
-  { id: 'short', label: 'Short horizon' },
-  { id: 'mid', label: 'Mid horizon' },
-  { id: 'long', label: 'Long horizon' },
+type Column = { id: string; label: string; filter: (j: Job) => boolean };
+
+const COLUMNS: Column[] = [
+  {
+    id: 'open',
+    label: 'Open / In Progress',
+    filter: (j) => j.delivery_status === 'in_progress' && j.revision_count === 0,
+  },
+  {
+    id: 'revision',
+    label: 'In Revision',
+    filter: (j) => j.delivery_status === 'in_progress' && j.revision_count > 0,
+  },
+  {
+    id: 'delivered',
+    label: 'Delivered',
+    filter: (j) => j.delivery_status === 'delivered',
+  },
 ];
 
+function JobCard({ job }: { job: Job }): JSX.Element {
+  const ticketCount = job.clickup_ticket_ids?.length ?? 0;
+  return (
+    <div
+      style={{
+        background: PAL.white,
+        border: `1px solid ${PAL.divider}`,
+        padding: '8px 10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ ...monoSmall, color: PAL.muted, fontSize: 9 }}>{job.job_number}</span>
+        {job.revision_count > 0 && (
+          <span style={pill('#F97316')}>{`R${job.revision_count}`}</span>
+        )}
+      </div>
+      <div style={{ ...sansBold, fontSize: 12, color: PAL.ink }}>{job.title}</div>
+      {job.client && (
+        <div style={{ ...sans, fontSize: 11, color: PAL.muted }}>{job.client}</div>
+      )}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+        {job.clickup_folder_id && (
+          <span style={pill()}>{`CU folder`}</span>
+        )}
+        {ticketCount > 0 && (
+          <span style={{ ...sans, fontSize: 10, color: PAL.muted }}>
+            {ticketCount} ticket{ticketCount !== 1 ? 's' : ''}
+          </span>
+        )}
+        {job.server_folder_path && (
+          <span style={{ ...monoSmall, fontSize: 9, color: PAL.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+            {job.server_folder_path.split('/').pop()}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function TasksWall(): JSX.Element {
-  const [tasks, setTasks] = useState<AdminTask[] | null>(null);
+  const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    (async (): Promise<void> => {
-      try {
-        const projects = await listProjects();
-        const teamIds = Array.from(
-          new Set(projects.map((p) => p.team_id).filter((x): x is string => Boolean(x))),
-        );
-        const all: AdminTask[] = [];
-        for (const tid of teamIds) {
-          try {
-            const t = await listTasksForTeam(tid);
-            all.push(...t);
-          } catch {
-            // skip team-level failures so a single bad team doesn't blank the wall
-          }
-        }
-        if (!cancelled) setTasks(all);
-      } catch (err) {
-        if (!cancelled) setError((err as Error).message);
-      }
-    })();
-    return (): void => {
-      cancelled = true;
-    };
+    listJobs()
+      .then((j) => setJobs(j))
+      .catch((e: Error) => setError(e.message));
   }, []);
 
   return (
     <div style={{ padding: 20, height: '100%', overflowY: 'auto' }}>
       <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 16 }}>
-        TASK WALL · ALL TEAMS
+        WORK · CLICKUP TRACK
       </div>
       {error && <ErrorBanner message={error} />}
-      {!tasks && !error && <SkeletonList />}
-      {tasks && (
+      {!jobs && !error && <SkeletonList />}
+      {jobs && (
         <div
           style={{
             display: 'grid',
@@ -64,11 +95,11 @@ export default function TasksWall(): JSX.Element {
             gap: 16,
           }}
         >
-          {HORIZONS.map((h) => {
-            const items = tasks.filter((t) => (t.horizon ?? 'short') === h.id);
+          {COLUMNS.map((col) => {
+            const items = jobs.filter(col.filter);
             return (
               <div
-                key={h.id}
+                key={col.id}
                 style={{
                   background: PAL.panel,
                   border: `1px solid ${PAL.divider}`,
@@ -80,31 +111,11 @@ export default function TasksWall(): JSX.Element {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ ...monoSmall, color: PAL.ink }}>{h.label}</span>
+                  <span style={{ ...monoSmall, color: PAL.ink }}>{col.label}</span>
                   <span style={{ ...monoSmall, color: PAL.muted }}>{items.length}</span>
                 </div>
                 {items.length === 0 && <div style={emptyText}>Empty.</div>}
-                {items.map((t) => (
-                  <div
-                    key={t.id}
-                    style={{
-                      background: PAL.white,
-                      border: `1px solid ${PAL.divider}`,
-                      padding: '8px 10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                    }}
-                  >
-                    <div style={{ ...sansBold, fontSize: 12, color: PAL.ink }}>{t.title}</div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      {t.priority !== undefined && <span style={pill()}>P:{String(t.priority)}</span>}
-                      {t.assignee && (
-                        <span style={{ ...sans, fontSize: 10, color: PAL.muted }}>{t.assignee}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                {items.map((j) => <JobCard key={j.id} job={j} />)}
               </div>
             );
           })}

@@ -11,10 +11,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN uv pip install --system -e ".[full,bm25]"
-
+COPY pyproject.toml README.md ./
 COPY src ./src
+RUN uv pip install --system --no-editable ".[full,bm25]"
+
 COPY migrations ./migrations
 COPY alembic.ini ./
 

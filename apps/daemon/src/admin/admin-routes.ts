@@ -56,10 +56,10 @@ const TRUST_TOKEN: string = (() => {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function signTrust(tenantId: string, timestamp: string): string {
+function signTrust(tenantId: string): string {
   return crypto
     .createHmac('sha256', TRUST_TOKEN)
-    .update(`${tenantId}:${timestamp}`)
+    .update(tenantId)
     .digest('hex');
 }
 
@@ -114,12 +114,10 @@ function buildUpstreamHeaders(
   tenantId: string,
   userId: string,
 ): http.OutgoingHttpHeaders {
-  const ts = Date.now().toString();
   const headers: http.OutgoingHttpHeaders = {
     'X-Tenant-Id': tenantId,
     'X-User-Id': userId,
-    'X-Ops-Trust': signTrust(tenantId, ts),
-    'X-Ops-Trust-Ts': ts,
+    'X-Ops-Trust': signTrust(tenantId),
   };
   const ct = req.header('content-type');
   if (ct) headers['Content-Type'] = ct;
