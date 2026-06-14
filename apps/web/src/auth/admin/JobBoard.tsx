@@ -8,7 +8,12 @@ import {
   listJobs,
   updateJob,
   createJob,
+  costItemsTotal,
+  withProductionFee,
+  jobIsOverdue,
+  PRODUCTION_FEE_RATE,
   type Job,
+  type CostItem,
   type PooolStatus,
   type DeliveryStatus,
 } from './api';
@@ -197,31 +202,51 @@ interface DetailPanelProps {
 
 function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element {
   const [saving, setSaving] = useState(false);
+  // Local draft of the third-party cost line items (task 1). Synced from the
+  // job whenever a different job is selected.
+  const [costDraft, setCostDraft] = useState<CostItem[]>(job.cost_items ?? []);
+  const [dueDraft, setDueDraft] = useState<string>(job.payment_due_date ?? '');
 
-  const setPoool = async (status: PooolStatus): Promise<void> => {
+  useEffect(() => {
+    setCostDraft(job.cost_items ?? []);
+    setDueDraft(job.payment_due_date ?? '');
+  }, [job.id, job.cost_items, job.payment_due_date]);
+
+  const overdue = jobIsOverdue(job);
+
+  const patch = async (body: Parameters<typeof updateJob>[1]): Promise<void> => {
     setSaving(true);
     try {
-      const updated = await updateJob(job.id, { poool_status: status });
+      const updated = await updateJob(job.id, body);
       onUpdate(updated);
     } finally {
       setSaving(false);
     }
   };
 
-  const setDelivery = async (status: DeliveryStatus): Promise<void> => {
-    setSaving(true);
-    try {
-      const updated = await updateJob(job.id, { delivery_status: status });
-      onUpdate(updated);
-    } finally {
-      setSaving(false);
-    }
+  const setPoool = (status: PooolStatus): Promise<void> => patch({ poool_status: status });
+  const setDelivery = (status: DeliveryStatus): Promise<void> => patch({ delivery_status: status });
+
+  const saveCosts = (): Promise<void> => {
+    const cleaned = costDraft
+      .map(c => ({ vendor: c.vendor.trim(), amount: Number(c.amount) || 0 }))
+      .filter(c => c.vendor || c.amount);
+    return patch({ cost_items: cleaned });
   };
+
+  const saveDueDate = (value: string): Promise<void> =>
+    patch({ payment_due_date: value || null });
+
+  const netCosts = costItemsTotal(costDraft);
+  const grossCosts = withProductionFee(netCosts);
+  const costsDirty =
+    JSON.stringify(costDraft.map(c => ({ vendor: c.vendor, amount: Number(c.amount) || 0 }))) !==
+    JSON.stringify((job.cost_items ?? []).map(c => ({ vendor: c.vendor, amount: c.amount })));
 
   const row = (label: string, value: React.ReactNode): JSX.Element => (
     <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
       <div style={{ ...monoSmall, color: PAL.muted, width: 130, flexShrink: 0 }}>{label}</div>
-      <div style={{ ...sans, fontSize: 12, color: PAL.ink }}>{value}</div>
+      <div style={{ ...sans, fontSize: 12, color: PAL.ink, flex: 1 }}>{value}</div>
     </div>
   );
 
@@ -230,6 +255,17 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   ];
 
   const DELIVERY_STATUSES: DeliveryStatus[] = ['in_progress', 'delivered', 'archived'];
+
+  const costInput: React.CSSProperties = {
+    padding: '4px 6px',
+    border: `1px solid ${PAL.divider}`,
+    background: PAL.white,
+    ...sans,
+    fontSize: 11,
+    color: PAL.ink,
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
 
   return (
     <div
@@ -242,7 +278,12 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <div style={{ ...monoSmall, color: PAL.muted }}>JOB {job.job_number}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ ...monoSmall, color: PAL.muted }}>JOB {job.job_number}</span>
+            {overdue && (
+              <span style={{ ...pill('#EF4444'), fontSize: 8 }}>OVERDUE</span>
+            )}
+          </div>
           <div style={{ ...sansBold, fontSize: 15, color: PAL.ink, marginTop: 4 }}>{job.title}</div>
           {job.client && <div style={{ ...sans, fontSize: 12, color: PAL.muted, marginTop: 2 }}>{job.client}</div>}
         </div>
@@ -289,10 +330,120 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
           </div>
         ))}
         {row('Quote', fmtEur(job.quote_amount))}
-        {row('3rd-party + 15%', job.third_party_costs != null
-          ? fmtEur((job.third_party_costs ?? 0) * 1.15)
-          : '—')}
         {row('Invoice', fmtEur(job.invoice_amount))}
+        {row('Payment due', (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="date"
+              value={dueDraft}
+              disabled={saving}
+              onChange={e => setDueDraft(e.target.value)}
+              onBlur={() => {
+                if (dueDraft !== (job.payment_due_date ?? '')) void saveDueDate(dueDraft);
+              }}
+              style={{ ...costInput, width: 150 }}
+            />
+            {overdue && <span style={{ ...monoSmall, color: '#EF4444', fontSize: 8 }}>PAST DUE</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* Third-party costs (task 1) */}
+      <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>
+        THIRD-PARTY COSTS · FREMDKOSTEN
+      </div>
+      <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+          {costDraft.length === 0 && (
+            <div style={{ ...sans, fontSize: 11, color: PAL.muted, fontStyle: 'italic' }}>
+              No third-party costs yet.
+            </div>
+          )}
+          {costDraft.map((c, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                placeholder="Vendor / Lieferant"
+                value={c.vendor}
+                disabled={saving}
+                onChange={e => {
+                  const vendor = e.target.value;
+                  setCostDraft(costDraft.map((it, j) => (j === i ? { ...it, vendor } : it)));
+                }}
+                style={{ ...costInput, flex: 1 }}
+              />
+              <input
+                type="number"
+                placeholder="0.00"
+                value={c.amount === 0 ? '' : String(c.amount)}
+                disabled={saving}
+                onChange={e => {
+                  const amount = parseFloat(e.target.value) || 0;
+                  setCostDraft(costDraft.map((it, j) => (j === i ? { ...it, amount } : it)));
+                }}
+                style={{ ...costInput, width: 90, textAlign: 'right' }}
+              />
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setCostDraft(costDraft.filter((_, j) => j !== i))}
+                style={{
+                  border: `1px solid ${PAL.divider}`,
+                  background: 'transparent',
+                  color: PAL.muted,
+                  cursor: 'pointer',
+                  ...monoSmall,
+                  fontSize: 9,
+                  padding: '4px 7px',
+                }}
+                aria-label="Remove cost line"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => setCostDraft([...costDraft, { vendor: '', amount: 0 }])}
+            style={{
+              border: `1px dashed ${PAL.divider}`,
+              background: 'transparent',
+              color: PAL.muted,
+              cursor: 'pointer',
+              ...monoSmall,
+              fontSize: 8,
+              padding: '5px 10px',
+            }}
+          >
+            + ADD COST
+          </button>
+          {costsDirty && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => { void saveCosts(); }}
+              style={{
+                border: 'none',
+                background: PAL.accent,
+                color: PAL.white,
+                cursor: saving ? 'wait' : 'pointer',
+                ...monoSmall,
+                fontSize: 8,
+                padding: '5px 12px',
+              }}
+            >
+              {saving ? 'SAVING…' : 'SAVE COSTS'}
+            </button>
+          )}
+        </div>
+
+        {row('Net costs', fmtEur(netCosts))}
+        {row(`+ ${Math.round(PRODUCTION_FEE_RATE * 100)}% fee`, (
+          <span style={{ ...sansBold, fontSize: 12, color: PAL.ink }}>{fmtEur(grossCosts)}</span>
+        ))}
       </div>
 
       {/* ClickUp track */}
@@ -333,6 +484,27 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
           </div>
         ))}
         {job.delivered_at && row('Delivered', formatDate(job.delivered_at))}
+        {/* Mark as Delivered — one-click action (task 3) */}
+        {job.delivery_status !== 'delivered' && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => { void setDelivery('delivered'); }}
+            style={{
+              marginTop: 6,
+              width: '100%',
+              border: 'none',
+              background: '#10B981',
+              color: PAL.white,
+              cursor: saving ? 'wait' : 'pointer',
+              ...monoSmall,
+              fontSize: 9,
+              padding: '8px 12px',
+            }}
+          >
+            {saving ? 'SAVING…' : '✓ MARK AS DELIVERED'}
+          </button>
+        )}
       </div>
 
       {job.notes && (
@@ -465,6 +637,10 @@ export default function JobBoard(): JSX.Element {
                     <span style={{ ...pill(active ? PAL.white : pc) }}>
                       {pooolLabel(job.poool_status)}
                     </span>
+                    {/* Overdue flag */}
+                    {jobIsOverdue(job) && job.poool_status !== 'overdue' && (
+                      <span style={{ ...pill(active ? PAL.white : '#EF4444') }}>overdue</span>
+                    )}
                     {/* ClickUp */}
                     <span style={{ ...pill(active ? PAL.divider : PAL.muted) }}>
                       {job.revision_count > 0 ? `rev ${job.revision_count}` : 'no revisions'}

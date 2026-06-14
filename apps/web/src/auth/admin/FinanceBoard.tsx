@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { listJobs, type Job, type PooolStatus } from './api';
+import { listJobs, jobIsOverdue, type Job, type PooolStatus } from './api';
 import { PAL, monoSmall, sansBold, sans, skeletonBar, emptyText } from './theme';
 import { ErrorBanner } from './JobBoard';
 
@@ -45,14 +45,15 @@ function buildSummary(jobs: Job[]): FinanceSummary {
     paid: [],
   };
   for (const j of jobs) {
+    const overdue = jobIsOverdue(j);
     if (j.quote_amount) s.total_quote += j.quote_amount;
     if (j.invoice_amount) s.total_invoice += j.invoice_amount;
     if (j.poool_status === 'paid' && j.invoice_amount) s.total_paid += j.invoice_amount;
-    if (j.poool_status === 'overdue' && j.invoice_amount) s.total_overdue += j.invoice_amount;
+    if (overdue && j.invoice_amount) s.total_overdue += j.invoice_amount;
 
     if (j.poool_status === 'quote_pending' || j.poool_status === 'quote_sent') s.open_quotes.push(j);
+    else if (overdue) s.overdue.push(j);
     else if (j.poool_status === 'invoiced' || j.poool_status === 'partially_paid') s.invoiced.push(j);
-    else if (j.poool_status === 'overdue') s.overdue.push(j);
     else if (j.poool_status === 'paid') s.paid.push(j);
   }
   return s;

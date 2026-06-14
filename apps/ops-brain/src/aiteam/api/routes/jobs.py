@@ -16,14 +16,14 @@ they are updated either via webhook or manual PM update.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Literal
 
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, String, Text, select
+from sqlalchemy import Date, DateTime, String, Text, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -86,7 +86,11 @@ class JobModel(Base):
     poool_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     quote_amount: Mapped[float | None] = mapped_column(nullable=True)
     third_party_costs: Mapped[float | None] = mapped_column(nullable=True)
+    # Itemised third-party costs: [{"vendor": str, "amount": float}, ...].
+    # third_party_costs mirrors the sum of these so existing readers keep working.
+    cost_items: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     invoice_amount: Mapped[float | None] = mapped_column(nullable=True)
+    payment_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # ClickUp track
     clickup_folder_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -108,6 +112,14 @@ class JobModel(Base):
 # Pydantic schemas
 # ──────────────────────────────────────────────
 
+class CostItem(BaseModel):
+    """A single third-party cost line (e.g. a vendor invoice the agency
+    passes through to the client)."""
+
+    vendor: str = ""
+    amount: float = 0.0
+
+
 class Job(BaseModel):
     id: str
     job_number: str
@@ -117,7 +129,9 @@ class Job(BaseModel):
     poool_job_id: str | None = None
     quote_amount: float | None = None
     third_party_costs: float | None = None
+    cost_items: list[CostItem] = Field(default_factory=list)
     invoice_amount: float | None = None
+    payment_due_date: str | None = None
     clickup_folder_id: str | None = None
     clickup_ticket_ids: list[str] = Field(default_factory=list)
     revision_count: int = 0
@@ -145,7 +159,9 @@ class JobUpdate(BaseModel):
     poool_job_id: str | None = None
     quote_amount: float | None = None
     third_party_costs: float | None = None
+    cost_items: list[CostItem] | None = None
     invoice_amount: float | None = None
+    payment_due_date: str | None = None
     clickup_folder_id: str | None = None
     clickup_ticket_ids: list[str] | None = None
     revision_count: int | None = None
@@ -164,7 +180,9 @@ def _to_pydantic(m: JobModel) -> Job:
         poool_job_id=m.poool_job_id,
         quote_amount=m.quote_amount,
         third_party_costs=m.third_party_costs,
+        cost_items=[CostItem(**c) for c in (m.cost_items or []) if isinstance(c, dict)],
         invoice_amount=m.invoice_amount,
+        payment_due_date=m.payment_due_date.isoformat() if m.payment_due_date else None,
         clickup_folder_id=m.clickup_folder_id,
         clickup_ticket_ids=list(m.clickup_ticket_ids or []),
         revision_count=m.revision_count,
@@ -255,7 +273,24 @@ async def update_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+
+    # cost_items is the source of truth for the third-party total: whenever the
+    # PM edits the line items we recompute third_party_costs so finance views
+    # and the +15% production fee stay consistent.
+    if "cost_items" in updates:
+        items = updates["cost_items"]
+        updates["third_party_costs"] = round(
+            sum(float(c.get("amount") or 0) for c in items), 2
+        )
+
+    # payment_due_date arrives as an ISO date string ("YYYY-MM-DD"); coerce it
+    # to a date so the Date column accepts it.
+    if "payment_due_date" in updates and isinstance(updates["payment_due_date"], str):
+        raw = updates["payment_due_date"].strip()
+        updates["payment_due_date"] = date.fromisoformat(raw[:10]) if raw else None
+
+    for field, value in updates.items():
         setattr(job, field, value)
 
     if body.delivery_status == "delivered" and not job.delivered_at:

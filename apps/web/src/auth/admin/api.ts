@@ -19,6 +19,11 @@ export type PooolStatus =
 
 export type DeliveryStatus = 'in_progress' | 'delivered' | 'archived';
 
+export interface CostItem {
+  vendor: string;
+  amount: number;
+}
+
 export interface Job {
   id: string;
   job_number: string;
@@ -29,7 +34,9 @@ export interface Job {
   poool_job_id?: string | null;
   quote_amount?: number | null;
   third_party_costs?: number | null;
+  cost_items: CostItem[];
   invoice_amount?: number | null;
+  payment_due_date?: string | null;
   // ClickUp track
   clickup_folder_id?: string | null;
   clickup_ticket_ids: string[];
@@ -60,13 +67,45 @@ export interface JobUpdate {
   poool_job_id?: string;
   quote_amount?: number;
   third_party_costs?: number;
+  cost_items?: CostItem[];
   invoice_amount?: number;
+  payment_due_date?: string | null;
   clickup_folder_id?: string;
   clickup_ticket_ids?: string[];
   revision_count?: number;
   server_folder_path?: string;
   delivery_status?: DeliveryStatus;
   notes?: string;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Finance helpers (shared by JobBoard + FinanceBoard)
+// ──────────────────────────────────────────────────────────────
+
+// The agency adds a 15% production fee (Produktionshonorar) on top of the
+// collected third-party costs — see the project workflow PDF.
+export const PRODUCTION_FEE_RATE = 0.15;
+
+export function costItemsTotal(items: CostItem[] | undefined): number {
+  if (!items) return 0;
+  return items.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+}
+
+export function withProductionFee(net: number): number {
+  return net * (1 + PRODUCTION_FEE_RATE);
+}
+
+// A job is overdue when it has been invoiced (but not yet paid) and its
+// payment due date is in the past. Computed client-side so the badge reacts
+// immediately, ahead of the nightly POOOL payment check (Phase 3, task 10).
+export function jobIsOverdue(job: Job): boolean {
+  if (job.poool_status === 'paid') return false;
+  if (job.poool_status === 'overdue') return true;
+  if (job.poool_status !== 'invoiced' && job.poool_status !== 'partially_paid') return false;
+  if (!job.payment_due_date) return false;
+  const due = new Date(`${job.payment_due_date}T23:59:59`);
+  if (Number.isNaN(due.getTime())) return false;
+  return due.getTime() < Date.now();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -111,15 +150,97 @@ function asArray<T>(value: unknown, key?: string): T[] {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Job API
+// Preview mode — in-memory demo store
+//
+// The real Admin surface lives behind auth + the daemon proxy, so the
+// /admin-preview route (and anything that just wants to render the UI with
+// realistic data) flips this on. When enabled, the Job CRUD functions never
+// touch the network — they operate on a seeded in-memory store instead.
 // ──────────────────────────────────────────────────────────────
 
+let PREVIEW = false;
+
+export function enablePreviewMode(): void {
+  PREVIEW = true;
+}
+
+export function isPreviewMode(): boolean {
+  return PREVIEW;
+}
+
+let previewSeq = 100;
+const previewStore: Job[] = seedPreviewJobs();
+
+function seedPreviewJobs(): Job[] {
+  const now = new Date().toISOString();
+  const day = 86_400_000;
+  const iso = (offsetDays: number): string =>
+    new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+  return [
+    {
+      id: 'job-001', job_number: '2026-014', title: 'Frühjahrskampagne Plakatserie',
+      client: 'Stadtwerke München', poool_status: 'invoiced', poool_job_id: 'P-1041',
+      quote_amount: 12500, third_party_costs: 3200,
+      cost_items: [
+        { vendor: 'Druckerei Hofmann', amount: 2400 },
+        { vendor: 'Fotografie Lang', amount: 800 },
+      ],
+      invoice_amount: 12500, payment_due_date: iso(-9),
+      clickup_folder_id: 'CU-9001', clickup_ticket_ids: ['T-3301', 'T-3302'],
+      revision_count: 2, server_folder_path: '/Clients/Stadtwerke/2026-014',
+      delivery_status: 'delivered', delivered_at: now,
+      notes: 'Großflächenplakate + City-Light-Poster. Reinzeichnung freigegeben.',
+      created_at: now, updated_at: now,
+    },
+    {
+      id: 'job-002', job_number: '2026-021', title: 'Geschäftsbericht 2025',
+      client: 'Voss Logistik GmbH', poool_status: 'quote_sent', poool_job_id: 'P-1052',
+      quote_amount: 8400, third_party_costs: 0, cost_items: [],
+      invoice_amount: null, payment_due_date: null,
+      clickup_folder_id: 'CU-9014', clickup_ticket_ids: ['T-3410'],
+      revision_count: 0, server_folder_path: '/Clients/Voss/2026-021',
+      delivery_status: 'in_progress', delivered_at: null,
+      notes: '64-seitiger Bericht, Layout + Satz.',
+      created_at: now, updated_at: now,
+    },
+    {
+      id: 'job-003', job_number: '2026-026', title: 'Messestand Branding IFA',
+      client: 'Nordlicht Audio', poool_status: 'quote_pending',
+      quote_amount: null, third_party_costs: 0, cost_items: [],
+      invoice_amount: null, payment_due_date: null,
+      clickup_folder_id: null, clickup_ticket_ids: [],
+      revision_count: 0, server_folder_path: null,
+      delivery_status: 'in_progress', delivered_at: null,
+      notes: 'Erstanfrage über Protonet. Briefing-Call ausstehend.',
+      created_at: now, updated_at: now,
+    },
+    {
+      id: 'job-004', job_number: '2026-009', title: 'Rebranding Webauftritt',
+      client: 'Café Mehlwald', poool_status: 'paid', poool_job_id: 'P-1028',
+      quote_amount: 6200, third_party_costs: 450,
+      cost_items: [{ vendor: 'Lizenz Schriftart', amount: 450 }],
+      invoice_amount: 6200, payment_due_date: iso(-30),
+      clickup_folder_id: 'CU-8890', clickup_ticket_ids: ['T-3105'],
+      revision_count: 1, server_folder_path: '/Clients/Mehlwald/2026-009',
+      delivery_status: 'archived', delivered_at: now,
+      notes: 'Abgeschlossen und bezahlt.',
+      created_at: now, updated_at: now,
+    },
+  ];
+}
+
+function touch(job: Job): Job {
+  return { ...job, updated_at: new Date().toISOString() };
+}
+
 export async function listJobs(): Promise<Job[]> {
+  if (PREVIEW) return previewStore.map(j => ({ ...j }));
   const data = await request<unknown>('/api/jobs');
   return asArray<Job>(data, 'data');
 }
 
 export async function getJob(id: string): Promise<Job | null> {
+  if (PREVIEW) return previewStore.find(j => j.id === id) ?? null;
   try {
     const data = await request<{ data?: Job }>(`/api/jobs/${encodeURIComponent(id)}`);
     return data.data ?? null;
@@ -129,6 +250,33 @@ export async function getJob(id: string): Promise<Job | null> {
 }
 
 export async function createJob(body: JobCreate): Promise<Job> {
+  if (PREVIEW) {
+    const now = new Date().toISOString();
+    const job: Job = {
+      id: `job-${++previewSeq}`,
+      job_number: body.job_number,
+      title: body.title,
+      client: body.client ?? '',
+      poool_status: 'quote_pending',
+      poool_job_id: body.poool_job_id ?? null,
+      quote_amount: body.quote_amount ?? null,
+      third_party_costs: 0,
+      cost_items: [],
+      invoice_amount: null,
+      payment_due_date: null,
+      clickup_folder_id: null,
+      clickup_ticket_ids: [],
+      revision_count: 0,
+      server_folder_path: null,
+      delivery_status: 'in_progress',
+      delivered_at: null,
+      notes: body.notes ?? '',
+      created_at: now,
+      updated_at: now,
+    };
+    previewStore.unshift(job);
+    return { ...job };
+  }
   const data = await request<{ data: Job }>('/api/jobs', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -137,6 +285,21 @@ export async function createJob(body: JobCreate): Promise<Job> {
 }
 
 export async function updateJob(id: string, body: JobUpdate): Promise<Job> {
+  if (PREVIEW) {
+    const idx = previewStore.findIndex(j => j.id === id);
+    if (idx < 0) throw new Error(`PATCH /api/jobs/${id} failed: HTTP 404`);
+    const merged: Job = touch({ ...previewStore[idx], ...body } as Job);
+    // Mirror backend behaviour: cost_items drives the third-party total, and
+    // delivering stamps delivered_at.
+    if (body.cost_items) {
+      merged.third_party_costs = Math.round(costItemsTotal(body.cost_items) * 100) / 100;
+    }
+    if (body.delivery_status === 'delivered' && !merged.delivered_at) {
+      merged.delivered_at = new Date().toISOString();
+    }
+    previewStore[idx] = merged;
+    return { ...merged };
+  }
   const data = await request<{ data: Job }>(`/api/jobs/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
@@ -145,6 +308,11 @@ export async function updateJob(id: string, body: JobUpdate): Promise<Job> {
 }
 
 export async function deleteJob(id: string): Promise<void> {
+  if (PREVIEW) {
+    const idx = previewStore.findIndex(j => j.id === id);
+    if (idx >= 0) previewStore.splice(idx, 1);
+    return;
+  }
   await request(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 

@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { listJobs, type Job } from './api';
+import { listJobs, updateJob, type Job } from './api';
 import { PAL, monoSmall, sansBold, sans, pill, emptyText } from './theme';
 import { ErrorBanner, SkeletonList } from './ProjectsBoard';
 
@@ -28,8 +28,17 @@ const COLUMNS: Column[] = [
   },
 ];
 
-function JobCard({ job }: { job: Job }): JSX.Element {
+function JobCard({
+  job,
+  onRevise,
+  busy,
+}: {
+  job: Job;
+  onRevise: (job: Job) => void;
+  busy: boolean;
+}): JSX.Element {
   const ticketCount = job.clickup_ticket_ids?.length ?? 0;
+  const delivered = job.delivery_status === 'delivered';
   return (
     <div
       style={{
@@ -66,6 +75,27 @@ function JobCard({ job }: { job: Job }): JSX.Element {
           </span>
         )}
       </div>
+      {/* +1 Revision — opens a new correction round (task 4) */}
+      {!delivered && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onRevise(job)}
+          style={{
+            marginTop: 4,
+            alignSelf: 'flex-start',
+            border: `1px solid ${PAL.divider}`,
+            background: 'transparent',
+            color: '#F97316',
+            cursor: busy ? 'wait' : 'pointer',
+            ...monoSmall,
+            fontSize: 8,
+            padding: '4px 9px',
+          }}
+        >
+          {busy ? '…' : '+1 REVISION'}
+        </button>
+      )}
     </div>
   );
 }
@@ -73,12 +103,25 @@ function JobCard({ job }: { job: Job }): JSX.Element {
 export default function TasksWall(): JSX.Element {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     listJobs()
       .then((j) => setJobs(j))
       .catch((e: Error) => setError(e.message));
   }, []);
+
+  const revise = async (job: Job): Promise<void> => {
+    setBusyId(job.id);
+    try {
+      const updated = await updateJob(job.id, { revision_count: job.revision_count + 1 });
+      setJobs((prev) => (prev ? prev.map((j) => (j.id === updated.id ? updated : j)) : prev));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <div style={{ padding: 20, height: '100%', overflowY: 'auto' }}>
@@ -115,7 +158,9 @@ export default function TasksWall(): JSX.Element {
                   <span style={{ ...monoSmall, color: PAL.muted }}>{items.length}</span>
                 </div>
                 {items.length === 0 && <div style={emptyText}>Empty.</div>}
-                {items.map((j) => <JobCard key={j.id} job={j} />)}
+                {items.map((j) => (
+                  <JobCard key={j.id} job={j} onRevise={(job) => { void revise(job); }} busy={busyId === j.id} />
+                ))}
               </div>
             );
           })}
