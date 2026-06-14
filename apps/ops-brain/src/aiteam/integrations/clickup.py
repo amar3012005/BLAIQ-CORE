@@ -39,11 +39,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aiteam.storage.connection import session_scope
+from aiteam.storage.connection import get_session
 from aiteam.storage.models import TaskModel
 from aiteam.types import Task, TaskPriority, TaskHorizon, TaskStatus
 
@@ -173,7 +173,7 @@ async def on_task_create_hook(
     if not isinstance(external_id, str) or not external_id:
         return None
 
-    async with session_scope() as session:
+    async with get_session() as session:
         await session.execute(
             TaskModel.__table__
             .update()
@@ -281,7 +281,7 @@ async def sync_once(tenant_id: str, *, user_id: str = "") -> int:
         return 0
 
     upserted = 0
-    async with session_scope() as session:
+    async with get_session() as session:
         for entry in tasks:
             if not isinstance(entry, dict):
                 continue
@@ -291,6 +291,26 @@ async def sync_once(tenant_id: str, *, user_id: str = "") -> int:
             except Exception:
                 logger.exception("clickup upsert failed for tenant=%s", tenant_id)
     return upserted
+
+
+async def _clickup_enabled(tenant_id: str) -> bool:
+    """Read tenant_brand.clickup_enabled (RLS-bound). False until the PM turns
+    ClickUp sync on in the admin Settings, so the poller stays a no-op."""
+    try:
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT clickup_enabled FROM tenant_brand "
+                        "WHERE tenant_id = CAST(:tid AS uuid)"
+                    ),
+                    {"tid": tenant_id},
+                )
+            ).first()
+        return bool(row[0]) if row else False
+    except Exception:
+        logger.debug("clickup_enabled check failed (tenant=%s)", tenant_id, exc_info=True)
+        return False
 
 
 async def poll_clickup(
@@ -303,14 +323,25 @@ async def poll_clickup(
 
     Hosted by the Track D tenant scheduler (see aiteam.api.deps). The
     coroutine never returns under normal conditions; cancel the task to
-    stop it during tenant eviction.
+    stop it during tenant eviction. Each tick is skipped while the tenant
+    has ClickUp disabled, so it idles cheaply until configured.
     """
     logger.info("ClickUp poller started: tenant=%s every %.0fs", tenant_id, interval_s)
+    announced_disabled = False
     while True:
         try:
-            count = await sync_once(tenant_id, user_id=user_id)
-            if count:
-                logger.info("ClickUp poller upserted %d tasks for tenant=%s", count, tenant_id)
+            if not await _clickup_enabled(tenant_id):
+                if not announced_disabled:
+                    logger.info(
+                        "ClickUp sync disabled for tenant=%s; idling until enabled in Settings",
+                        tenant_id,
+                    )
+                    announced_disabled = True
+            else:
+                announced_disabled = False
+                count = await sync_once(tenant_id, user_id=user_id)
+                if count:
+                    logger.info("ClickUp poller upserted %d tasks for tenant=%s", count, tenant_id)
         except asyncio.CancelledError:
             logger.info("ClickUp poller cancelled: tenant=%s", tenant_id)
             raise

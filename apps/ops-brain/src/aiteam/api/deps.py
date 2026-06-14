@@ -87,6 +87,7 @@ class TenantState:
     background_started: bool = False
     last_used_at: float = field(default_factory=time.monotonic)
     clickup_poller_task: asyncio.Task[None] | None = None
+    poool_sync_task: asyncio.Task[None] | None = None
 
     def touch(self) -> None:
         """Bump the LRU timestamp; called on every dependency lookup."""
@@ -304,6 +305,31 @@ async def _start_background_tasks(state: TenantState) -> None:
                 _bound_poller(), name=f"clickup-poller:{state.tenant_id}"
             )
 
+        # POOOL read-through cache sync — pulls timetrack/orders/invoices into
+        # ops.poool_cache every ~30 min. No-op until the tenant enables POOOL.
+        if os.environ.get("BLAIQ_POOOL_SYNC_ENABLED", "true").lower() != "false":
+            from aiteam.integrations.poool import poll_poool
+
+            try:
+                _poool_interval = float(
+                    os.environ.get("BLAIQ_POOOL_SYNC_INTERVAL_S", "1800") or 1800
+                )
+            except ValueError:
+                _poool_interval = 1800.0
+
+            async def _bound_poool_sync(
+                tid: str = state.tenant_id, interval: float = _poool_interval
+            ) -> None:
+                token_inner = set_current_tenant(tid)
+                try:
+                    await poll_poool(tid, interval_s=interval)
+                finally:
+                    reset_current_tenant(token_inner)
+
+            state.poool_sync_task = asyncio.create_task(
+                _bound_poool_sync(), name=f"poool-sync:{state.tenant_id}"
+            )
+
         state.background_started = True
     finally:
         reset_current_tenant(token)
@@ -324,6 +350,13 @@ async def _evict_tenant(tenant_id: str, *, reason: str) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
             state.clickup_poller_task = None
+        if state.poool_sync_task is not None:
+            state.poool_sync_task.cancel()
+            try:
+                await state.poool_sync_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            state.poool_sync_task = None
         try:
             await state.watchdog_runner.stop()
         except Exception:

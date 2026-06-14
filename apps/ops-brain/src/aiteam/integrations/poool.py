@@ -14,6 +14,7 @@ for OCA-style ORM, plus Prism BSL ``query_model`` for analytics.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from sqlalchemy import text
 from aiteam.storage.connection import current_tenant_id, get_session
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_SYNC_INTERVAL_S = 1800.0
 
 
 @dataclass(frozen=True)
@@ -305,3 +308,36 @@ def _as_float(value: Any) -> float:
         except ValueError:
             return 0.0
     return 0.0
+
+
+async def poll_poool(
+    tenant_id: str,
+    *,
+    interval_s: float = _DEFAULT_SYNC_INTERVAL_S,
+) -> None:
+    """Long-running per-tenant POOOL cache sync.
+
+    Hosted by the Track D tenant scheduler (see aiteam.api.deps), mirroring
+    the ClickUp poller. ``sync_tenant_poool`` is a no-op when the tenant has
+    not enabled POOOL (``tenant_brand.poool_enabled = false``) or has no
+    credentials, so this loop stays quiet until the PM configures POOOL in
+    the admin Settings. Cancel the task to stop it during tenant eviction.
+    """
+    logger.info("POOOL sync poller started: tenant=%s every %.0fs", tenant_id, interval_s)
+    while True:
+        try:
+            counts = await sync_tenant_poool(tenant_id)
+            if any(counts.values()):
+                logger.info(
+                    "POOOL sync upserted %s for tenant=%s", counts, tenant_id
+                )
+        except asyncio.CancelledError:
+            logger.info("POOOL poller cancelled: tenant=%s", tenant_id)
+            raise
+        except Exception:
+            logger.exception("POOOL sync failed for tenant=%s", tenant_id)
+        try:
+            await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            logger.info("POOOL poller cancelled during sleep: tenant=%s", tenant_id)
+            raise

@@ -15,6 +15,7 @@ they are updated either via webhook or manual PM update.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Literal
@@ -32,11 +33,26 @@ from aiteam.api.schemas import APIListResponse, APIResponse
 from aiteam.storage.connection import current_tenant_id, get_session
 from aiteam.storage.models import Base
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 async def _get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency that yields a tenant-scoped AsyncSession."""
+    """FastAPI dependency that yields a tenant-scoped AsyncSession.
+
+    Also materializes the tenant's service graph (idempotent + cached) so the
+    POOOL sync + ClickUp pollers start the first time the admin touches the
+    jobs API. Activation failures are non-fatal — jobs CRUD still works.
+    """
+    tid = current_tenant_id.get("")
+    if tid:
+        try:
+            from aiteam.api.deps import get_tenant_state
+
+            await get_tenant_state(tid)
+        except Exception:  # noqa: BLE001 - activation is best-effort
+            logger.warning("tenant activation failed (tenant=%s)", tid, exc_info=True)
     async with get_session() as session:
         yield session
 

@@ -5,6 +5,8 @@ Provides create_app() function for creating and configuring FastAPI instances.
 
 from __future__ import annotations
 
+import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +19,28 @@ from fastapi.staticfiles import StaticFiles
 from aiteam.api.deps import cleanup_dependencies, init_dependencies
 from aiteam.api.errors import register_error_handlers
 from aiteam.api.routes import api_router
+
+
+def _configure_logging() -> None:
+    """Attach a stderr handler to the ``aiteam`` logger tree.
+
+    Without this the app ships no logging config, so Python's lastResort
+    handler swallows everything below WARNING — hiding poller/sync INFO
+    lines. Level is overridable via AITEAM_LOG_LEVEL (default INFO).
+    """
+    level_name = os.environ.get("AITEAM_LOG_LEVEL", "INFO").upper()
+    lg = logging.getLogger("aiteam")
+    if not lg.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        lg.addHandler(handler)
+    lg.setLevel(getattr(logging, level_name, logging.INFO))
+    lg.propagate = False
+
+
+_configure_logging()
 
 _mcp_http_app = None
 

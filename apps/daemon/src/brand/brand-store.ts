@@ -15,6 +15,8 @@ export interface TenantBrand {
   pooolUrl: string;
   pooolApiKey: string;
   pooolEnabled: boolean;
+  clickupEnabled: boolean;
+  clickupListId: string;
   updatedAt: number;
 }
 
@@ -75,7 +77,7 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
               higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
-              updated_at
+              clickup_enabled, clickup_list_id, updated_at
        FROM tenant_brand
        WHERE tenant_id = $1`,
       [tenantId],
@@ -101,6 +103,8 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
         pooolUrl: 'http://poool-mcp:8888',
         pooolApiKey: '',
         pooolEnabled: false,
+        clickupEnabled: false,
+        clickupListId: '',
         updatedAt: now,
       };
     }
@@ -117,6 +121,8 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       pooolUrl: row.poool_url ?? 'http://poool-mcp:8888',
       pooolApiKey: row.poool_api_key ?? '',
       pooolEnabled: Boolean(row.poool_enabled),
+      clickupEnabled: Boolean(row.clickup_enabled),
+      clickupListId: row.clickup_list_id ?? '',
       updatedAt: Number(row.updated_at),
     };
   });
@@ -176,6 +182,14 @@ export async function updateTenantBrand(
       params.push(patch.pooolEnabled);
       sets.push(`poool_enabled = $${params.length}`);
     }
+    if (patch.clickupEnabled !== undefined) {
+      params.push(patch.clickupEnabled);
+      sets.push(`clickup_enabled = $${params.length}`);
+    }
+    if (patch.clickupListId !== undefined) {
+      params.push(patch.clickupListId);
+      sets.push(`clickup_list_id = $${params.length}`);
+    }
     await client.query(
       `UPDATE tenant_brand SET ${sets.join(', ')} WHERE tenant_id = $1`,
       params,
@@ -184,7 +198,7 @@ export async function updateTenantBrand(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
               higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
-              updated_at
+              clickup_enabled, clickup_list_id, updated_at
        FROM tenant_brand WHERE tenant_id = $1`,
       [tenantId],
     );
@@ -201,6 +215,8 @@ export async function updateTenantBrand(
       pooolUrl: row.poool_url ?? 'http://poool-mcp:8888',
       pooolApiKey: row.poool_api_key ?? '',
       pooolEnabled: Boolean(row.poool_enabled),
+      clickupEnabled: Boolean(row.clickup_enabled),
+      clickupListId: row.clickup_list_id ?? '',
       updatedAt: Number(row.updated_at),
     };
   });

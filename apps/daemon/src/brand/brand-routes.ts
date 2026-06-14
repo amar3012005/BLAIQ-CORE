@@ -35,6 +35,8 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.pooolApiKey.slice(0, 4)}…${brand.pooolApiKey.slice(-4)}`
           : '',
         poool_enabled: brand.pooolEnabled,
+        clickup_enabled: brand.clickupEnabled,
+        clickup_list_id: brand.clickupListId,
         updated_at: brand.updatedAt,
       });
     } catch (err) {
@@ -62,6 +64,8 @@ export function registerBrandRoutes(router: Router): void {
       poool_url?: string;
       poool_api_key?: string;
       poool_enabled?: boolean;
+      clickup_enabled?: boolean;
+      clickup_list_id?: string;
     };
     const patch: Parameters<typeof updateTenantBrand>[2] = {};
     if (typeof body.brand_dna_md === 'string') patch.brandDnaMd = body.brand_dna_md;
@@ -75,6 +79,8 @@ export function registerBrandRoutes(router: Router): void {
     if (typeof body.poool_url === 'string') patch.pooolUrl = body.poool_url;
     if (typeof body.poool_api_key === 'string') patch.pooolApiKey = body.poool_api_key;
     if (typeof body.poool_enabled === 'boolean') patch.pooolEnabled = body.poool_enabled;
+    if (typeof body.clickup_enabled === 'boolean') patch.clickupEnabled = body.clickup_enabled;
+    if (typeof body.clickup_list_id === 'string') patch.clickupListId = body.clickup_list_id;
     try {
       const brand = await updateTenantBrand(authed.tenantId, authed.user.userId, patch);
       res.status(200).json({
@@ -98,6 +104,8 @@ export function registerBrandRoutes(router: Router): void {
           ? `${brand.pooolApiKey.slice(0, 4)}…${brand.pooolApiKey.slice(-4)}`
           : '',
         poool_enabled: brand.pooolEnabled,
+        clickup_enabled: brand.clickupEnabled,
+        clickup_list_id: brand.clickupListId,
         updated_at: brand.updatedAt,
       });
     } catch (err) {

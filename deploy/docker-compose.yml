@@ -113,6 +113,11 @@ services:
       OPS_BRAIN_TRUST_TOKEN: ${OPS_BRAIN_TRUST_TOKEN:?OPS_BRAIN_TRUST_TOKEN required}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Daemon base URL for the ClickUp poller's bidirectional sync calls
+      # (/api/v1/org/clickup/*). Reaches the open-design daemon on the
+      # internal compose network. Overridable per deploy.
+      BLAIQ_DAEMON_URL: ${BLAIQ_DAEMON_URL:-http://open-design:7456}
+      AITEAM_LOG_LEVEL: ${AITEAM_LOG_LEVEL:-INFO}
     security_opt:
       - no-new-privileges:true
     mem_limit: 512m

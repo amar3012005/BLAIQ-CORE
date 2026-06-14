@@ -11,6 +11,7 @@ import JobBoard from './JobBoard';
 import FinanceBoard from './FinanceBoard';
 import TasksWall from './TasksWall';
 import ActivityFeed from './ActivityFeed';
+import SettingsBoard from './SettingsBoard';
 import { AnalyticsView } from './Placeholders';
 
 type TabId =
@@ -18,7 +19,8 @@ type TabId =
   | 'finance'
   | 'work'
   | 'activity'
-  | 'analytics';
+  | 'analytics'
+  | 'settings';
 
 type Section = {
   heading: string;
@@ -39,6 +41,12 @@ const SECTIONS: Section[] = [
     items: [
       { id: 'activity', label: 'Activity', hint: 'Live event stream' },
       { id: 'analytics', label: 'Analytics', hint: 'KPIs + trends' },
+    ],
+  },
+  {
+    heading: 'Config',
+    items: [
+      { id: 'settings', label: 'Settings', hint: 'POOOL + ClickUp integrations' },
     ],
   },
 ];
@@ -144,6 +152,7 @@ export default function AdminShell(): JSX.Element {
         {tab === 'work' && <TasksWall />}
         {tab === 'activity' && <ActivityFeed />}
         {tab === 'analytics' && <AnalyticsView />}
+        {tab === 'settings' && <SettingsBoard />}
       </div>
     </div>
   );

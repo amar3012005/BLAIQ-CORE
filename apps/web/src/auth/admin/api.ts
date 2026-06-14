@@ -317,6 +317,82 @@ export async function deleteJob(id: string): Promise<void> {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Org integrations (POOOL + ClickUp) — Settings tab
+//
+// These persist into tenant_brand via the daemon's /api/v1/org/brand route
+// (same-origin, session-authed) — NOT the admin proxy. API keys are write-
+// only: the server returns a masked preview + a "set" flag, never the raw key.
+// ──────────────────────────────────────────────────────────────
+
+const ORG_BRAND = '/api/v1/org/brand';
+
+export interface OrgIntegrations {
+  poool_url: string;
+  poool_api_key_set: boolean;
+  poool_api_key_preview: string;
+  poool_enabled: boolean;
+  clickup_enabled: boolean;
+  clickup_list_id: string;
+}
+
+export interface OrgIntegrationsUpdate {
+  poool_url?: string;
+  poool_api_key?: string;
+  poool_enabled?: boolean;
+  clickup_enabled?: boolean;
+  clickup_list_id?: string;
+}
+
+function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
+  return {
+    poool_url: typeof d.poool_url === 'string' ? d.poool_url : '',
+    poool_api_key_set: Boolean(d.poool_api_key_set),
+    poool_api_key_preview: typeof d.poool_api_key_preview === 'string' ? d.poool_api_key_preview : '',
+    poool_enabled: Boolean(d.poool_enabled),
+    clickup_enabled: Boolean(d.clickup_enabled),
+    clickup_list_id: typeof d.clickup_list_id === 'string' ? d.clickup_list_id : '',
+  };
+}
+
+const previewIntegrations: OrgIntegrations = {
+  poool_url: 'http://poool-mcp:8888',
+  poool_api_key_set: false,
+  poool_api_key_preview: '',
+  poool_enabled: false,
+  clickup_enabled: false,
+  clickup_list_id: '',
+};
+
+export async function getOrgIntegrations(): Promise<OrgIntegrations> {
+  if (PREVIEW) return { ...previewIntegrations };
+  const r = await fetch(ORG_BRAND, { credentials: 'include' });
+  if (!r.ok) throw new Error(`GET ${ORG_BRAND} failed: HTTP ${r.status}`);
+  return toIntegrations((await r.json()) as Record<string, unknown>);
+}
+
+export async function updateOrgIntegrations(body: OrgIntegrationsUpdate): Promise<OrgIntegrations> {
+  if (PREVIEW) {
+    if (body.poool_url !== undefined) previewIntegrations.poool_url = body.poool_url;
+    if (body.poool_api_key) {
+      previewIntegrations.poool_api_key_set = true;
+      previewIntegrations.poool_api_key_preview = `${body.poool_api_key.slice(0, 4)}…${body.poool_api_key.slice(-4)}`;
+    }
+    if (body.poool_enabled !== undefined) previewIntegrations.poool_enabled = body.poool_enabled;
+    if (body.clickup_enabled !== undefined) previewIntegrations.clickup_enabled = body.clickup_enabled;
+    if (body.clickup_list_id !== undefined) previewIntegrations.clickup_list_id = body.clickup_list_id;
+    return { ...previewIntegrations };
+  }
+  const r = await fetch(ORG_BRAND, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`PUT ${ORG_BRAND} failed: HTTP ${r.status}`);
+  return toIntegrations((await r.json()) as Record<string, unknown>);
+}
+
+// ──────────────────────────────────────────────────────────────
 // Activity API
 // ──────────────────────────────────────────────────────────────
 
