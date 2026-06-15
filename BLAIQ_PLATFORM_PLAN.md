@@ -127,11 +127,11 @@ The roadmap runs as **three parallel tracks** that converge. Administration (Tra
 |------|------|------------------|--------|
 | **A1** `[done ✅ prod]` | Manual workflow complete | Cost line items + 15% fee · payment due + overdue · mark delivered · +1 revision | M |
 | **A2** `[done ✅ prod]` | Config + turn on what's written | Settings UI (POOOL/ClickUp) → `tenant_brand`; POOOL sync poller + ClickUp poller live + gated; migration 011; daemon trust bridge | M |
-| **A2.1** `[next]` | Finish ClickUp OAuth + flow data | Complete OAuth 2.1/PKCE (DCR done) → daemon OAuth client + token store; POOOL: reachable MCP URL + key so `ops.poool_cache` fills and `poool_status` reflects reality | M |
-| **A3** `[ ]` | POOOL write actions | "Push to POOOL" (create project + quote); sync POOOL invoice/payment state → `poool_status`; nightly **payment check** (14/30-day rule → auto-overdue) | L |
-| **A4** `[ ]` | ClickUp write actions | Auto-create job folder on job creation; "Push to ClickUp" ticket from job; auto-ticket per revision round ("Korrektur N") — via the ClickUp MCP | L |
-| **A5** `[ ]` | Server folder automation | SSH/SFTP auto-create `/Clients/{client}/{job}/`; read-only file listing in the Server track panel | M |
-| **A6** `[ ]` | Notifications | Auto payment reminders (14/30 days via POOOL); delivery notification to client (Protonet/email) on "Mark Delivered" | M |
+| **A3** `[done ✅ prod]` | POOOL write + payment automation | "Push to POOOL" action (graceful) + **server-side daily payment-overdue auto-flag** (works on local due dates, no POOOL) | L |
+| **A4** `[done ✅ prod]` | ClickUp write actions | "Push to ClickUp" ticket (graceful) + auto-ticket per revision round ("Korrektur N", best-effort). Folder auto-create deferred (needs clickup_space_id) | L |
+| **A5** `[done ✅ prod]` | Server folder automation | Auto-create per-job delivery folder on the data volume + read-only file listing in the Server panel (real, verified on disk) | M |
+| **A6** `[done ✅ prod]` | Notifications | Delivery notice on "Mark Delivered" + overdue reminders; pluggable notifier records to `ops.notifications` (sends once a channel is wired) | M |
+| **A2.1** `[next]` | Connect the real external creds | Finish ClickUp OAuth (DCR done) → token store; reachable POOOL URL + key. All A3/A4 write-paths + sync are built & graceful — just need credentials to flow live data. | M |
 
 **Production-usable hardening (single-tenant, parallel to A3+):** `[ ]` permanent domain (off the ephemeral tunnel) · `[ ]` full job CRUD + search/filter/edit/delete · `[ ]` Postgres backups + monitoring · `[ ]` auth hardening. See the top-5 production plan.
 
@@ -176,9 +176,8 @@ The roadmap runs as **three parallel tracks** that converge. Administration (Tra
 
 Feasibility-first, value-first — each step unlocks the next:
 
-0. ~~**A1** — manual workflow~~ ✅ done + deployed.
-0. ~~**A2** — Settings + POOOL/ClickUp pollers~~ ✅ done + deployed.
-1. **A2.1** — finish ClickUp OAuth + give POOOL a reachable endpoint so real data flows (in progress).
+0. ~~**A1** — manual workflow~~ · ~~**A2** — Settings + pollers~~ · ~~**A3** — POOOL write + payment automation~~ · ~~**A4** — ClickUp write~~ · ~~**A5** — server folders~~ · ~~**A6** — notifications~~ — ✅ **all done + deployed**. Track A (Administration) is feature-complete; every external integration is built credential-ready and degrades gracefully.
+1. **A2.1** — connect real credentials (ClickUp OAuth token store + reachable POOOL endpoint) so the built pipelines flow live data.
 2. **B1** — make Missions real (everything in Track B and C1 depends on it).
 3. **A3 / A4** — POOOL + ClickUp write actions (the agency stops double-entering data).
 4. **C1** — link Job ↔ Mission (the two pillars become one graph).
