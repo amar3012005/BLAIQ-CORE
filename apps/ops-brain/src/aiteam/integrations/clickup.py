@@ -293,24 +293,62 @@ async def sync_once(tenant_id: str, *, user_id: str = "") -> int:
     return upserted
 
 
-async def _clickup_enabled(tenant_id: str) -> bool:
-    """Read tenant_brand.clickup_enabled (RLS-bound). False until the PM turns
-    ClickUp sync on in the admin Settings, so the poller stays a no-op."""
+async def _clickup_config(tenant_id: str) -> tuple[bool, str]:
+    """Read (clickup_enabled, clickup_list_id) from tenant_brand (RLS-bound)."""
     try:
         async with get_session() as session:
             row = (
                 await session.execute(
                     text(
-                        "SELECT clickup_enabled FROM tenant_brand "
+                        "SELECT clickup_enabled, clickup_list_id FROM tenant_brand "
                         "WHERE tenant_id = CAST(:tid AS uuid)"
                     ),
                     {"tid": tenant_id},
                 )
             ).first()
-        return bool(row[0]) if row else False
+        if not row:
+            return (False, "")
+        return (bool(row[0]), row[1] or "")
     except Exception:
-        logger.debug("clickup_enabled check failed (tenant=%s)", tenant_id, exc_info=True)
-        return False
+        logger.debug("clickup_config check failed (tenant=%s)", tenant_id, exc_info=True)
+        return (False, "")
+
+
+async def _clickup_enabled(tenant_id: str) -> bool:
+    enabled, _ = await _clickup_config(tenant_id)
+    return enabled
+
+
+async def create_ticket_for_job(
+    tenant_id: str,
+    *,
+    title: str,
+    description: str = "",
+    user_id: str = "",
+) -> dict[str, Any]:
+    """Create a ClickUp task for a job (Track A4). Credential-ready/graceful.
+
+    Returns ``{"ok": bool, "ticket_id": str|None, "error": str|None}``. A clean
+    no-op with a human-readable error when ClickUp is disabled, has no list, or
+    the workspace connector isn't connected.
+    """
+    enabled, list_id = await _clickup_config(tenant_id)
+    if not enabled:
+        return {"ok": False, "ticket_id": None, "error": "ClickUp not enabled — configure it in Settings"}
+    if not list_id:
+        return {"ok": False, "ticket_id": None, "error": "ClickUp default list ID not set in Settings"}
+    endpoint = DaemonEndpoint.from_env(tenant_id, user_id=user_id)
+    resp = await _post_json(
+        endpoint,
+        "/api/v1/org/clickup/task",
+        {"list_id": list_id, "name": title, "description": description},
+    )
+    if not resp or not resp.get("ok"):
+        return {"ok": False, "ticket_id": None, "error": "ClickUp not connected for this workspace"}
+    ext = resp.get("external_id")
+    if not isinstance(ext, str) or not ext:
+        return {"ok": False, "ticket_id": None, "error": "ClickUp returned no task id"}
+    return {"ok": True, "ticket_id": ext, "error": None}
 
 
 async def poll_clickup(

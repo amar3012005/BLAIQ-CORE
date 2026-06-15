@@ -289,6 +289,7 @@ async def update_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    prev_revision = job.revision_count
     updates = body.model_dump(exclude_none=True)
 
     # cost_items is the source of truth for the third-party total: whenever the
@@ -315,6 +316,28 @@ async def update_job(
     job.updated_at = _utcnow()
     await db.commit()
     await db.refresh(job)
+
+    # Auto-ticket per revision round (Track A4): each new revision opens a
+    # "Korrektur N" ticket in ClickUp. Best-effort — never blocks the update,
+    # and is a clean no-op when ClickUp isn't enabled/connected.
+    if job.revision_count > prev_revision:
+        try:
+            from aiteam.integrations.clickup import create_ticket_for_job
+
+            res = await create_ticket_for_job(
+                tenant_id,
+                title=f"Korrektur {job.revision_count} · {job.job_number} {job.title}",
+                description=f"Revision round {job.revision_count} for job {job.job_number}.",
+            )
+            if res.get("ok") and res.get("ticket_id"):
+                tickets = list(job.clickup_ticket_ids or [])
+                tickets.append(res["ticket_id"])
+                job.clickup_ticket_ids = tickets
+                await db.commit()
+                await db.refresh(job)
+        except Exception:
+            logger.warning("auto-ticket on revision failed (job=%s)", job_id, exc_info=True)
+
     return APIResponse(data=_to_pydantic(job), message="Job updated")
 
 
@@ -378,3 +401,44 @@ async def push_to_poool(
     await db.commit()
     await db.refresh(job)
     return APIResponse(data=_to_pydantic(job), message="Pushed to POOOL")
+
+
+# ──────────────────────────────────────────────
+# ClickUp write actions (Track A4)
+# ──────────────────────────────────────────────
+
+@router.post("/{job_id}/push-clickup", response_model=APIResponse[Job])
+async def push_to_clickup(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    """Create a ClickUp ticket for this job and append its id to the job.
+
+    Credential-ready: returns 503 with a clear detail when ClickUp isn't
+    enabled/connected, leaving the job unchanged.
+    """
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    from aiteam.integrations.clickup import create_ticket_for_job
+
+    res = await create_ticket_for_job(
+        tenant_id,
+        title=f"{job.job_number} · {job.title}",
+        description=job.notes or "",
+    )
+    if not res.get("ok") or not res.get("ticket_id"):
+        raise HTTPException(status_code=503, detail=res.get("error") or "ClickUp unavailable")
+
+    tickets = list(job.clickup_ticket_ids or [])
+    tickets.append(str(res["ticket_id"]))
+    job.clickup_ticket_ids = tickets
+    job.updated_at = _utcnow()
+    await db.commit()
+    await db.refresh(job)
+    return APIResponse(data=_to_pydantic(job), message="Pushed to ClickUp")

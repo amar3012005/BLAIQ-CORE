@@ -9,6 +9,7 @@ import {
   updateJob,
   createJob,
   pushJobToPoool,
+  pushJobToClickup,
   costItemsTotal,
   withProductionFee,
   jobIsOverdue,
@@ -209,6 +210,8 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   const [dueDraft, setDueDraft] = useState<string>(job.payment_due_date ?? '');
   const [pushing, setPushing] = useState(false);
   const [pushErr, setPushErr] = useState<string | null>(null);
+  const [pushingCu, setPushingCu] = useState(false);
+  const [pushCuErr, setPushCuErr] = useState<string | null>(null);
 
   useEffect(() => {
     setCostDraft(job.cost_items ?? []);
@@ -250,6 +253,19 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       setPushErr((e as Error).message);
     } finally {
       setPushing(false);
+    }
+  };
+
+  const pushClickup = async (): Promise<void> => {
+    setPushingCu(true);
+    setPushCuErr(null);
+    try {
+      const updated = await pushJobToClickup(job.id);
+      onUpdate(updated);
+    } catch (e) {
+      setPushCuErr((e as Error).message);
+    } finally {
+      setPushingCu(false);
     }
   };
 
@@ -492,10 +508,31 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>CLICKUP — TASKS</div>
       <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
         {row('Folder ID', job.clickup_folder_id ?? '—')}
-        {row('Tickets', job.clickup_ticket_ids.length > 0
-          ? job.clickup_ticket_ids.join(', ')
-          : '—')}
+        {row('Tickets', (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{job.clickup_ticket_ids.length > 0 ? job.clickup_ticket_ids.join(', ') : '—'}</span>
+            <button
+              type="button"
+              disabled={pushingCu}
+              onClick={() => { void pushClickup(); }}
+              style={{
+                border: 'none',
+                background: '#818CF8',
+                color: PAL.white,
+                cursor: pushingCu ? 'wait' : 'pointer',
+                ...monoSmall,
+                fontSize: 8,
+                padding: '4px 10px',
+              }}
+            >
+              {pushingCu ? 'PUSHING…' : '↗ PUSH TO CLICKUP'}
+            </button>
+          </div>
+        ))}
         {row('Revisions', String(job.revision_count))}
+        {pushCuErr && (
+          <div style={{ ...sans, fontSize: 11, color: '#B45309', marginTop: 2 }}>{pushCuErr}</div>
+        )}
       </div>
 
       {/* Server track */}
