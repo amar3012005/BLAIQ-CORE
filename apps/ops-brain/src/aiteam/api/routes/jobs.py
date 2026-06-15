@@ -304,6 +304,7 @@ async def update_job(
         raise HTTPException(status_code=404, detail="Job not found")
 
     prev_revision = job.revision_count
+    prev_delivery = job.delivery_status
     updates = body.model_dump(exclude_none=True)
 
     # cost_items is the source of truth for the third-party total: whenever the
@@ -351,6 +352,22 @@ async def update_job(
                 await db.refresh(job)
         except Exception:
             logger.warning("auto-ticket on revision failed (job=%s)", job_id, exc_info=True)
+
+    # Delivery notification (Track A6): when a job first becomes delivered,
+    # notify the client. Best-effort; recorded to ops.notifications.
+    if job.delivery_status == "delivered" and prev_delivery != "delivered":
+        try:
+            from aiteam.integrations.job_notifications import record_notification
+
+            await record_notification(
+                tenant_id,
+                kind="delivery",
+                job_id=job.id,
+                subject=f"Lieferung — {job.job_number} {job.title}",
+                body=f"The layout for job {job.job_number} ({job.client}) has been delivered.",
+            )
+        except Exception:
+            logger.warning("delivery notification failed (job=%s)", job_id, exc_info=True)
 
     return APIResponse(data=_to_pydantic(job), message="Job updated")
 
@@ -487,3 +504,30 @@ async def create_server_folder(
     await db.commit()
     await db.refresh(job)
     return APIResponse(data=_to_pydantic(job), message="Server folder created")
+
+
+# ──────────────────────────────────────────────
+# Notifications (Track A6)
+# ──────────────────────────────────────────────
+
+class Notification(BaseModel):
+    id: int
+    kind: str
+    channel: str
+    subject: str
+    body: str
+    status: str
+    created_at: str | None = None
+
+
+@router.get("/{job_id}/notifications", response_model=APIListResponse[Notification])
+async def list_notifications(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIListResponse[Notification]:
+    tenant_id = current_tenant_id.get("")
+    from aiteam.integrations.job_notifications import list_job_notifications
+
+    rows = await list_job_notifications(tenant_id, job_id)
+    items = [Notification(**r) for r in rows]
+    return APIListResponse(data=items, total=len(items))

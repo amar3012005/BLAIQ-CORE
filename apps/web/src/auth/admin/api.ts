@@ -348,6 +348,28 @@ export interface ServerFile {
   mtime: number;
 }
 
+export interface JobNotification {
+  id: number;
+  kind: string;
+  channel: string;
+  subject: string;
+  body: string;
+  status: string;
+  created_at: string | null;
+}
+
+// List notifications raised for a job (delivery notices, overdue reminders).
+export async function listJobNotifications(id: string): Promise<JobNotification[]> {
+  if (PREVIEW) {
+    return [
+      { id: 2, kind: 'payment_overdue', channel: 'log', subject: 'Zahlung überfällig — 2026-014', body: '', status: 'logged', created_at: new Date().toISOString() },
+      { id: 1, kind: 'delivery', channel: 'log', subject: 'Lieferung — 2026-014', body: '', status: 'logged', created_at: new Date().toISOString() },
+    ];
+  }
+  const data = await request<unknown>(`/api/jobs/${encodeURIComponent(id)}/notifications`);
+  return asArray<JobNotification>(data, 'data');
+}
+
 // Create the job's delivery folder on the server (stamps server_folder_path).
 export async function createServerFolder(id: string): Promise<Job> {
   if (PREVIEW) {

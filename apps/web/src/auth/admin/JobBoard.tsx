@@ -12,7 +12,9 @@ import {
   pushJobToClickup,
   createServerFolder,
   listServerFiles,
+  listJobNotifications,
   type ServerFile,
+  type JobNotification,
   costItemsTotal,
   withProductionFee,
   jobIsOverdue,
@@ -218,6 +220,17 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [serverFiles, setServerFiles] = useState<ServerFile[] | null>(null);
+  const [notifications, setNotifications] = useState<JobNotification[] | null>(null);
+
+  // Load notifications raised for this job.
+  useEffect(() => {
+    let cancelled = false;
+    setNotifications(null);
+    listJobNotifications(job.id)
+      .then((n) => { if (!cancelled) setNotifications(n); })
+      .catch(() => { if (!cancelled) setNotifications([]); });
+    return () => { cancelled = true; };
+  }, [job.id, job.delivery_status, job.poool_status]);
 
   // Load the server folder's file listing whenever the job's folder is known.
   useEffect(() => {
@@ -662,6 +675,31 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
             {saving ? 'SAVING…' : '✓ MARK AS DELIVERED'}
           </button>
         )}
+      </div>
+
+      {/* Notifications (Track A6) */}
+      <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>NOTIFICATIONS</div>
+      <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
+        {notifications === null && (
+          <span style={{ ...sans, fontSize: 11, color: PAL.muted }}>loading…</span>
+        )}
+        {notifications && notifications.length === 0 && (
+          <span style={{ ...sans, fontSize: 11, color: PAL.muted, fontStyle: 'italic' }}>
+            No notifications yet. Delivering a job or an overdue payment raises one.
+          </span>
+        )}
+        {notifications && notifications.map((n) => (
+          <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ ...pill(n.kind === 'delivery' ? '#10B981' : '#EF4444'), fontSize: 8 }}>
+              {n.kind.replace(/_/g, ' ')}
+            </span>
+            <span style={{ ...sans, fontSize: 12, color: PAL.ink, flex: 1 }}>{n.subject}</span>
+            <span style={{ ...monoSmall, color: PAL.muted, fontSize: 8 }}>{n.status}</span>
+            {n.created_at && (
+              <span style={{ ...monoSmall, color: PAL.muted, fontSize: 8 }}>{formatDate(n.created_at)}</span>
+            )}
+          </div>
+        ))}
       </div>
 
       {job.notes && (

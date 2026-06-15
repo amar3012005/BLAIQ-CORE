@@ -386,22 +386,50 @@ async def run_payment_check(tenant_id: str) -> int:
     ``overdue``. Pure local DB (no POOOL needed) — implements the 14/30-day
     rule purely from ``payment_due_date``. Returns the number of jobs flipped.
     """
+    _PREDICATE = (
+        "poool_status IN ('invoiced', 'partially_paid') "
+        "AND payment_due_date IS NOT NULL AND payment_due_date < CURRENT_DATE"
+    )
     token = current_tenant_id.set(tenant_id)
     try:
         async with get_session() as session:
-            result = await session.execute(
+            rows = (
+                await session.execute(
+                    text(
+                        f"SELECT id, job_number, client FROM ops.jobs "
+                        f"WHERE tenant_id = CAST(:tid AS uuid) AND {_PREDICATE}"
+                    ),
+                    {"tid": tenant_id},
+                )
+            ).all()
+            if not rows:
+                return 0
+            await session.execute(
                 text(
-                    "UPDATE ops.jobs SET poool_status = 'overdue', updated_at = now() "
-                    "WHERE tenant_id = CAST(:tid AS uuid) "
-                    "AND poool_status IN ('invoiced', 'partially_paid') "
-                    "AND payment_due_date IS NOT NULL "
-                    "AND payment_due_date < CURRENT_DATE"
+                    f"UPDATE ops.jobs SET poool_status = 'overdue', updated_at = now() "
+                    f"WHERE tenant_id = CAST(:tid AS uuid) AND {_PREDICATE}"
                 ),
                 {"tid": tenant_id},
             )
-            return result.rowcount or 0
     finally:
         current_tenant_id.reset(token)
+
+    # Raise an overdue reminder per flipped job (Track A6). Best-effort.
+    try:
+        from aiteam.integrations.job_notifications import record_notification
+
+        for r in rows:
+            await record_notification(
+                tenant_id,
+                kind="payment_overdue",
+                job_id=str(r[0]),
+                subject=f"Zahlung überfällig — {r[1]} {r[2]}",
+                body=f"Invoice for job {r[1]} ({r[2]}) is past its due date.",
+            )
+    except Exception:
+        logger.warning("overdue notifications failed (tenant=%s)", tenant_id, exc_info=True)
+
+    return len(rows)
 
 
 async def poll_payment_check(
