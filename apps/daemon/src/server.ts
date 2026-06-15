@@ -2207,6 +2207,8 @@ export async function startServer({
     registerAdminRoutes(app);
     const { registerClickupRoutes } = await import('./integrations/clickup-routes.js');
     registerClickupRoutes(app);
+    const { registerServerFilesRoutes } = await import('./integrations/server-files-routes.js');
+    registerServerFilesRoutes(app);
   }
 
   // Multi-directory scanning shared by every skill / template surface. The

@@ -341,6 +341,52 @@ export async function pushJobToPoool(id: string): Promise<Job> {
   return body.data as Job;
 }
 
+export interface ServerFile {
+  name: string;
+  dir: boolean;
+  size: number;
+  mtime: number;
+}
+
+// Create the job's delivery folder on the server (stamps server_folder_path).
+export async function createServerFolder(id: string): Promise<Job> {
+  if (PREVIEW) {
+    const idx = previewStore.findIndex(j => j.id === id);
+    const job = idx >= 0 ? previewStore[idx] : undefined;
+    if (!job) throw new Error('Job not found');
+    const updated = touch({
+      ...job,
+      server_folder_path: job.server_folder_path || `/data/clients/preview/${job.job_number}`,
+    });
+    previewStore[idx] = updated;
+    return { ...updated };
+  }
+  const r = await fetch(`${BASE}/api/jobs/${encodeURIComponent(id)}/server-folder`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: Job; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as Job;
+}
+
+// List files in a job's server folder (daemon route, same-origin/session).
+export async function listServerFiles(serverFolderPath: string): Promise<ServerFile[]> {
+  if (PREVIEW) {
+    return [
+      { name: '_job.txt', dir: false, size: 64, mtime: Date.now() },
+      { name: 'final-delivery', dir: true, size: 0, mtime: Date.now() },
+    ];
+  }
+  const r = await fetch(`/api/v1/org/server/files?path=${encodeURIComponent(serverFolderPath)}`, {
+    credentials: 'include',
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const body = (await r.json().catch(() => ({ files: [] }))) as { files?: ServerFile[] };
+  return body.files ?? [];
+}
+
 // Create a ClickUp ticket for a job (appends its id to clickup_ticket_ids).
 export async function pushJobToClickup(id: string): Promise<Job> {
   if (PREVIEW) {

@@ -237,6 +237,20 @@ async def create_job(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+
+    # Auto-create the delivery folder (Track A5). Best-effort — a folder-server
+    # hiccup must never fail job creation.
+    try:
+        from aiteam.integrations.serverfiles import create_job_folder
+
+        res = await create_job_folder(tenant_id, client=job.client, job_number=job.job_number)
+        if res.get("ok") and res.get("path"):
+            job.server_folder_path = str(res["path"])
+            await db.commit()
+            await db.refresh(job)
+    except Exception:
+        logger.warning("auto server-folder create failed (job=%s)", job.id, exc_info=True)
+
     return APIResponse(data=_to_pydantic(job), message="Job created")
 
 
@@ -442,3 +456,34 @@ async def push_to_clickup(
     await db.commit()
     await db.refresh(job)
     return APIResponse(data=_to_pydantic(job), message="Pushed to ClickUp")
+
+
+# ──────────────────────────────────────────────
+# Server folder automation (Track A5)
+# ──────────────────────────────────────────────
+
+@router.post("/{job_id}/server-folder", response_model=APIResponse[Job])
+async def create_server_folder(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    """Create (or re-create) the job's delivery folder and stamp the path."""
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    from aiteam.integrations.serverfiles import create_job_folder
+
+    res = await create_job_folder(tenant_id, client=job.client, job_number=job.job_number)
+    if not res.get("ok") or not res.get("path"):
+        raise HTTPException(status_code=503, detail=res.get("error") or "server folder unavailable")
+
+    job.server_folder_path = str(res["path"])
+    job.updated_at = _utcnow()
+    await db.commit()
+    await db.refresh(job)
+    return APIResponse(data=_to_pydantic(job), message="Server folder created")

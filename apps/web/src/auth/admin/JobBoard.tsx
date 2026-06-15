@@ -10,6 +10,9 @@ import {
   createJob,
   pushJobToPoool,
   pushJobToClickup,
+  createServerFolder,
+  listServerFiles,
+  type ServerFile,
   costItemsTotal,
   withProductionFee,
   jobIsOverdue,
@@ -212,6 +215,23 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   const [pushErr, setPushErr] = useState<string | null>(null);
   const [pushingCu, setPushingCu] = useState(false);
   const [pushCuErr, setPushCuErr] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderErr, setFolderErr] = useState<string | null>(null);
+  const [serverFiles, setServerFiles] = useState<ServerFile[] | null>(null);
+
+  // Load the server folder's file listing whenever the job's folder is known.
+  useEffect(() => {
+    let cancelled = false;
+    if (job.server_folder_path) {
+      setServerFiles(null);
+      listServerFiles(job.server_folder_path)
+        .then((f) => { if (!cancelled) setServerFiles(f); })
+        .catch(() => { if (!cancelled) setServerFiles([]); });
+    } else {
+      setServerFiles(null);
+    }
+    return () => { cancelled = true; };
+  }, [job.id, job.server_folder_path]);
 
   useEffect(() => {
     setCostDraft(job.cost_items ?? []);
@@ -266,6 +286,19 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       setPushCuErr((e as Error).message);
     } finally {
       setPushingCu(false);
+    }
+  };
+
+  const makeFolder = async (): Promise<void> => {
+    setCreatingFolder(true);
+    setFolderErr(null);
+    try {
+      const updated = await createServerFolder(job.id);
+      onUpdate(updated);
+    } catch (e) {
+      setFolderErr((e as Error).message);
+    } finally {
+      setCreatingFolder(false);
     }
   };
 
@@ -538,7 +571,52 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       {/* Server track */}
       <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>SERVER — FILES</div>
       <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
-        {row('Folder', job.server_folder_path ?? '—')}
+        {row('Folder', (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
+              {job.server_folder_path ?? '—'}
+            </span>
+            {!job.server_folder_path && (
+              <button
+                type="button"
+                disabled={creatingFolder}
+                onClick={() => { void makeFolder(); }}
+                style={{
+                  border: 'none',
+                  background: '#F472B6',
+                  color: PAL.white,
+                  cursor: creatingFolder ? 'wait' : 'pointer',
+                  ...monoSmall,
+                  fontSize: 8,
+                  padding: '4px 10px',
+                }}
+              >
+                {creatingFolder ? 'CREATING…' : '+ CREATE FOLDER'}
+              </button>
+            )}
+          </div>
+        ))}
+        {folderErr && (
+          <div style={{ ...sans, fontSize: 11, color: '#B45309', marginBottom: 6 }}>{folderErr}</div>
+        )}
+        {job.server_folder_path && (
+          row('Files', (
+            serverFiles === null
+              ? <span style={{ ...sans, fontSize: 11, color: PAL.muted }}>loading…</span>
+              : serverFiles.length === 0
+                ? <span style={{ ...sans, fontSize: 11, color: PAL.muted, fontStyle: 'italic' }}>empty</span>
+                : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {serverFiles.map((f) => (
+                      <div key={f.name} style={{ ...sans, fontSize: 11, color: PAL.ink, display: 'flex', gap: 8 }}>
+                        <span>{f.dir ? '📁' : '📄'} {f.name}</span>
+                        {!f.dir && <span style={{ color: PAL.muted }}>{f.size} B</span>}
+                      </div>
+                    ))}
+                  </div>
+                )
+          ))
+        )}
         {row('Delivery', (
           <div style={{ display: 'flex', gap: 4 }}>
             {DELIVERY_STATUSES.map(s => (
