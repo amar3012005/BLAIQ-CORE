@@ -310,6 +310,126 @@ def _as_float(value: Any) -> float:
     return 0.0
 
 
+async def create_poool_quote(
+    tenant_id: str,
+    *,
+    project_name: str,
+    amount: float | None,
+    client_name: str = "",
+) -> dict[str, Any]:
+    """Create a POOOL project + quote (sale.order) for a job. Credential-ready.
+
+    Returns ``{"ok": bool, "poool_job_id": str|None, "error": str|None}``.
+    Degrades gracefully: if the tenant has not enabled/configured POOOL the
+    call is a clean no-op with ``ok=False`` and a human-readable error, so the
+    "Push to POOOL" button can show a sensible message until POOOL is wired.
+    """
+    brand = await _load_brand(tenant_id)
+    if brand is None or not brand.poool_enabled:
+        return {"ok": False, "poool_job_id": None, "error": "POOOL not enabled — configure it in Settings"}
+    if not brand.poool_api_key:
+        return {"ok": False, "poool_job_id": None, "error": "POOOL API key missing"}
+    # 1. Create the project.
+    proj = await _call_tool(
+        brand,
+        "poool_api_create",
+        {"model": "project.project", "values": {"name": project_name}},
+    )
+    if "error" in proj:
+        return {"ok": False, "poool_job_id": None, "error": str(proj["error"].get("message"))}
+    project_id = _first_created_id(proj)
+    # 2. Create the quote (draft sale.order) referencing the project.
+    order_values: dict[str, Any] = {"name": project_name}
+    if project_id is not None:
+        order_values["project_id"] = project_id
+    if amount:
+        order_values["amount_total"] = amount
+    order = await _call_tool(
+        brand,
+        "poool_api_create",
+        {"model": "sale.order", "values": order_values},
+    )
+    if "error" in order:
+        return {"ok": False, "poool_job_id": str(project_id) if project_id else None,
+                "error": str(order["error"].get("message"))}
+    order_id = _first_created_id(order)
+    poool_job_id = str(order_id or project_id or "")
+    return {"ok": bool(poool_job_id), "poool_job_id": poool_job_id or None, "error": None}
+
+
+def _first_created_id(resp: dict[str, Any]) -> Any:
+    """Pull the new record id out of a poool_api_create response."""
+    result = resp.get("result", {})
+    structured = result.get("structuredContent") or {}
+    if isinstance(structured, dict):
+        for key in ("id", "record_id"):
+            if structured.get(key) is not None:
+                return structured[key]
+        records = structured.get("records")
+        if isinstance(records, list) and records and isinstance(records[0], dict):
+            return records[0].get("id")
+    for chunk in result.get("content", []) or []:
+        if chunk.get("type") == "text" and isinstance(chunk.get("text"), str):
+            try:
+                parsed = json.loads(chunk["text"])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("id") is not None:
+                return parsed["id"]
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0].get("id")
+    return None
+
+
+async def run_payment_check(tenant_id: str) -> int:
+    """Flip invoiced/partially-paid jobs whose payment due date has passed to
+    ``overdue``. Pure local DB (no POOOL needed) — implements the 14/30-day
+    rule purely from ``payment_due_date``. Returns the number of jobs flipped.
+    """
+    token = current_tenant_id.set(tenant_id)
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                text(
+                    "UPDATE ops.jobs SET poool_status = 'overdue', updated_at = now() "
+                    "WHERE tenant_id = CAST(:tid AS uuid) "
+                    "AND poool_status IN ('invoiced', 'partially_paid') "
+                    "AND payment_due_date IS NOT NULL "
+                    "AND payment_due_date < CURRENT_DATE"
+                ),
+                {"tid": tenant_id},
+            )
+            return result.rowcount or 0
+    finally:
+        current_tenant_id.reset(token)
+
+
+async def poll_payment_check(
+    tenant_id: str,
+    *,
+    interval_s: float = 86_400.0,
+) -> None:
+    """Always-on daily payment-overdue sweep (independent of POOOL connectivity).
+
+    Runs once immediately on tenant activation, then every ``interval_s``.
+    """
+    logger.info("Payment-check poller started: tenant=%s every %.0fs", tenant_id, interval_s)
+    while True:
+        try:
+            flipped = await run_payment_check(tenant_id)
+            if flipped:
+                logger.info("Payment check flipped %d job(s) to overdue (tenant=%s)", flipped, tenant_id)
+        except asyncio.CancelledError:
+            logger.info("Payment-check poller cancelled: tenant=%s", tenant_id)
+            raise
+        except Exception:
+            logger.exception("Payment check failed for tenant=%s", tenant_id)
+        try:
+            await asyncio.sleep(interval_s)
+        except asyncio.CancelledError:
+            raise
+
+
 async def poll_poool(
     tenant_id: str,
     *,

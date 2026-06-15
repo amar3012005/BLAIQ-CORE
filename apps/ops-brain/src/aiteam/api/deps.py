@@ -88,6 +88,7 @@ class TenantState:
     last_used_at: float = field(default_factory=time.monotonic)
     clickup_poller_task: asyncio.Task[None] | None = None
     poool_sync_task: asyncio.Task[None] | None = None
+    payment_check_task: asyncio.Task[None] | None = None
 
     def touch(self) -> None:
         """Bump the LRU timestamp; called on every dependency lookup."""
@@ -330,6 +331,31 @@ async def _start_background_tasks(state: TenantState) -> None:
                 _bound_poool_sync(), name=f"poool-sync:{state.tenant_id}"
             )
 
+        # Payment-overdue sweep — always on (no POOOL needed), daily. Flips
+        # invoiced jobs past their due date to 'overdue' from local data.
+        if os.environ.get("BLAIQ_PAYMENT_CHECK_ENABLED", "true").lower() != "false":
+            from aiteam.integrations.poool import poll_payment_check
+
+            try:
+                _pay_interval = float(
+                    os.environ.get("BLAIQ_PAYMENT_CHECK_INTERVAL_S", "86400") or 86400
+                )
+            except ValueError:
+                _pay_interval = 86400.0
+
+            async def _bound_payment_check(
+                tid: str = state.tenant_id, interval: float = _pay_interval
+            ) -> None:
+                token_inner = set_current_tenant(tid)
+                try:
+                    await poll_payment_check(tid, interval_s=interval)
+                finally:
+                    reset_current_tenant(token_inner)
+
+            state.payment_check_task = asyncio.create_task(
+                _bound_payment_check(), name=f"payment-check:{state.tenant_id}"
+            )
+
         state.background_started = True
     finally:
         reset_current_tenant(token)
@@ -357,6 +383,13 @@ async def _evict_tenant(tenant_id: str, *, reason: str) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
             state.poool_sync_task = None
+        if state.payment_check_task is not None:
+            state.payment_check_task.cancel()
+            try:
+                await state.payment_check_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            state.payment_check_task = None
         try:
             await state.watchdog_runner.stop()
         except Exception:

@@ -8,6 +8,7 @@ import {
   listJobs,
   updateJob,
   createJob,
+  pushJobToPoool,
   costItemsTotal,
   withProductionFee,
   jobIsOverdue,
@@ -206,6 +207,8 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   // job whenever a different job is selected.
   const [costDraft, setCostDraft] = useState<CostItem[]>(job.cost_items ?? []);
   const [dueDraft, setDueDraft] = useState<string>(job.payment_due_date ?? '');
+  const [pushing, setPushing] = useState(false);
+  const [pushErr, setPushErr] = useState<string | null>(null);
 
   useEffect(() => {
     setCostDraft(job.cost_items ?? []);
@@ -236,6 +239,19 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
 
   const saveDueDate = (value: string): Promise<void> =>
     patch({ payment_due_date: value || null });
+
+  const pushPoool = async (): Promise<void> => {
+    setPushing(true);
+    setPushErr(null);
+    try {
+      const updated = await pushJobToPoool(job.id);
+      onUpdate(updated);
+    } catch (e) {
+      setPushErr((e as Error).message);
+    } finally {
+      setPushing(false);
+    }
+  };
 
   const netCosts = costItemsTotal(costDraft);
   const grossCosts = withProductionFee(netCosts);
@@ -346,6 +362,32 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
             {overdue && <span style={{ ...monoSmall, color: '#EF4444', fontSize: 8 }}>PAST DUE</span>}
           </div>
         ))}
+        {row('POOOL ID', (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{job.poool_job_id || '—'}</span>
+            {!job.poool_job_id && (
+              <button
+                type="button"
+                disabled={pushing}
+                onClick={() => { void pushPoool(); }}
+                style={{
+                  border: 'none',
+                  background: '#34D399',
+                  color: PAL.white,
+                  cursor: pushing ? 'wait' : 'pointer',
+                  ...monoSmall,
+                  fontSize: 8,
+                  padding: '4px 10px',
+                }}
+              >
+                {pushing ? 'PUSHING…' : '↗ PUSH TO POOOL'}
+              </button>
+            )}
+          </div>
+        ))}
+        {pushErr && (
+          <div style={{ ...sans, fontSize: 11, color: '#B45309', marginTop: 2 }}>{pushErr}</div>
+        )}
       </div>
 
       {/* Third-party costs (task 1) */}

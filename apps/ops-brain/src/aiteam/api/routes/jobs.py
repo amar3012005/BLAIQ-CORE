@@ -336,3 +336,45 @@ async def delete_job(
     await db.delete(job)
     await db.commit()
     return APIResponse(data=None, message="Job deleted")
+
+
+# ──────────────────────────────────────────────
+# POOOL write actions (Track A3)
+# ──────────────────────────────────────────────
+
+@router.post("/{job_id}/push-poool", response_model=APIResponse[Job])
+async def push_to_poool(
+    job_id: str,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    """Create a POOOL project + quote for this job and stamp poool_job_id.
+
+    Credential-ready: if POOOL isn't enabled/configured the call returns 503
+    with a human-readable detail (the UI surfaces it) and the job is unchanged.
+    """
+    tenant_id = current_tenant_id.get("")
+    result = await db.execute(
+        select(JobModel).where(JobModel.id == job_id, JobModel.tenant_id == tenant_id)
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    from aiteam.integrations.poool import create_poool_quote
+
+    res = await create_poool_quote(
+        tenant_id,
+        project_name=f"{job.job_number} · {job.title}",
+        amount=job.quote_amount,
+        client_name=job.client,
+    )
+    if not res.get("ok") or not res.get("poool_job_id"):
+        raise HTTPException(status_code=503, detail=res.get("error") or "POOOL unavailable")
+
+    job.poool_job_id = str(res["poool_job_id"])
+    if job.poool_status == "quote_pending":
+        job.poool_status = "quote_sent"
+    job.updated_at = _utcnow()
+    await db.commit()
+    await db.refresh(job)
+    return APIResponse(data=_to_pydantic(job), message="Pushed to POOOL")

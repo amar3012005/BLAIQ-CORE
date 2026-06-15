@@ -316,6 +316,31 @@ export async function deleteJob(id: string): Promise<void> {
   await request(`/api/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+// Push a job to POOOL (create project + quote). Surfaces the server's graceful
+// detail (e.g. "POOOL not enabled") so the UI can show a clear message.
+export async function pushJobToPoool(id: string): Promise<Job> {
+  if (PREVIEW) {
+    const idx = previewStore.findIndex(j => j.id === id);
+    const job = idx >= 0 ? previewStore[idx] : undefined;
+    if (!job) throw new Error('Job not found');
+    const updated = touch({
+      ...job,
+      poool_job_id: job.poool_job_id || `P-${++previewSeq}`,
+      poool_status: job.poool_status === 'quote_pending' ? 'quote_sent' : job.poool_status,
+    });
+    previewStore[idx] = updated;
+    return { ...updated };
+  }
+  const r = await fetch(`${BASE}/api/jobs/${encodeURIComponent(id)}/push-poool`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: Job; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as Job;
+}
+
 // ──────────────────────────────────────────────────────────────
 // Org integrations (POOOL + ClickUp) — Settings tab
 //
