@@ -118,9 +118,37 @@ async def _build_job_context(db: AsyncSession, tenant_id: str) -> str:
         f"invoiced={_fmt_eur(total_invoice)}, paid={_fmt_eur(total_paid)}, "
         f"overdue_jobs={n_overdue}, overdue_amount={_fmt_eur(total_overdue)}\n"
     )
+    # Ground the AI in the real POOOL sync too (read-only) so it can answer
+    # about the actual POOOL pipeline, not just BLAIQ's internal job records.
+    summary += await _poool_context_line(db, tenant_id)
     if not rows:
         return summary + "JOB DATA: (no jobs yet)\n"
     return summary + "JOB DATA:\n" + "\n".join(lines) + "\n"
+
+
+async def _poool_context_line(db: AsyncSession, tenant_id: str) -> str:
+    """One-line real POOOL summary for the AI grounding context (read-only)."""
+    row = (
+        await db.execute(
+            text(
+                "SELECT "
+                "count(*) FILTER (WHERE kind='client'), "
+                "count(*) FILTER (WHERE kind='project'), "
+                "count(*) FILTER (WHERE kind='order'), "
+                "COALESCE(sum(NULLIF(payload->>'total_netto_sum','')::numeric) FILTER (WHERE kind='order'),0), "
+                "COALESCE(sum(NULLIF(payload->>'total_brutto_sum','')::numeric) FILTER (WHERE kind='order'),0) "
+                "FROM ops.poool_cache WHERE tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"tid": tenant_id},
+        )
+    ).first()
+    if not row or (int(row[0]) == 0 and int(row[1]) == 0 and int(row[2]) == 0):
+        return "POOOL (live sync): not connected.\n"
+    return (
+        f"POOOL (live sync, real data): {int(row[0])} clients, {int(row[1])} projects, "
+        f"{int(row[2])} orders; real pipeline {_fmt_eur(float(row[4]))} brutto / "
+        f"{_fmt_eur(float(row[3]))} netto.\n"
+    )
 
 
 @router.post("", response_model=APIResponse[CopilotResponse])
