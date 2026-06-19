@@ -506,6 +506,53 @@ export async function updateOrgIntegrations(body: OrgIntegrationsUpdate): Promis
 }
 
 // ──────────────────────────────────────────────────────────────
+// Admin Copilot (Track AA) — grounded chat over live jobs
+// ──────────────────────────────────────────────────────────────
+
+export interface CopilotTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface CopilotReply {
+  answer: string;
+  model: string;
+}
+
+function fmtEurShort(v: number | null | undefined): string {
+  if (v == null) return '—';
+  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
+}
+
+export async function askCopilot(message: string, history: CopilotTurn[] = []): Promise<CopilotReply> {
+  if (PREVIEW) {
+    const overdue = previewStore.filter(jobIsOverdue);
+    const lower = message.toLowerCase();
+    let answer: string;
+    if (lower.includes('overdue') || lower.includes('risk') || lower.includes('at risk')) {
+      answer = overdue.length
+        ? `At risk right now:\n${overdue.map(j => `• ${j.job_number} · ${j.client} — invoice ${fmtEurShort(j.invoice_amount ?? j.quote_amount)} is overdue.`).join('\n')}`
+        : 'Nothing overdue right now — every invoiced job is within its due date.';
+    } else if (lower.includes('summar') || lower.includes('week') || lower.includes('status')) {
+      const byStatus = previewStore.reduce<Record<string, number>>((a, j) => { a[j.poool_status] = (a[j.poool_status] ?? 0) + 1; return a; }, {});
+      answer = `${previewStore.length} active jobs. Finance: ${Object.entries(byStatus).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ')}. ${overdue.length} overdue.`;
+    } else {
+      answer = `(preview) I'm grounded in your ${previewStore.length} jobs. Ask me about overdue invoices, margins, delivery status, or what to do next. Live mode answers from real data.`;
+    }
+    return { answer, model: 'preview' };
+  }
+  const r = await fetch(`${BASE}/api/copilot`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history }),
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: CopilotReply; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as CopilotReply;
+}
+
+// ──────────────────────────────────────────────────────────────
 // Activity API
 // ──────────────────────────────────────────────────────────────
 

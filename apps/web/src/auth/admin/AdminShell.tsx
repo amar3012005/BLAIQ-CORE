@@ -12,9 +12,11 @@ import FinanceBoard from './FinanceBoard';
 import TasksWall from './TasksWall';
 import ActivityFeed from './ActivityFeed';
 import SettingsBoard from './SettingsBoard';
+import CopilotBoard from './CopilotBoard';
 import { AnalyticsView } from './Placeholders';
 
 type TabId =
+  | 'copilot'
   | 'jobs'
   | 'finance'
   | 'work'
@@ -28,6 +30,12 @@ type Section = {
 };
 
 const SECTIONS: Section[] = [
+  {
+    heading: 'AI',
+    items: [
+      { id: 'copilot', label: 'Copilot', hint: 'Ask + act on your agency' },
+    ],
+  },
   {
     heading: 'Project',
     items: [
@@ -54,7 +62,7 @@ const SECTIONS: Section[] = [
 const NAV_WIDTH = 220;
 
 export default function AdminShell(): JSX.Element {
-  const [tab, setTab] = useState<TabId>('jobs');
+  const [tab, setTab] = useState<TabId>('copilot');
 
   return (
     <div
@@ -147,6 +155,7 @@ export default function AdminShell(): JSX.Element {
       </aside>
 
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        {tab === 'copilot' && <CopilotBoard />}
         {tab === 'jobs' && <JobBoard />}
         {tab === 'finance' && <FinanceBoard />}
         {tab === 'work' && <TasksWall />}
