@@ -149,3 +149,141 @@ async def ask_copilot(
         data=CopilotResponse(answer=result["text"], model=result.get("model") or copilot_model()),
         message="ok",
     )
+
+
+# ──────────────────────────────────────────────
+# Supervisor — rule-based "next actions" queue (no LLM required).
+# Computes prioritized, one-click actions from live job state. The PM
+# approves each (HITL); execute maps the action to a safe local operation.
+# ──────────────────────────────────────────────
+
+class NextAction(BaseModel):
+    job_id: str
+    job_number: str
+    client: str
+    kind: str          # chase_payment | invoice | follow_up_quote
+    priority: str      # high | medium | low
+    label: str
+    detail: str
+
+
+class ExecuteActionRequest(BaseModel):
+    job_id: str
+    kind: str
+
+
+def _days_since(d: date | None, today: date) -> int:
+    return (today - d).days if d else 0
+
+
+def _compute_actions(rows: list, today: date) -> list[NextAction]:
+    actions: list[NextAction] = []
+    for r in rows:
+        (job_id, job_number, client, poool_status, quote_amount, invoice_amount,
+         due, delivery_status, created) = r
+        amt = float(invoice_amount or quote_amount or 0)
+        # 1. Overdue invoice → chase payment (high).
+        if poool_status in ("invoiced", "partially_paid", "overdue") and due is not None and due < today:
+            actions.append(NextAction(
+                job_id=str(job_id), job_number=job_number, client=client or "—",
+                kind="chase_payment", priority="high", label="Chase payment",
+                detail=f"€{amt:,.0f} · {_days_since(due, today)}d overdue",
+            ))
+            continue
+        # 2. Delivered but not yet invoiced → invoice the client (high).
+        if delivery_status in ("delivered", "archived") and poool_status in (
+            "quote_pending", "quote_sent", "quote_approved",
+        ):
+            actions.append(NextAction(
+                job_id=str(job_id), job_number=job_number, client=client or "—",
+                kind="invoice", priority="high", label="Invoice client",
+                detail="Delivered — raise the invoice",
+            ))
+            continue
+        # 3. Quote pending/sent and aging → follow up (medium).
+        if poool_status in ("quote_pending", "quote_sent") and _days_since(created.date() if hasattr(created, "date") else created, today) >= 5:
+            actions.append(NextAction(
+                job_id=str(job_id), job_number=job_number, client=client or "—",
+                kind="follow_up_quote", priority="medium", label="Follow up quote",
+                detail=f"Quote {poool_status.replace('_', ' ')} {_days_since(created.date() if hasattr(created, 'date') else created, today)}d",
+            ))
+    order = {"high": 0, "medium": 1, "low": 2}
+    actions.sort(key=lambda a: order.get(a.priority, 3))
+    return actions
+
+
+async def _load_action_rows(db: AsyncSession, tenant_id: str) -> list:
+    return (
+        await db.execute(
+            text(
+                "SELECT id, job_number, client, poool_status, quote_amount, invoice_amount, "
+                "payment_due_date, delivery_status, created_at "
+                "FROM ops.jobs WHERE tenant_id = CAST(:tid AS uuid) ORDER BY created_at DESC"
+            ),
+            {"tid": tenant_id},
+        )
+    ).all()
+
+
+@router.get("/next-actions", response_model=APIResponse[list[NextAction]])
+async def next_actions(
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[list[NextAction]]:
+    tenant_id = current_tenant_id.get("")
+    rows = await _load_action_rows(db, tenant_id)
+    return APIResponse(data=_compute_actions(rows, date.today()), message="ok")
+
+
+@router.post("/next-actions/execute", response_model=APIResponse[NextAction | None])
+async def execute_action(
+    body: ExecuteActionRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[NextAction | None]:
+    tenant_id = current_tenant_id.get("")
+    row = (
+        await db.execute(
+            text(
+                "SELECT job_number, client FROM ops.jobs "
+                "WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"id": body.job_id, "tid": tenant_id},
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_number, client = row[0], row[1] or ""
+
+    from aiteam.integrations.job_notifications import record_notification
+
+    if body.kind == "chase_payment":
+        await record_notification(
+            tenant_id, kind="payment_reminder", job_id=body.job_id,
+            subject=f"Zahlungserinnerung — {job_number} {client}",
+            body=f"Reminder: the invoice for job {job_number} ({client}) is overdue.",
+        )
+    elif body.kind == "follow_up_quote":
+        await record_notification(
+            tenant_id, kind="quote_followup", job_id=body.job_id,
+            subject=f"Angebot nachfassen — {job_number} {client}",
+            body=f"Follow up on the open quote for job {job_number} ({client}).",
+        )
+    elif body.kind == "invoice":
+        await db.execute(
+            text(
+                "UPDATE ops.jobs SET poool_status = 'invoiced', "
+                "invoice_amount = COALESCE(invoice_amount, quote_amount), updated_at = now() "
+                "WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"id": body.job_id, "tid": tenant_id},
+        )
+        await db.commit()
+        await record_notification(
+            tenant_id, kind="invoice_raised", job_id=body.job_id,
+            subject=f"Rechnung gestellt — {job_number} {client}",
+            body=f"Invoice raised for job {job_number} ({client}).",
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"unknown action: {body.kind}")
+
+    return APIResponse(data=None, message=f"{body.kind} done")
+

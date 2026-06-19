@@ -553,6 +553,64 @@ export async function askCopilot(message: string, history: CopilotTurn[] = []): 
 }
 
 // ──────────────────────────────────────────────────────────────
+// Supervisor — rule-based next-actions queue (Track AA)
+// ──────────────────────────────────────────────────────────────
+
+export interface NextAction {
+  job_id: string;
+  job_number: string;
+  client: string;
+  kind: string;
+  priority: string;
+  label: string;
+  detail: string;
+}
+
+function computePreviewActions(): NextAction[] {
+  const today = Date.now();
+  const out: NextAction[] = [];
+  for (const j of previewStore) {
+    const amt = j.invoice_amount ?? j.quote_amount ?? 0;
+    if (jobIsOverdue(j)) {
+      out.push({ job_id: j.id, job_number: j.job_number, client: j.client || '—', kind: 'chase_payment', priority: 'high', label: 'Chase payment', detail: `${fmtEurShort(amt)} overdue` });
+      continue;
+    }
+    if ((j.delivery_status === 'delivered' || j.delivery_status === 'archived') &&
+        ['quote_pending', 'quote_sent', 'quote_approved'].includes(j.poool_status)) {
+      out.push({ job_id: j.id, job_number: j.job_number, client: j.client || '—', kind: 'invoice', priority: 'high', label: 'Invoice client', detail: 'Delivered — raise the invoice' });
+      continue;
+    }
+    if (['quote_pending', 'quote_sent'].includes(j.poool_status)) {
+      const ageDays = Math.floor((today - new Date(j.created_at).getTime()) / 86_400_000);
+      if (ageDays >= 5) out.push({ job_id: j.id, job_number: j.job_number, client: j.client || '—', kind: 'follow_up_quote', priority: 'medium', label: 'Follow up quote', detail: `Quote ${j.poool_status.replace(/_/g, ' ')}` });
+    }
+  }
+  const ord: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  return out.sort((a, b) => (ord[a.priority] ?? 3) - (ord[b.priority] ?? 3));
+}
+
+export async function listNextActions(): Promise<NextAction[]> {
+  if (PREVIEW) return computePreviewActions();
+  const data = await request<unknown>('/api/copilot/next-actions');
+  return asArray<NextAction>(data, 'data');
+}
+
+export async function executeNextAction(jobId: string, kind: string): Promise<void> {
+  if (PREVIEW) {
+    if (kind === 'invoice') {
+      const idx = previewStore.findIndex(j => j.id === jobId);
+      const job = idx >= 0 ? previewStore[idx] : undefined;
+      if (job) previewStore[idx] = touch({ ...job, poool_status: 'invoiced', invoice_amount: job.invoice_amount ?? job.quote_amount });
+    }
+    return;
+  }
+  await request('/api/copilot/next-actions/execute', {
+    method: 'POST',
+    body: JSON.stringify({ job_id: jobId, kind }),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
 // Activity API
 // ──────────────────────────────────────────────────────────────
 

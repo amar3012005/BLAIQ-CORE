@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { askCopilot, type CopilotTurn } from './api';
+import NextActions from './NextActions';
 import { PAL, monoSmall, sansBold, sans } from './theme';
 
 const SUGGESTIONS = [
@@ -56,6 +57,9 @@ export default function CopilotBoard(): JSX.Element {
         <span style={{ ...sansBold, fontSize: 14, color: PAL.ink }}>✦ Admin Copilot</span>
         <span style={{ ...monoSmall, color: PAL.muted, marginLeft: 'auto' }}>GROUNDED IN LIVE JOBS</span>
       </div>
+
+      <NextActions />
+
 
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.length === 0 && (
