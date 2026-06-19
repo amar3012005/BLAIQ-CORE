@@ -13,11 +13,13 @@ import TasksWall from './TasksWall';
 import ActivityFeed from './ActivityFeed';
 import SettingsBoard from './SettingsBoard';
 import CopilotBoard from './CopilotBoard';
+import CrewBoard from './CrewBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
 
 type TabId =
   | 'copilot'
+  | 'crew'
   | 'jobs'
   | 'finance'
   | 'work'
@@ -35,6 +37,7 @@ const SECTIONS: Section[] = [
     heading: 'AI',
     items: [
       { id: 'copilot', label: 'Copilot', hint: 'Ask + act on your agency' },
+      { id: 'crew', label: 'Crew', hint: 'Specialist agents deliberate' },
     ],
   },
   {
@@ -158,6 +161,7 @@ export default function AdminShell(): JSX.Element {
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         <ErrorBoundary resetKey={tab}>
           {tab === 'copilot' && <CopilotBoard />}
+          {tab === 'crew' && <CrewBoard />}
           {tab === 'jobs' && <JobBoard />}
           {tab === 'finance' && <FinanceBoard />}
           {tab === 'work' && <TasksWall />}

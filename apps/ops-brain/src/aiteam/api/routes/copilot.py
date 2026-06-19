@@ -8,6 +8,7 @@ answer. Read-only: no mutations here — agentic actions land in AA2.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from datetime import date
@@ -511,5 +512,218 @@ async def copilot_act(
 
     return APIResponse(
         data=ActResponse(answer=result.get("text") or "", model=result.get("model") or copilot_model()),
+        message="ok",
+    )
+
+
+# ──────────────────────────────────────────────
+# AA5 — AI Crew. Instead of one Copilot, a small crew of specialist agents
+# (Finance, Delivery, Account) reviews ONE job in parallel — each from its own
+# remit — and may PROPOSE an action. Proposals reuse _ACTION_TOOLS and the
+# ProposedAction shape, so the PM approves them (HITL) through the very same
+# job-action endpoints as AA2. This is the agency org-chart, as agents.
+# ──────────────────────────────────────────────
+
+_CREW = [
+    {
+        "id": "finance",
+        "name": "Mara",
+        "role": "Finance Lead",
+        "emoji": "💰",
+        "tools": ["push_poool", "set_poool_status", "chase_payment"],
+        "brief": (
+            "You own cash. Watch the quote→invoice→paid pipeline, the margin "
+            "(invoice or quote minus third-party costs), and overdue payments. "
+            "Flag money left on the table or at risk of going uncollected."
+        ),
+    },
+    {
+        "id": "delivery",
+        "name": "Tomas",
+        "role": "Delivery Lead",
+        "emoji": "📦",
+        "tools": ["mark_delivered", "create_server_folder"],
+        "brief": (
+            "You own production and handover. Watch delivery status, whether the "
+            "server delivery folder exists, and revision rounds. Flag jobs ready "
+            "to deliver or missing their folder."
+        ),
+    },
+    {
+        "id": "account",
+        "name": "Lena",
+        "role": "Account Manager",
+        "emoji": "🤝",
+        "tools": ["chase_payment", "push_clickup"],
+        "brief": (
+            "You own the client relationship. Watch for stale quotes, slow "
+            "follow-ups, and anything client-facing that needs a nudge. Keep the "
+            "client warm and the next step moving."
+        ),
+    },
+]
+
+_CREW_SYSTEM = """You are {name}, the {role} on the BLAIQ AI crew at the creative agency B&B Markenagentur.
+{brief}
+
+You are reviewing ONE job (details below). Give your assessment in ONE or TWO sentences, strictly from your role's perspective, grounded in the job data and citing the job number. Money is in EUR; today's date is given.
+If — and only if — a clear action within your remit is warranted, call exactly one tool to PROPOSE it. A tool call is only a proposal the PM approves; never claim you executed anything. If no action is needed, do not call a tool."""
+
+
+def _tools_for(names: list[str]) -> list[dict]:
+    return [t for t in _ACTION_TOOLS if t["function"]["name"] in names]
+
+
+# Full per-job select (id first), shared by the crew target picker.
+_CREW_JOB_SELECT = (
+    "SELECT id, job_number, title, client, poool_status, quote_amount, "
+    "invoice_amount, third_party_costs, payment_due_date, delivery_status, "
+    "revision_count, COALESCE(jsonb_array_length(clickup_ticket_ids),0), "
+    "server_folder_path, notes "
+    "FROM ops.jobs WHERE tenant_id = CAST(:tid AS uuid) ORDER BY created_at DESC"
+)
+
+
+def _crew_risk_score(r, today: date) -> float:
+    poool_status, due, delivery = r[4], r[8], r[9]
+    if poool_status in ("invoiced", "partially_paid", "overdue") and due is not None and due < today:
+        return 100.0 + (today - due).days
+    if delivery in ("delivered", "archived") and poool_status in ("quote_pending", "quote_sent", "quote_approved"):
+        return 80.0
+    if poool_status in ("quote_pending", "quote_sent"):
+        return 50.0
+    return 10.0
+
+
+def _crew_job_detail(r, today: date) -> str:
+    (_id, jn, title, client, poool_status, quote, invoice, tpc, due,
+     delivery, revs, tickets, folder, notes) = r
+    quote = float(quote or 0)
+    invoice = float(invoice or 0)
+    tpc_v = float(tpc or 0)
+    margin = (invoice or quote) - tpc_v
+    overdue = (
+        poool_status in ("invoiced", "partially_paid", "overdue")
+        and due is not None and due < today
+    )
+    return (
+        f"Job {jn} — {title}\n"
+        f"Client: {client or '—'}\n"
+        f"Finance: poool_status={poool_status}{' (OVERDUE)' if overdue else ''}, "
+        f"quote={_fmt_eur(quote or None)}, invoice={_fmt_eur(invoice or None)}, "
+        f"third_party_costs={_fmt_eur(tpc_v or None)}, margin≈{_fmt_eur(margin or None)}, "
+        f"payment_due={due.isoformat() if due else '—'}\n"
+        f"Delivery: status={delivery}, server_folder={'yes' if folder else 'no'}, revisions={revs}\n"
+        f"Tasks: clickup_tickets={tickets}\n"
+        f"Notes: {notes or '—'}\n"
+    )
+
+
+class CrewRequest(BaseModel):
+    job_number: str | None = None
+
+
+class CrewFinding(BaseModel):
+    id: str
+    agent: str
+    role: str
+    emoji: str
+    assessment: str
+    proposed: ProposedAction | None = None
+
+
+class CrewDeliberation(BaseModel):
+    job_id: str
+    job_number: str
+    title: str
+    findings: list[CrewFinding]
+    model: str
+
+
+def _proposal_from_tool_calls(tool_calls: list, job_id: str, job_number: str) -> ProposedAction | None:
+    if not tool_calls:
+        return None
+    import json as _json
+    fn = (tool_calls[0] or {}).get("function", {})
+    name = fn.get("name", "")
+    if not name:
+        return None
+    try:
+        args = _json.loads(fn.get("arguments") or "{}")
+    except (ValueError, TypeError):
+        args = {}
+    label = _ACTION_LABELS.get(name, name)
+    extra = f" → {args.get('status')}" if name == "set_poool_status" else ""
+    return ProposedAction(
+        kind=name, job_id=job_id, job_number=job_number, args=args,
+        summary=f"{label}{extra} · {job_number}",
+    )
+
+
+@router.post("/crew", response_model=APIResponse[CrewDeliberation])
+async def crew_deliberate(
+    body: CrewRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[CrewDeliberation]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+
+    rows = (await db.execute(text(_CREW_JOB_SELECT), {"tid": tenant_id})).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no jobs to review")
+
+    today = date.today()
+    if body.job_number:
+        target = next((r for r in rows if r[1] == body.job_number), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"job {body.job_number} not found")
+    else:
+        # Default: send the crew at the single most at-risk job.
+        target = max(rows, key=lambda r: _crew_risk_score(r, today))
+
+    job_id = str(target[0])
+    job_number = target[1]
+    title = target[2]
+    detail = _crew_job_detail(target, today)
+
+    async def _run(member: dict):
+        system = _CREW_SYSTEM.format(name=member["name"], role=member["role"], brief=member["brief"])
+        system += f"\n\nToday: {today.isoformat()}\n\nJOB UNDER REVIEW:\n{detail}"
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Review job {job_number} from your role and propose an action if one is warranted."},
+        ]
+        res = await chat(messages, max_tokens=320, temperature=0.2, tools=_tools_for(member["tools"]))
+        return member, res
+
+    results = await asyncio.gather(*(_run(m) for m in _CREW))
+
+    findings: list[CrewFinding] = []
+    model_used = copilot_model()
+    for member, res in results:
+        if not res.get("ok"):
+            findings.append(CrewFinding(
+                id=member["id"], agent=member["name"], role=member["role"], emoji=member["emoji"],
+                assessment="(unavailable — LLM error)",
+            ))
+            continue
+        model_used = res.get("model") or model_used
+        assessment = (res.get("text") or "").strip()
+        proposed = _proposal_from_tool_calls(res.get("tool_calls") or [], job_id, job_number)
+        if proposed and not assessment:
+            assessment = f"Recommends: {proposed.summary}."
+        if not assessment:
+            assessment = "No action needed from my side right now."
+        findings.append(CrewFinding(
+            id=member["id"], agent=member["name"], role=member["role"], emoji=member["emoji"],
+            assessment=assessment, proposed=proposed,
+        ))
+
+    return APIResponse(
+        data=CrewDeliberation(
+            job_id=job_id, job_number=job_number, title=title,
+            findings=findings, model=model_used,
+        ),
         message="ok",
     )

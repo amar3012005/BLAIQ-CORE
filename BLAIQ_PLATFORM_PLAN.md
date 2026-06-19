@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**AA5 — AI Crew (multi-agent, HITL)** — instead of one Copilot, a crew of specialist agents (💰 Finance, 📦 Delivery, 🤝 Account) review a job *in parallel*, each from its own remit, and each may propose an action the PM approves. Verified live on prod with the LLM (`claude-sonnet-4.6`): the crew auto-picked the most at-risk job `2026-014`, Finance + Account both proposed *chase payment* on the overdue €12,500 invoice, Delivery cleared it:
+
+![AI Crew — specialist agents deliberate over a job](docs/progress/crew.png)
+
 **AA2 — Agentic actions (LLM, HITL)** — the Copilot proposes a tool-call from natural language; the PM approves before it runs:
 
 ![Copilot agentic action with approval](docs/progress/copilot-agentic.png)
@@ -99,15 +103,17 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 ## Track AA — Agentic Administration (in progress)
 
 The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + deployed:
-- **AA1 Admin Copilot** — grounded chat over live jobs (`POST /api/copilot`, OpenRouter httpx client). Pipeline verified to the LLM-credential boundary; live answers need a funded LLM key (OpenRouter key is currently spent).
+- **AA1 Admin Copilot** — grounded chat over live jobs (`POST /api/copilot`, OpenRouter httpx client). **🟢 Live on prod** with `claude-sonnet-4.6`.
+- **AA2 Agentic actions** — the Copilot proposes a tool-call (mark delivered, push POOOL, set finance status, chase payment, …) from natural language; PM approves before it runs (HITL). **🟢 Live on prod.**
+- **AA5 AI Crew** — `POST /api/copilot/crew`: three specialist agents (Finance, Delivery, Account) deliberate over one job *in parallel*, each proposing an action through the same HITL approval + job-action endpoints. Auto-targets the most at-risk job, or review any job by number. **🟢 Live on prod, verified e2e.**
 - **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.
 - **One-click Connect** — POOOL + ClickUp connect/disconnect from Settings in a single click.
 
 **🟢 POOOL MCP — LIVE.** ops-brain now reaches the `poool-mcp` container (bridged via the `blaiq-mcp` network, persisted in compose), does the full MCP streamable-HTTP handshake, and syncs real data into `ops.poool_cache` (12 clients, 8 projects, 2 orders). A tolerant parser salvages complete records past the server's 25 KB response cap.
 
 **Known external blockers (need the operator):**
-- **LLM credits** — the OpenRouter key is out of credits; tops up → the Copilot's live answers + LLM-driven agentic actions go live.
-- **Email delivery** — there is no email-sending credential/connector wired; per-feature email reports need an SMTP/API key or a Gmail connector.
+- ~~LLM credits~~ — **resolved.** OpenRouter key funded; Copilot, AA2 agentic actions, and the AA5 crew all answer live on prod with `claude-sonnet-4.6`.
+- **ClickUp OAuth** — the interactive authorize→token flow + daemon token-store is the remaining ClickUp build (POOOL is fully live).
 
 ## 2. Where we are today
 

@@ -614,6 +614,85 @@ export async function runProposedAction(p: ProposedAction): Promise<void> {
   }
 }
 
+// ── AI Crew (AA5): specialist agents deliberate over one job in parallel ──
+
+export interface CrewFinding {
+  id: string;
+  agent: string;
+  role: string;
+  emoji: string;
+  assessment: string;
+  proposed: ProposedAction | null;
+}
+
+export interface CrewDeliberation {
+  job_id: string;
+  job_number: string;
+  title: string;
+  findings: CrewFinding[];
+  model: string;
+}
+
+// Send the crew at one job. Without a job_number, the backend (and preview)
+// pick the single most at-risk job to review.
+export async function crewDeliberate(jobNumber?: string): Promise<CrewDeliberation> {
+  if (PREVIEW) {
+    const score = (j: Job): number => {
+      if (jobIsOverdue(j)) return 100;
+      if ((j.delivery_status === 'delivered' || j.delivery_status === 'archived') &&
+          ['quote_pending', 'quote_sent', 'quote_approved'].includes(j.poool_status)) return 80;
+      if (['quote_pending', 'quote_sent'].includes(j.poool_status)) return 50;
+      return 10;
+    };
+    const target = (jobNumber && previewStore.find(j => j.job_number === jobNumber))
+      || [...previewStore].sort((a, b) => score(b) - score(a))[0];
+    if (!target) throw new Error('No jobs to review');
+    const prop = (kind: string, args: Record<string, unknown> = {}): ProposedAction =>
+      ({ kind, job_id: target.id, job_number: target.job_number, args, summary: `${kind.replace(/_/g, ' ')} · ${target.job_number}` });
+    const overdue = jobIsOverdue(target);
+    const delivered = target.delivery_status === 'delivered' || target.delivery_status === 'archived';
+    const findings: CrewFinding[] = [
+      {
+        id: 'finance', agent: 'Mara', role: 'Finance Lead', emoji: '💰',
+        assessment: overdue
+          ? `${target.job_number} is overdue — the ${fmtEurShort(target.invoice_amount ?? target.quote_amount)} invoice is past due and needs collecting now.`
+          : delivered && ['quote_pending', 'quote_sent', 'quote_approved'].includes(target.poool_status)
+            ? `${target.job_number} is delivered but not invoiced — ${fmtEurShort(target.quote_amount)} is sitting uncollected. Raise the invoice.`
+            : `${target.job_number} finance looks healthy: ${target.poool_status.replace(/_/g, ' ')}, margin on track.`,
+        proposed: overdue ? prop('chase_payment')
+          : (delivered && ['quote_pending', 'quote_sent', 'quote_approved'].includes(target.poool_status)) ? prop('set_poool_status', { status: 'invoiced' })
+          : null,
+      },
+      {
+        id: 'delivery', agent: 'Tomas', role: 'Delivery Lead', emoji: '📦',
+        assessment: !target.server_folder_path
+          ? `${target.job_number} has no delivery folder yet — set one up before assets land.`
+          : delivered
+            ? `${target.job_number} is delivered and filed under ${target.server_folder_path}. Nothing blocking on my side.`
+            : `${target.job_number} is in production (${target.revision_count} revision${target.revision_count === 1 ? '' : 's'}); folder ready at ${target.server_folder_path}.`,
+        proposed: !target.server_folder_path ? prop('create_server_folder') : null,
+      },
+      {
+        id: 'account', agent: 'Lena', role: 'Account Manager', emoji: '🤝',
+        assessment: ['quote_pending', 'quote_sent'].includes(target.poool_status)
+          ? `${target.client}'s quote on ${target.job_number} is still open — worth a follow-up to keep it moving.`
+          : `${target.client} relationship on ${target.job_number} is steady; next touchpoint can wait.`,
+        proposed: ['quote_pending', 'quote_sent'].includes(target.poool_status) ? prop('push_clickup') : null,
+      },
+    ];
+    return { job_id: target.id, job_number: target.job_number, title: target.title, findings, model: 'preview' };
+  }
+  const r = await fetch(`${BASE}/api/copilot/crew`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ job_number: jobNumber ?? null }),
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: CrewDeliberation; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as CrewDeliberation;
+}
+
 // ──────────────────────────────────────────────────────────────
 // POOOL sync summary (live ops.poool_cache) — shown in Finance
 // ──────────────────────────────────────────────────────────────
