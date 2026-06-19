@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**AA6 — Run the Agency (batch HITL)** — the Supervisor's prioritised next-actions across the whole book, approved in one pass. "⚡ Run all" fires `execute-batch`; each item runs independently (one failure never blocks the rest). The autonomous loop, with the PM's one-click sign-off. Verified live on prod: 3/3 actions ran (invoiced 2026-026, chased 2026-021 + 2026-014):
+
+![Run the Agency — batch-approve the Supervisor queue](docs/progress/run-agency.png)
+
 **AA4 — AI Daily Briefing (Chief of Staff)** — a proactive one-pass digest over the *whole* job book: headline, cash-watch line, and 3–5 severity-ranked insights, each with a job ref and the single next step. The agency's morning standup, and the default landing view. Verified live on prod (`claude-sonnet-4.6`): it flagged €20,900 of cash exposure across two overdue jobs as the day's top priority:
 
 ![AI Daily Briefing — Chief-of-Staff digest over the book](docs/progress/briefing.png)
@@ -112,6 +116,7 @@ The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + de
 - **AA4 AI Daily Briefing** — `GET /api/copilot/briefing`: a Chief-of-Staff pass over the whole job book → headline + cash-watch + severity-ranked insights with job refs and next steps. The default admin landing view. **🟢 Live on prod, verified e2e.**
 - **AA5 AI Crew** — `POST /api/copilot/crew`: three specialist agents (Finance, Delivery, Account) deliberate over one job *in parallel*, each proposing an action through the same HITL approval + job-action endpoints. Auto-targets the most at-risk job, or review any job by number. **🟢 Live on prod, verified e2e.**
 - **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.
+- **AA6 Run the Agency** — `POST /api/copilot/next-actions/execute-batch`: approve the entire prioritised queue in one pass; each item runs independently (one failure never blocks the rest). **🟢 Live on prod, verified e2e (3/3 ran).**
 - **One-click Connect** — POOOL + ClickUp connect/disconnect from Settings in a single click.
 
 **🟢 POOOL MCP — LIVE.** ops-brain now reaches the `poool-mcp` container (bridged via the `blaiq-mcp` network, persisted in compose), does the full MCP streamable-HTTP handshake, and syncs real data into `ops.poool_cache` (12 clients, 8 projects, 2 orders). A tolerant parser salvages complete records past the server's 25 KB response cap.

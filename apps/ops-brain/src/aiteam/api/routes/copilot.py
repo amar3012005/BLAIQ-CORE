@@ -235,58 +235,108 @@ async def next_actions(
     return APIResponse(data=_compute_actions(rows, date.today()), message="ok")
 
 
-@router.post("/next-actions/execute", response_model=APIResponse[NextAction | None])
-async def execute_action(
-    body: ExecuteActionRequest,
-    db: AsyncSession = Depends(_get_db),
-) -> APIResponse[NextAction | None]:
-    tenant_id = current_tenant_id.get("")
+async def _execute_one_action(db: AsyncSession, tenant_id: str, job_id: str, kind: str) -> str:
+    """Run a single supervisor action. Raises ValueError on bad input so the
+    caller can map it (HTTP 4xx for one, per-item failure for a batch)."""
     row = (
         await db.execute(
             text(
                 "SELECT job_number, client FROM ops.jobs "
                 "WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"
             ),
-            {"id": body.job_id, "tid": tenant_id},
+            {"id": job_id, "tid": tenant_id},
         )
     ).first()
     if not row:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise ValueError("Job not found")
     job_number, client = row[0], row[1] or ""
 
     from aiteam.integrations.job_notifications import record_notification
 
-    if body.kind == "chase_payment":
+    if kind == "chase_payment":
         await record_notification(
-            tenant_id, kind="payment_reminder", job_id=body.job_id,
+            tenant_id, kind="payment_reminder", job_id=job_id,
             subject=f"Zahlungserinnerung — {job_number} {client}",
             body=f"Reminder: the invoice for job {job_number} ({client}) is overdue.",
         )
-    elif body.kind == "follow_up_quote":
+    elif kind == "follow_up_quote":
         await record_notification(
-            tenant_id, kind="quote_followup", job_id=body.job_id,
+            tenant_id, kind="quote_followup", job_id=job_id,
             subject=f"Angebot nachfassen — {job_number} {client}",
             body=f"Follow up on the open quote for job {job_number} ({client}).",
         )
-    elif body.kind == "invoice":
+    elif kind == "invoice":
         await db.execute(
             text(
                 "UPDATE ops.jobs SET poool_status = 'invoiced', "
                 "invoice_amount = COALESCE(invoice_amount, quote_amount), updated_at = now() "
                 "WHERE id = CAST(:id AS uuid) AND tenant_id = CAST(:tid AS uuid)"
             ),
-            {"id": body.job_id, "tid": tenant_id},
+            {"id": job_id, "tid": tenant_id},
         )
         await db.commit()
         await record_notification(
-            tenant_id, kind="invoice_raised", job_id=body.job_id,
+            tenant_id, kind="invoice_raised", job_id=job_id,
             subject=f"Rechnung gestellt — {job_number} {client}",
             body=f"Invoice raised for job {job_number} ({client}).",
         )
     else:
-        raise HTTPException(status_code=400, detail=f"unknown action: {body.kind}")
+        raise ValueError(f"unknown action: {kind}")
 
-    return APIResponse(data=None, message=f"{body.kind} done")
+    return f"{kind} done · {job_number}"
+
+
+@router.post("/next-actions/execute", response_model=APIResponse[NextAction | None])
+async def execute_action(
+    body: ExecuteActionRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[NextAction | None]:
+    tenant_id = current_tenant_id.get("")
+    try:
+        msg = await _execute_one_action(db, tenant_id, body.job_id, body.kind)
+    except ValueError as e:
+        code = 404 if "not found" in str(e).lower() else 400
+        raise HTTPException(status_code=code, detail=str(e))
+    return APIResponse(data=None, message=msg)
+
+
+# AA6 — "Run the Agency": approve the whole prioritised batch in one pass.
+# Each item runs independently; one failure never blocks the rest (HITL still
+# applies — the PM has already seen and approved the list in the UI).
+
+class BatchItem(BaseModel):
+    job_id: str
+    kind: str
+
+
+class ExecuteBatchRequest(BaseModel):
+    actions: list[BatchItem] = Field(default_factory=list)
+
+
+class BatchResult(BaseModel):
+    job_id: str
+    kind: str
+    ok: bool
+    message: str
+
+
+@router.post("/next-actions/execute-batch", response_model=APIResponse[list[BatchResult]])
+async def execute_action_batch(
+    body: ExecuteBatchRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[list[BatchResult]]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    results: list[BatchResult] = []
+    for item in body.actions:
+        try:
+            msg = await _execute_one_action(db, tenant_id, item.job_id, item.kind)
+            results.append(BatchResult(job_id=item.job_id, kind=item.kind, ok=True, message=msg))
+        except Exception as e:  # noqa: BLE001 — per-item isolation; report, don't abort
+            results.append(BatchResult(job_id=item.job_id, kind=item.kind, ok=False, message=str(e)))
+    done = sum(1 for r in results if r.ok)
+    return APIResponse(data=results, message=f"{done}/{len(results)} done")
 
 
 # ──────────────────────────────────────────────

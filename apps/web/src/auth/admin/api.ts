@@ -176,6 +176,8 @@ function seedPreviewJobs(): Job[] {
   const day = 86_400_000;
   const iso = (offsetDays: number): string =>
     new Date(Date.now() + offsetDays * day).toISOString().slice(0, 10);
+  // Realistic ages so the Supervisor surfaces aging-quote follow-ups.
+  const ago = (days: number): string => new Date(Date.now() - days * day).toISOString();
   return [
     {
       id: 'job-001', job_number: '2026-014', title: 'Frühjahrskampagne Plakatserie',
@@ -201,7 +203,7 @@ function seedPreviewJobs(): Job[] {
       revision_count: 0, server_folder_path: '/Clients/Voss/2026-021',
       delivery_status: 'in_progress', delivered_at: null,
       notes: '64-seitiger Bericht, Layout + Satz.',
-      created_at: now, updated_at: now,
+      created_at: ago(9), updated_at: now,
     },
     {
       id: 'job-003', job_number: '2026-026', title: 'Messestand Branding IFA',
@@ -212,7 +214,7 @@ function seedPreviewJobs(): Job[] {
       revision_count: 0, server_folder_path: null,
       delivery_status: 'in_progress', delivered_at: null,
       notes: 'Erstanfrage über Protonet. Briefing-Call ausstehend.',
-      created_at: now, updated_at: now,
+      created_at: ago(6), updated_at: now,
     },
     {
       id: 'job-004', job_number: '2026-009', title: 'Rebranding Webauftritt',
@@ -855,6 +857,35 @@ export async function executeNextAction(jobId: string, kind: string): Promise<vo
     method: 'POST',
     body: JSON.stringify({ job_id: jobId, kind }),
   });
+}
+
+export interface BatchResult {
+  job_id: string;
+  kind: string;
+  ok: boolean;
+  message: string;
+}
+
+// AA6 — "Run the Agency": execute the whole approved batch in one pass.
+// Each item runs independently server-side; one failure never blocks the rest.
+export async function executeNextActionsBatch(
+  actions: { job_id: string; kind: string }[],
+): Promise<BatchResult[]> {
+  if (PREVIEW) {
+    return actions.map(a => {
+      if (a.kind === 'invoice') {
+        const idx = previewStore.findIndex(j => j.id === a.job_id);
+        const job = idx >= 0 ? previewStore[idx] : undefined;
+        if (job) previewStore[idx] = touch({ ...job, poool_status: 'invoiced', invoice_amount: job.invoice_amount ?? job.quote_amount });
+      }
+      return { job_id: a.job_id, kind: a.kind, ok: true, message: `${a.kind} done` };
+    });
+  }
+  const data = await request<{ data: BatchResult[] }>('/api/copilot/next-actions/execute-batch', {
+    method: 'POST',
+    body: JSON.stringify({ actions }),
+  });
+  return data.data;
 }
 
 // ──────────────────────────────────────────────────────────────

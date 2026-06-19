@@ -5,7 +5,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { listNextActions, executeNextAction, type NextAction } from './api';
+import { listNextActions, executeNextAction, executeNextActionsBatch, type NextAction } from './api';
 import { PAL, monoSmall, sansBold, sans, emptyText } from './theme';
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -17,6 +17,8 @@ const PRIORITY_COLOR: Record<string, string> = {
 export default function NextActions({ onChanged }: { onChanged?: () => void }): JSX.Element {
   const [actions, setActions] = useState<NextAction[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [runningAll, setRunningAll] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const load = (): void => {
@@ -24,6 +26,25 @@ export default function NextActions({ onChanged }: { onChanged?: () => void }): 
   };
 
   useEffect(load, []);
+
+  const runAll = async (): Promise<void> => {
+    if (!actions || actions.length === 0 || runningAll) return;
+    setRunningAll(true);
+    setErr(null);
+    setNote(null);
+    const batch = actions.map(a => ({ job_id: a.job_id, kind: a.kind }));
+    try {
+      const results = await executeNextActionsBatch(batch);
+      const done = results.filter(r => r.ok).length;
+      setActions([]);
+      setNote(`Ran ${done}/${results.length} action${results.length === 1 ? '' : 's'}.`);
+      onChanged?.();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setRunningAll(false);
+    }
+  };
 
   const run = async (a: NextAction): Promise<void> => {
     const key = `${a.job_id}:${a.kind}`;
@@ -45,15 +66,26 @@ export default function NextActions({ onChanged }: { onChanged?: () => void }): 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <span style={{ ...monoSmall, color: PAL.muted }}>SUPERVISOR · NEXT ACTIONS</span>
         {actions && <span style={{ ...monoSmall, color: PAL.muted }}>· {actions.length}</span>}
+        {actions && actions.length > 0 && (
+          <button
+            type="button"
+            disabled={runningAll}
+            onClick={() => { void runAll(); }}
+            style={{ marginLeft: 'auto', border: 'none', background: PAL.accent, color: PAL.white, cursor: runningAll ? 'wait' : 'pointer', ...monoSmall, fontSize: 8, padding: '4px 10px' }}
+          >
+            {runningAll ? 'RUNNING…' : `⚡ RUN ALL ${actions.length}`}
+          </button>
+        )}
         <button
           type="button"
           onClick={load}
-          style={{ marginLeft: 'auto', border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '3px 8px' }}
+          style={{ marginLeft: actions && actions.length > 0 ? 6 : 'auto', border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '3px 8px' }}
         >
           REFRESH
         </button>
       </div>
 
+      {note && <div style={{ ...sans, fontSize: 11, color: '#0F6E56', marginBottom: 8 }}>{note}</div>}
       {err && <div style={{ ...sans, fontSize: 11, color: '#B45309', marginBottom: 8 }}>{err}</div>}
       {!actions && !err && <div style={emptyText}>Scanning jobs…</div>}
       {actions && actions.length === 0 && (
