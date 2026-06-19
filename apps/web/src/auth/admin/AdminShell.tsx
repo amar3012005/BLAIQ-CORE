@@ -13,6 +13,7 @@ import TasksWall from './TasksWall';
 import ActivityFeed from './ActivityFeed';
 import SettingsBoard from './SettingsBoard';
 import CopilotBoard from './CopilotBoard';
+import ErrorBoundary from './ErrorBoundary';
 import { AnalyticsView } from './Placeholders';
 
 type TabId =
@@ -155,13 +156,15 @@ export default function AdminShell(): JSX.Element {
       </aside>
 
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
-        {tab === 'copilot' && <CopilotBoard />}
-        {tab === 'jobs' && <JobBoard />}
-        {tab === 'finance' && <FinanceBoard />}
-        {tab === 'work' && <TasksWall />}
-        {tab === 'activity' && <ActivityFeed />}
-        {tab === 'analytics' && <AnalyticsView />}
-        {tab === 'settings' && <SettingsBoard />}
+        <ErrorBoundary resetKey={tab}>
+          {tab === 'copilot' && <CopilotBoard />}
+          {tab === 'jobs' && <JobBoard />}
+          {tab === 'finance' && <FinanceBoard />}
+          {tab === 'work' && <TasksWall />}
+          {tab === 'activity' && <ActivityFeed />}
+          {tab === 'analytics' && <AnalyticsView />}
+          {tab === 'settings' && <SettingsBoard />}
+        </ErrorBoundary>
       </div>
     </div>
   );
