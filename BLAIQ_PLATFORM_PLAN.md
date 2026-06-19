@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**AA5+ — Crew Sweep (whole crew × whole book)** — one click sends all three specialists across the top at-risk jobs at once; each job's crew runs concurrently, so the standup is bounded by the slowest single job, not their sum. Verified live on prod: reviewed 3/4 jobs, surfacing per-job proposals (chase 2026-014, push-clickup 2026-021, mark-delivered 2026-009):
+
+![Crew Sweep — the whole crew reviews the whole book](docs/progress/crew-sweep.png)
+
 **AA6 — Run the Agency (batch HITL)** — the Supervisor's prioritised next-actions across the whole book, approved in one pass. "⚡ Run all" fires `execute-batch`; each item runs independently (one failure never blocks the rest). The autonomous loop, with the PM's one-click sign-off. Verified live on prod: 3/3 actions ran (invoiced 2026-026, chased 2026-021 + 2026-014):
 
 ![Run the Agency — batch-approve the Supervisor queue](docs/progress/run-agency.png)
@@ -115,6 +119,7 @@ The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + de
 - **AA2 Agentic actions** — the Copilot proposes a tool-call (mark delivered, push POOOL, set finance status, chase payment, …) from natural language; PM approves before it runs (HITL). **🟢 Live on prod.**
 - **AA4 AI Daily Briefing** — `GET /api/copilot/briefing`: a Chief-of-Staff pass over the whole job book → headline + cash-watch + severity-ranked insights with job refs and next steps. The default admin landing view. **🟢 Live on prod, verified e2e.**
 - **AA5 AI Crew** — `POST /api/copilot/crew`: three specialist agents (Finance, Delivery, Account) deliberate over one job *in parallel*, each proposing an action through the same HITL approval + job-action endpoints. Auto-targets the most at-risk job, or review any job by number. **🟢 Live on prod, verified e2e.**
+- **AA5 Crew Sweep** — `POST /api/copilot/crew/sweep`: sends the full crew across the top-N at-risk jobs in one pass (jobs reviewed concurrently). The agency-wide standup. **🟢 Live on prod, verified e2e (3/4 jobs).**
 - **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.
 - **AA6 Run the Agency** — `POST /api/copilot/next-actions/execute-batch`: approve the entire prioritised queue in one pass; each item runs independently (one failure never blocks the rest). **🟢 Live on prod, verified e2e (3/3 ran).**
 - **One-click Connect** — POOOL + ClickUp connect/disconnect from Settings in a single click.

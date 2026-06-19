@@ -695,6 +695,39 @@ export async function crewDeliberate(jobNumber?: string): Promise<CrewDeliberati
   return body.data as CrewDeliberation;
 }
 
+export interface CrewSweep {
+  reviewed: number;
+  total_jobs: number;
+  skipped: number;
+  deliberations: CrewDeliberation[];
+  model: string;
+}
+
+// Send the full crew across the top-N at-risk jobs in one pass (the standup).
+export async function crewSweep(limit = 3): Promise<CrewSweep> {
+  if (PREVIEW) {
+    const score = (j: Job): number => {
+      if (jobIsOverdue(j)) return 100;
+      if ((j.delivery_status === 'delivered' || j.delivery_status === 'archived') &&
+          ['quote_pending', 'quote_sent', 'quote_approved'].includes(j.poool_status)) return 80;
+      if (['quote_pending', 'quote_sent'].includes(j.poool_status)) return 50;
+      return 10;
+    };
+    const ranked = [...previewStore].sort((a, b) => score(b) - score(a)).slice(0, limit);
+    const deliberations = await Promise.all(ranked.map(j => crewDeliberate(j.job_number)));
+    return { reviewed: deliberations.length, total_jobs: previewStore.length, skipped: Math.max(0, previewStore.length - deliberations.length), deliberations, model: 'preview' };
+  }
+  const r = await fetch(`${BASE}/api/copilot/crew/sweep`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit }),
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: CrewSweep; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as CrewSweep;
+}
+
 // ── AI Daily Briefing (AA4): proactive Chief-of-Staff digest over the book ──
 
 export interface BriefingInsight {

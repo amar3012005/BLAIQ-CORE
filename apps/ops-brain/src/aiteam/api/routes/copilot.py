@@ -710,28 +710,9 @@ def _proposal_from_tool_calls(tool_calls: list, job_id: str, job_number: str) ->
     )
 
 
-@router.post("/crew", response_model=APIResponse[CrewDeliberation])
-async def crew_deliberate(
-    body: CrewRequest,
-    db: AsyncSession = Depends(_get_db),
-) -> APIResponse[CrewDeliberation]:
-    tenant_id = current_tenant_id.get("")
-    if not tenant_id:
-        raise HTTPException(status_code=401, detail="missing tenant")
-
-    rows = (await db.execute(text(_CREW_JOB_SELECT), {"tid": tenant_id})).all()
-    if not rows:
-        raise HTTPException(status_code=404, detail="no jobs to review")
-
-    today = date.today()
-    if body.job_number:
-        target = next((r for r in rows if r[1] == body.job_number), None)
-        if target is None:
-            raise HTTPException(status_code=404, detail=f"job {body.job_number} not found")
-    else:
-        # Default: send the crew at the single most at-risk job.
-        target = max(rows, key=lambda r: _crew_risk_score(r, today))
-
+async def _deliberate_job(target, today: date) -> CrewDeliberation:
+    """Run the full crew over one job row (id-first tuple from _CREW_JOB_SELECT).
+    Specialists run concurrently; each may propose an action."""
     job_id = str(target[0])
     job_number = target[1]
     title = target[2]
@@ -770,10 +751,82 @@ async def crew_deliberate(
             assessment=assessment, proposed=proposed,
         ))
 
+    return CrewDeliberation(
+        job_id=job_id, job_number=job_number, title=title,
+        findings=findings, model=model_used,
+    )
+
+
+@router.post("/crew", response_model=APIResponse[CrewDeliberation])
+async def crew_deliberate(
+    body: CrewRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[CrewDeliberation]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+
+    rows = (await db.execute(text(_CREW_JOB_SELECT), {"tid": tenant_id})).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no jobs to review")
+
+    today = date.today()
+    if body.job_number:
+        target = next((r for r in rows if r[1] == body.job_number), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"job {body.job_number} not found")
+    else:
+        # Default: send the crew at the single most at-risk job.
+        target = max(rows, key=lambda r: _crew_risk_score(r, today))
+
+    return APIResponse(data=await _deliberate_job(target, today), message="ok")
+
+
+# Crew Sweep — send the full crew across the top-N at-risk jobs in one pass.
+# Each job's crew runs concurrently with the others, so the whole standup is
+# bounded by the slowest single job, not their sum. Capped to keep LLM cost
+# predictable; the skipped count is reported, never silently dropped.
+
+class CrewSweepRequest(BaseModel):
+    limit: int = 3
+
+
+class CrewSweep(BaseModel):
+    reviewed: int
+    total_jobs: int
+    skipped: int
+    deliberations: list[CrewDeliberation]
+    model: str
+
+
+@router.post("/crew/sweep", response_model=APIResponse[CrewSweep])
+async def crew_sweep(
+    body: CrewSweepRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[CrewSweep]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+
+    rows = (await db.execute(text(_CREW_JOB_SELECT), {"tid": tenant_id})).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no jobs to review")
+
+    today = date.today()
+    limit = max(1, min(int(body.limit or 3), 5))
+    ranked = sorted(rows, key=lambda r: _crew_risk_score(r, today), reverse=True)
+    targets = ranked[:limit]
+
+    deliberations = await asyncio.gather(*(_deliberate_job(t, today) for t in targets))
+    model_used = next((d.model for d in deliberations if d.model), copilot_model())
+
     return APIResponse(
-        data=CrewDeliberation(
-            job_id=job_id, job_number=job_number, title=title,
-            findings=findings, model=model_used,
+        data=CrewSweep(
+            reviewed=len(deliberations),
+            total_jobs=len(rows),
+            skipped=max(0, len(rows) - len(deliberations)),
+            deliberations=list(deliberations),
+            model=model_used,
         ),
         message="ok",
     )
