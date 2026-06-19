@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**P4 — Real POOOL pipeline on the Finance board** — the live `ops.poool_cache` orders now surface their real € totals: a pipeline figure (brutto + netto) and per-order amounts, all read-only (never written back). Verified live: €17,884.51 brutto / €15,029 netto across the 2 real orders:
+
+![Finance board with real POOOL pipeline value](docs/progress/poool-pipeline.png)
+
 **AA5+ — Crew Sweep (whole crew × whole book)** — one click sends all three specialists across the top at-risk jobs at once; each job's crew runs concurrently, so the standup is bounded by the slowest single job, not their sum. Verified live on prod: reviewed 3/4 jobs, surfacing per-job proposals (chase 2026-014, push-clickup 2026-021, mark-delivered 2026-009):
 
 ![Crew Sweep — the whole crew reviews the whole book](docs/progress/crew-sweep.png)
@@ -132,7 +136,7 @@ The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + de
 - **Email send channel — built, awaiting SMTP creds.** The notifier now sends real email when `BLAIQ_NOTIFY_*` env is set (compose-wired, all optional); empty by default → stays `logged` (safe). `BLAIQ_NOTIFY_REDIRECT_TO` routes every send to one operator inbox so nothing reaches a real client until removed. Unblocks send-quote / payment-reminder / delivery-notice once the agency SMTP is supplied.
 - **POOOL writes are read/create-only by policy** — never delete or destructively mutate real company data; invoice-create is operator-gated, never test-written to the live instance.
 
-**Workflow PDF coverage (tri-track):** Inquiry ❌ (P5) · PM creates job ✅ · POOOL: read/sync ✅ (12 clients·8 projects·2 orders), 15% fee ✅, **quote/invoice WRITE ❌ — `poool_api_create` errors on live POOOL even for a minimal `{name}` project; README claims full CRUD so it's a required-field/payload spec issue, but the API returns no field-level error so the create payload can't be derived empirically. Needs the POOOL create schema.** send-quote 🟡(channel ready), payment check ✅, reminder 🟡(channel ready) · ClickUp 🟡(OAuth) · Server ✅ · Delivery 🟡(channel ready).
+**Workflow PDF coverage (tri-track):** Inquiry ❌ (P5) · PM creates job ✅ · POOOL: read/sync ✅ (12 clients·8 projects·2 orders, real €17.9k pipeline surfaced on Finance board), 15% fee ✅, **quote/invoice WRITE ❌ — `poool_api_create` errors on live POOOL even for a minimal `{name}` project; README claims full CRUD so it's a required-field/payload spec issue, but the API returns no field-level error so the create payload can't be derived empirically. Needs the POOOL create schema.** send-quote 🟡(channel ready), payment check ✅, reminder 🟡(channel ready) · ClickUp 🟡(OAuth) · Server ✅ · Delivery 🟡(channel ready).
 
 **POOOL order states (observed):** `order_state_id=2` = Angebot/quote (number prefix `AB`); both real orders are state 2. No invoiced order exists to observe, and no states model is exposed → the "invoiced" state id is unknown and must be supplied.
 

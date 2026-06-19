@@ -795,7 +795,9 @@ export interface PooolSyncSummary {
   projects: number;
   orders: number;
   clients: number;
-  recent_orders: { id: string; title: string }[];
+  pipeline_netto: number;
+  pipeline_brutto: number;
+  recent_orders: { id: string; title: string; netto?: number | null; brutto?: number | null; state?: string | null }[];
 }
 
 export interface ActivityItem {
@@ -828,9 +830,11 @@ export async function getPooolSummary(): Promise<PooolSyncSummary> {
       projects: 8,
       orders: 2,
       clients: 12,
+      pipeline_netto: 15029,
+      pipeline_brutto: 17884.51,
       recent_orders: [
-        { id: '5', title: 'Markenstrategie' },
-        { id: '6', title: 'Geschäftsausstattung' },
+        { id: '5', title: 'Markenstrategie', netto: 15000, brutto: 17850, state: '2' },
+        { id: '6', title: 'Hosting & Support 2022', netto: 29, brutto: 34.51, state: '2' },
       ],
     };
   }

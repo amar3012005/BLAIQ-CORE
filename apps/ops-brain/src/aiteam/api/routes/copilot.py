@@ -349,6 +349,9 @@ class PooolSyncSummary(BaseModel):
     projects: int = 0
     orders: int = 0
     clients: int = 0
+    # Real € pipeline from the cached POOOL orders (read-only, never written).
+    pipeline_netto: float = 0.0
+    pipeline_brutto: float = 0.0
     recent_orders: list[dict] = Field(default_factory=list)
 
 
@@ -381,13 +384,28 @@ async def poool_summary(
     order_rows = (
         await db.execute(
             text(
-                "SELECT external_id, payload->>'title' AS title FROM ops.poool_cache "
+                "SELECT external_id, payload->>'title' AS title, "
+                "NULLIF(payload->>'total_netto_sum','')::numeric AS netto, "
+                "NULLIF(payload->>'total_brutto_sum','')::numeric AS brutto, "
+                "payload->>'order_state_id' AS state "
+                "FROM ops.poool_cache "
                 "WHERE tenant_id = CAST(:tid AS uuid) AND kind = 'order' "
-                "ORDER BY fetched_at DESC LIMIT 6"
+                "ORDER BY fetched_at DESC LIMIT 8"
             ),
             {"tid": tenant_id},
         )
     ).all()
+    # Real pipeline totals across ALL cached orders (read-only).
+    pipeline = (
+        await db.execute(
+            text(
+                "SELECT COALESCE(sum(NULLIF(payload->>'total_netto_sum','')::numeric),0), "
+                "COALESCE(sum(NULLIF(payload->>'total_brutto_sum','')::numeric),0) "
+                "FROM ops.poool_cache WHERE tenant_id = CAST(:tid AS uuid) AND kind = 'order'"
+            ),
+            {"tid": tenant_id},
+        )
+    ).first()
     total = sum(counts.values())
     return APIResponse(
         data=PooolSyncSummary(
@@ -396,7 +414,18 @@ async def poool_summary(
             projects=counts.get("project", 0),
             orders=counts.get("order", 0),
             clients=counts.get("client", 0),
-            recent_orders=[{"id": r[0], "title": r[1] or "(untitled)"} for r in order_rows],
+            pipeline_netto=float(pipeline[0]) if pipeline and pipeline[0] is not None else 0.0,
+            pipeline_brutto=float(pipeline[1]) if pipeline and pipeline[1] is not None else 0.0,
+            recent_orders=[
+                {
+                    "id": r[0],
+                    "title": r[1] or "(untitled)",
+                    "netto": float(r[2]) if r[2] is not None else None,
+                    "brutto": float(r[3]) if r[3] is not None else None,
+                    "state": r[4],
+                }
+                for r in order_rows
+            ],
         ),
         message="ok",
     )

@@ -214,11 +214,18 @@ export default function FinanceBoard(): JSX.Element {
               </span>
             )}
           </div>
+          {poool.connected && (poool.pipeline_brutto > 0 || poool.pipeline_netto > 0) && (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+              <span style={{ ...monoSmall, color: PAL.muted, fontSize: 8 }}>PIPELINE (REAL POOOL)</span>
+              <span style={{ ...sansBold, fontSize: 15, color: PAL.ink }}>{fmtEur(poool.pipeline_brutto)}</span>
+              <span style={{ ...sans, fontSize: 11, color: PAL.muted }}>brutto · {fmtEur(poool.pipeline_netto)} netto</span>
+            </div>
+          )}
           {poool.connected && poool.recent_orders.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {poool.recent_orders.map(o => (
                 <span key={o.id} style={{ ...sans, fontSize: 11, color: PAL.ink, background: PAL.white, border: `1px solid ${PAL.divider}`, padding: '3px 8px' }}>
-                  #{o.id} {o.title}
+                  #{o.id} {o.title}{o.brutto != null ? ` · ${fmtEur(o.brutto)}` : ''}
                 </span>
               ))}
             </div>
