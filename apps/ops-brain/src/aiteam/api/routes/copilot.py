@@ -386,3 +386,130 @@ async def activity_feed(
     ]
     return APIResponse(data=items, message="ok")
 
+
+
+# ──────────────────────────────────────────────
+# Agentic actions (AA2) — the Copilot proposes a tool call; the PM approves
+# it in the UI (HITL). Nothing here executes; execution runs through the
+# existing job-action endpoints once the PM clicks Approve.
+# ──────────────────────────────────────────────
+
+def _act_tool(name: str, desc: str, props: dict, required: list[str]) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": desc,
+            "parameters": {"type": "object", "properties": props, "required": required},
+        },
+    }
+
+
+_JOB_ARG = {"job_number": {"type": "string", "description": "The job number, e.g. 2026-014"}}
+
+_ACTION_TOOLS = [
+    _act_tool("mark_delivered", "Mark a job as delivered to the client.", _JOB_ARG, ["job_number"]),
+    _act_tool("push_poool", "Create a POOOL project + quote for a job.", _JOB_ARG, ["job_number"]),
+    _act_tool("push_clickup", "Create a ClickUp ticket for a job.", _JOB_ARG, ["job_number"]),
+    _act_tool("create_server_folder", "Create the delivery server folder for a job.", _JOB_ARG, ["job_number"]),
+    _act_tool("chase_payment", "Send a payment reminder for an overdue job.", _JOB_ARG, ["job_number"]),
+    _act_tool(
+        "set_poool_status", "Set the POOOL finance status of a job.",
+        {**_JOB_ARG, "status": {"type": "string", "enum": [
+            "quote_pending", "quote_sent", "quote_approved", "invoiced",
+            "partially_paid", "paid", "overdue"]}},
+        ["job_number", "status"],
+    ),
+]
+
+_ACTION_LABELS = {
+    "mark_delivered": "Mark delivered",
+    "push_poool": "Push to POOOL",
+    "push_clickup": "Push to ClickUp",
+    "create_server_folder": "Create server folder",
+    "chase_payment": "Send payment reminder",
+    "set_poool_status": "Set finance status",
+}
+
+_ACT_SYSTEM = """You are the BLAIQ Admin Copilot. The PM can ask a question OR ask you to perform an action on a job.
+- If the user asks you to DO something (deliver, invoice, push to POOOL/ClickUp, create the server folder, chase a payment, change finance status), call the matching tool, resolving the job_number from the JOB DATA (match by number, client name, or title).
+- If it's just a question, answer in plain text and do NOT call a tool.
+- A tool call is only a PROPOSAL the PM approves — never claim you executed anything."""
+
+
+class ProposedAction(BaseModel):
+    kind: str
+    job_id: str | None = None
+    job_number: str | None = None
+    args: dict = Field(default_factory=dict)
+    summary: str
+
+
+class ActResponse(BaseModel):
+    answer: str | None = None
+    proposed: ProposedAction | None = None
+    model: str
+
+
+@router.post("/act", response_model=APIResponse[ActResponse])
+async def copilot_act(
+    body: CopilotRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[ActResponse]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="empty message")
+
+    context = await _build_job_context(db, tenant_id)
+    messages = [{"role": "system", "content": _ACT_SYSTEM + "\n\n" + context}]
+    for m in body.history[-6:]:
+        if m.role in ("user", "assistant") and m.content.strip():
+            messages.append({"role": m.role, "content": m.content})
+    messages.append({"role": "user", "content": body.message})
+
+    result = await chat(messages, max_tokens=700, temperature=0.1, tools=_ACTION_TOOLS)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "copilot unavailable")
+
+    tool_calls = result.get("tool_calls")
+    if tool_calls:
+        import json as _json
+        fn = (tool_calls[0] or {}).get("function", {})
+        name = fn.get("name", "")
+        try:
+            args = _json.loads(fn.get("arguments") or "{}")
+        except (ValueError, TypeError):
+            args = {}
+        job_number = args.get("job_number")
+        job_id = None
+        if job_number:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT id FROM ops.jobs WHERE job_number = :jn "
+                        "AND tenant_id = CAST(:tid AS uuid)"
+                    ),
+                    {"jn": job_number, "tid": tenant_id},
+                )
+            ).first()
+            if row:
+                job_id = str(row[0])
+        label = _ACTION_LABELS.get(name, name)
+        extra = f" → {args.get('status')}" if name == "set_poool_status" else ""
+        summary = f"{label}{extra} · {job_number or '(job?)'}"
+        return APIResponse(
+            data=ActResponse(
+                proposed=ProposedAction(
+                    kind=name, job_id=job_id, job_number=job_number, args=args, summary=summary
+                ),
+                model=result.get("model") or copilot_model(),
+            ),
+            message="proposed",
+        )
+
+    return APIResponse(
+        data=ActResponse(answer=result.get("text") or "", model=result.get("model") or copilot_model()),
+        message="ok",
+    )

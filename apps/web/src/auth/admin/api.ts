@@ -552,6 +552,68 @@ export async function askCopilot(message: string, history: CopilotTurn[] = []): 
   return body.data as CopilotReply;
 }
 
+// ── Agentic actions (AA2): copilot proposes a tool call, PM approves (HITL) ──
+
+export interface ProposedAction {
+  kind: string;
+  job_id: string | null;
+  job_number: string | null;
+  args: Record<string, unknown>;
+  summary: string;
+}
+
+export interface CopilotActReply {
+  answer: string | null;
+  proposed: ProposedAction | null;
+  model: string;
+}
+
+export async function copilotAct(message: string, history: CopilotTurn[] = []): Promise<CopilotActReply> {
+  if (PREVIEW) {
+    const lower = message.toLowerCase();
+    const verbs: [RegExp, string][] = [
+      [/deliver/, 'mark_delivered'],
+      [/push.*poool|quote/, 'push_poool'],
+      [/push.*clickup|ticket/, 'push_clickup'],
+      [/folder/, 'create_server_folder'],
+      [/chase|remind|overdue/, 'chase_payment'],
+      [/invoic/, 'set_poool_status'],
+    ];
+    const hit = verbs.find(([re]) => re.test(lower));
+    if (hit) {
+      const job = previewStore.find(j => lower.includes(j.job_number.toLowerCase()) || lower.includes((j.client || '').toLowerCase())) ?? previewStore[0];
+      const kind = hit[1];
+      const args = kind === 'set_poool_status' ? { status: 'invoiced' } : {};
+      return { answer: null, model: 'preview', proposed: job ? { kind, job_id: job.id, job_number: job.job_number, args, summary: `${kind.replace(/_/g, ' ')} · ${job.job_number}` } : null };
+    }
+    const reply = await askCopilot(message, history);
+    return { answer: reply.answer, model: reply.model, proposed: null };
+  }
+  const r = await fetch(`${BASE}/api/copilot/act`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history }),
+  });
+  const body = (await r.json().catch(() => ({}))) as { data?: CopilotActReply; detail?: string; error?: string };
+  if (!r.ok) throw new Error(body.detail || body.error || `HTTP ${r.status}`);
+  return body.data as CopilotActReply;
+}
+
+// Execute an approved proposal by routing to the existing job-action endpoints.
+export async function runProposedAction(p: ProposedAction): Promise<void> {
+  if (!p.job_id) throw new Error(`Couldn't resolve the job for "${p.summary}"`);
+  switch (p.kind) {
+    case 'mark_delivered': await updateJob(p.job_id, { delivery_status: 'delivered' }); return;
+    case 'push_poool': await pushJobToPoool(p.job_id); return;
+    case 'push_clickup': await pushJobToClickup(p.job_id); return;
+    case 'create_server_folder': await createServerFolder(p.job_id); return;
+    case 'chase_payment': await executeNextAction(p.job_id, 'chase_payment'); return;
+    case 'set_poool_status': await updateJob(p.job_id, { poool_status: String(p.args.status) as PooolStatus }); return;
+    default: throw new Error(`Unknown action: ${p.kind}`);
+  }
+}
+
 // ──────────────────────────────────────────────────────────────
 // POOOL sync summary (live ops.poool_cache) — shown in Finance
 // ──────────────────────────────────────────────────────────────

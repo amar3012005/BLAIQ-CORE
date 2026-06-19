@@ -38,8 +38,9 @@ async def chat(
     model: str | None = None,
     max_tokens: int = 1024,
     temperature: float = 0.3,
+    tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run a chat completion. Returns {"ok", "text", "model", "error"}.
+    """Run a chat completion. Returns {"ok", "text", "tool_calls", "model", "error"}.
 
     Never raises — callers branch on ``ok`` so a missing key or upstream error
     surfaces as a clean message instead of a 500.
@@ -49,12 +50,15 @@ async def chat(
     if not key:
         return {"ok": False, "text": None, "model": mdl, "error": "No LLM credential configured (set OPENAI_API_KEY / OPENROUTER_API_KEY)"}
     base = (os.environ.get("OPENROUTER_BASE_URL") or _DEFAULT_BASE).rstrip("/")
-    payload = {
+    payload: dict[str, Any] = {
         "model": mdl,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
@@ -81,7 +85,13 @@ async def chat(
         return {"ok": False, "text": None, "model": mdl, "error": detail}
     try:
         data = resp.json()
-        text = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
     except (ValueError, KeyError, IndexError) as exc:
         return {"ok": False, "text": None, "model": mdl, "error": f"LLM bad response: {exc}"}
-    return {"ok": True, "text": text, "model": mdl, "error": None}
+    return {
+        "ok": True,
+        "text": msg.get("content"),
+        "tool_calls": msg.get("tool_calls"),
+        "model": mdl,
+        "error": None,
+    }

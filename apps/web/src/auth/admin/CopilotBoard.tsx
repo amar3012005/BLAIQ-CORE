@@ -5,7 +5,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { askCopilot, type CopilotTurn } from './api';
+import { copilotAct, runProposedAction, type CopilotTurn, type ProposedAction } from './api';
 import NextActions from './NextActions';
 import { PAL, monoSmall, sansBold, sans } from './theme';
 
@@ -20,12 +20,15 @@ interface Msg {
   role: 'user' | 'assistant';
   content: string;
   error?: boolean;
+  proposed?: ProposedAction;
+  done?: boolean;
 }
 
 export default function CopilotBoard(): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [runningIdx, setRunningIdx] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,18 +40,38 @@ export default function CopilotBoard(): JSX.Element {
     if (!q || busy) return;
     setInput('');
     const history: CopilotTurn[] = messages
-      .filter(m => !m.error)
+      .filter(m => !m.error && !m.proposed)
       .map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, { role: 'user', content: q }]);
     setBusy(true);
     try {
-      const reply = await askCopilot(q, history);
-      setMessages(prev => [...prev, { role: 'assistant', content: reply.answer }]);
+      const reply = await copilotAct(q, history);
+      if (reply.proposed) {
+        setMessages(prev => [...prev, { role: 'assistant', content: reply.proposed!.summary, proposed: reply.proposed! }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: reply.answer ?? '' }]);
+      }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Copilot unavailable: ${(e as Error).message}`, error: true }]);
     } finally {
       setBusy(false);
     }
+  };
+
+  const approve = async (idx: number, p: ProposedAction): Promise<void> => {
+    setRunningIdx(idx);
+    try {
+      await runProposedAction(p);
+      setMessages(prev => prev.map((m, i) => i === idx ? { ...m, done: true, content: `✓ Done — ${p.summary}` } : m));
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Action failed: ${(e as Error).message}`, error: true }]);
+    } finally {
+      setRunningIdx(null);
+    }
+  };
+
+  const dismiss = (idx: number): void => {
+    setMessages(prev => prev.map((m, i) => i === idx ? { ...m, proposed: undefined, done: true, content: 'Dismissed.' } : m));
   };
 
   return (
@@ -93,24 +116,58 @@ export default function CopilotBoard(): JSX.Element {
         )}
 
         {messages.map((m, i) => (
-          <div
-            key={i}
-            style={{
-              alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-              maxWidth: '82%',
-              background: m.role === 'user' ? PAL.ink : (m.error ? 'rgba(220,38,38,0.06)' : PAL.panel),
-              color: m.role === 'user' ? PAL.white : (m.error ? '#B91C1C' : PAL.ink),
-              border: m.role === 'user' ? 'none' : `1px solid ${m.error ? 'rgba(220,38,38,0.25)' : PAL.divider}`,
-              padding: '10px 14px',
-              borderRadius: 12,
-              ...sans,
-              fontSize: 13.5,
-              lineHeight: 1.55,
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {m.content}
-          </div>
+          m.proposed && !m.done ? (
+            <div
+              key={i}
+              style={{
+                alignSelf: 'flex-start', maxWidth: '88%', background: PAL.white,
+                border: `1px solid ${PAL.divider}`, borderLeft: '3px solid #818CF8',
+                padding: '12px 14px', borderRadius: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                <span style={{ ...monoSmall, color: '#4F46E5', fontSize: 8 }}>⚡ PROPOSED ACTION · NEEDS APPROVAL</span>
+              </div>
+              <div style={{ ...sans, fontSize: 13.5, color: PAL.ink, marginBottom: 12 }}>{m.proposed.summary}</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  disabled={runningIdx === i}
+                  onClick={() => { void approve(i, m.proposed!); }}
+                  style={{ border: 'none', background: '#4F46E5', color: PAL.white, cursor: runningIdx === i ? 'wait' : 'pointer', ...monoSmall, fontSize: 9, padding: '7px 14px' }}
+                >
+                  {runningIdx === i ? 'RUNNING…' : '✓ APPROVE & RUN'}
+                </button>
+                <button
+                  type="button"
+                  disabled={runningIdx === i}
+                  onClick={() => dismiss(i)}
+                  style={{ border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 9, padding: '7px 14px' }}
+                >
+                  DISMISS
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              key={i}
+              style={{
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '82%',
+                background: m.role === 'user' ? PAL.ink : (m.error ? 'rgba(220,38,38,0.06)' : (m.done ? '#E1F5EE' : PAL.panel)),
+                color: m.role === 'user' ? PAL.white : (m.error ? '#B91C1C' : (m.done ? '#0F6E56' : PAL.ink)),
+                border: m.role === 'user' ? 'none' : `1px solid ${m.error ? 'rgba(220,38,38,0.25)' : PAL.divider}`,
+                padding: '10px 14px',
+                borderRadius: 12,
+                ...sans,
+                fontSize: 13.5,
+                lineHeight: 1.55,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {m.content}
+            </div>
+          )
         ))}
 
         {busy && (

@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**AA2 — Agentic actions (LLM, HITL)** — the Copilot proposes a tool-call from natural language; the PM approves before it runs:
+
+![Copilot agentic action with approval](docs/progress/copilot-agentic.png)
+
 **Activity feed** — live notifications timeline (delivery, overdue, invoice raised) from `ops.notifications`:
 
 ![Activity feed](docs/progress/activity-feed.png)
