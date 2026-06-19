@@ -128,7 +128,11 @@ The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + de
 
 **Known external blockers (need the operator):**
 - ~~LLM credits~~ — **resolved.** OpenRouter key funded; Copilot, AA2 agentic actions, and the AA5 crew all answer live on prod with `claude-sonnet-4.6`.
-- **ClickUp OAuth** — the interactive authorize→token flow + daemon token-store is the remaining ClickUp build (POOOL is fully live).
+- **ClickUp OAuth** — the interactive authorize→token flow + daemon token-store is the remaining ClickUp build (POOOL read is fully live).
+- **Email send channel — built, awaiting SMTP creds.** The notifier now sends real email when `BLAIQ_NOTIFY_*` env is set (compose-wired, all optional); empty by default → stays `logged` (safe). `BLAIQ_NOTIFY_REDIRECT_TO` routes every send to one operator inbox so nothing reaches a real client until removed. Unblocks send-quote / payment-reminder / delivery-notice once the agency SMTP is supplied.
+- **POOOL writes are read/create-only by policy** — never delete or destructively mutate real company data; invoice-create is operator-gated, never test-written to the live instance.
+
+**Workflow PDF coverage (tri-track):** Inquiry ❌ (P5) · PM creates job ✅ · POOOL: quote-create ✅, 15% fee ✅, send-quote 🟡(channel ready), invoices 🟡(operator-gated/mapping needed), payment check ✅, reminder 🟡(channel ready) · ClickUp 🟡(OAuth) · Server ✅ · Delivery 🟡(channel ready).
 
 ## 2. Where we are today
 

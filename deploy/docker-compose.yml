@@ -124,6 +124,18 @@ services:
       # internal compose network. Overridable per deploy.
       BLAIQ_DAEMON_URL: ${BLAIQ_DAEMON_URL:-http://open-design:7456}
       AITEAM_LOG_LEVEL: ${AITEAM_LOG_LEVEL:-INFO}
+      # Outbound notification channel (A6 / workflow steps 3a.3, 3a.7, delivery).
+      # All optional + empty by default → notifications stay "logged" (safe).
+      # To go live: set ENABLED=1 + SMTP host/from (+ user/pass). SAFETY:
+      # set REDIRECT_TO to an operator inbox to route EVERY send there until you
+      # deliberately remove it — nothing reaches a real client while it is set.
+      BLAIQ_NOTIFY_EMAIL_ENABLED: ${BLAIQ_NOTIFY_EMAIL_ENABLED:-}
+      BLAIQ_NOTIFY_SMTP_HOST: ${BLAIQ_NOTIFY_SMTP_HOST:-}
+      BLAIQ_NOTIFY_SMTP_PORT: ${BLAIQ_NOTIFY_SMTP_PORT:-587}
+      BLAIQ_NOTIFY_SMTP_USER: ${BLAIQ_NOTIFY_SMTP_USER:-}
+      BLAIQ_NOTIFY_SMTP_PASS: ${BLAIQ_NOTIFY_SMTP_PASS:-}
+      BLAIQ_NOTIFY_FROM: ${BLAIQ_NOTIFY_FROM:-}
+      BLAIQ_NOTIFY_REDIRECT_TO: ${BLAIQ_NOTIFY_REDIRECT_TO:-}
     security_opt:
       - no-new-privileges:true
     mem_limit: 512m
