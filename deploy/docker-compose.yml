@@ -105,6 +105,12 @@ services:
       context: ../apps/ops-brain
       dockerfile: Dockerfile
     restart: always
+    # default → postgres + open-design; blaiq-mcp → the external Poool MCP
+    # container. Only these two services share blaiq-mcp, so `postgres` still
+    # resolves on default (no hostname collision).
+    networks:
+      - default
+      - blaiq-mcp
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,3 +137,10 @@ services:
 volumes:
   open_design_pg:
   open_design_data:
+
+networks:
+  default:
+  # Shared bridge to the externally-managed Poool MCP container. Create + attach
+  # poool-mcp once: `docker network create blaiq-mcp; docker network connect blaiq-mcp poool-mcp`.
+  blaiq-mcp:
+    external: true

@@ -57,10 +57,13 @@ async def _call_mcp(
     *,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """POST a JSON-RPC 2.0 envelope to the Poool MCP, handling SSE replies.
+    """Call a Poool MCP method, performing the full streamable-HTTP handshake.
 
-    Returns the decoded JSON-RPC response dict; on transport error returns
-    ``{"error": {"message": ...}}`` so callers can branch uniformly.
+    The Poool Unified Data Server is a stateful MCP: it requires
+    initialize → (mcp-session-id) → notifications/initialized before any
+    tools/call. We run that handshake per call (cheap enough for a 30-min
+    poller) and parse the SSE ``data:`` reply. On transport error returns
+    ``{"error": {"message": ...}}`` so callers branch uniformly.
     """
     headers = {
         "Content-Type": "application/json",
@@ -68,26 +71,56 @@ async def _call_mcp(
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+
+    def _parse(body: str) -> dict[str, Any] | None:
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            for line in body.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("data:"):
+                    try:
+                        return json.loads(stripped[len("data:"):].strip())
+                    except json.JSONDecodeError:
+                        continue
+        return None
+
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-        body = resp.text
+            # 1. initialize — capture the session id the server mints.
+            init = await client.post(
+                url,
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0", "id": 0, "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "blaiq-ops-brain", "version": "1"},
+                    },
+                },
+            )
+            session_headers = dict(headers)
+            sid = init.headers.get("mcp-session-id")
+            if sid:
+                session_headers["mcp-session-id"] = sid
+            # 2. initialized notification (required before tool calls).
+            try:
+                await client.post(
+                    url, headers=session_headers,
+                    json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                )
+            except httpx.HTTPError:
+                pass
+            # 3. the actual call, on the established session.
+            resp = await client.post(
+                url, headers=session_headers,
+                json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+            )
     except httpx.HTTPError as exc:
         return {"error": {"message": str(exc)}}
-    try:
-        return json.loads(body)
-    except json.JSONDecodeError:
-        # SSE envelope — extract first `data:` line
-        for line in body.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("data:"):
-                fragment = stripped[len("data:"):].strip()
-                try:
-                    return json.loads(fragment)
-                except json.JSONDecodeError:
-                    continue
-        return {"error": {"message": body[:200]}}
+    parsed = _parse(resp.text)
+    return parsed if parsed is not None else {"error": {"message": resp.text[:200]}}
 
 
 async def _call_tool(
@@ -112,7 +145,7 @@ async def fetch_poool_project(
 ) -> dict[str, Any] | None:
     """Look up a Poool project by exact name. Returns the first match."""
     args = {
-        "model": "project.project",
+        "model_name": "project.project",
         "filters": [["name", "=", project_name]],
         "limit": 1,
     }
@@ -177,31 +210,38 @@ async def sync_tenant_poool(tenant_id: str) -> dict[str, int]:
     Returns a count summary so the scheduler can log/emit metrics. Assumes
     the caller has already set ``current_tenant_id`` for RLS-bound writes.
     """
-    counts = {"timetrack": 0, "order": 0, "invoice": 0}
+    # Model names for the Poool Unified Data Server (v3.x). Discover via
+    # poool_api_list_models — this instance exposes clients/companies/
+    # cost_centers/orders/persons/projects.
+    counts = {"project": 0, "order": 0, "client": 0}
     token = current_tenant_id.set(tenant_id)
     try:
         brand = await _load_brand(tenant_id)
         if brand is None or not brand.poool_enabled:
             return counts
         for kind, model in (
-            ("timetrack", "account.analytic.line"),
-            ("order", "sale.order"),
-            ("invoice", "account.move"),
+            ("project", "projects"),
+            ("order", "orders"),
+            ("client", "clients"),
         ):
             resp = await _call_tool(
                 brand,
                 "poool_api_list",
-                {"model": model, "limit": 200},
+                {"model_name": model, "limit": 200},
             )
             records = _extract_records(resp)
             for record in records:
                 ext = str(record.get("id")) if record.get("id") is not None else None
+                # An order references its project; a project is its own anchor.
                 project_ext = None
-                project = record.get("project_id")
-                if isinstance(project, list) and project:
-                    project_ext = str(project[0])
-                elif isinstance(project, (int, str)):
-                    project_ext = str(project)
+                if kind == "project":
+                    project_ext = ext
+                else:
+                    project = record.get("project_id")
+                    if isinstance(project, list) and project:
+                        project_ext = str(project[0])
+                    elif isinstance(project, (int, str)):
+                        project_ext = str(project)
                 await _upsert_cache(tenant_id, kind, project_ext, ext, record)
                 counts[kind] += 1
     finally:
@@ -209,22 +249,83 @@ async def sync_tenant_poool(tenant_id: str) -> dict[str, int]:
     return counts
 
 
+def _salvage_objects(s: str) -> list[dict[str, Any]]:
+    """Extract complete top-level {...} objects from a (possibly truncated)
+    JSON array string. Poool caps responses at ~25 KB and cuts mid-record;
+    this recovers every record that fully arrived and drops the partial tail.
+    """
+    start = s.find("[")
+    if start < 0:
+        return []
+    rows: list[dict[str, Any]] = []
+    depth = 0
+    in_str = False
+    esc = False
+    obj_start = -1
+    for i in range(start + 1, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and obj_start >= 0:
+                frag = s[obj_start:i + 1]
+                try:
+                    rows.append(json.loads(frag, strict=False))
+                except json.JSONDecodeError:
+                    pass
+                obj_start = -1
+    return rows
+
+
+def _coerce_rows(obj: Any) -> list[dict[str, Any]] | None:
+    """Recursively pull a list of record dicts out of a Poool payload.
+
+    Poool v3 double-wraps: structuredContent = {"result": "<json string of
+    {\"data\": [...]}>"}. We accept a dict, a list, or a JSON string and dig
+    through data / records / items / result until we hit the row list. If the
+    string is truncated (server 25 KB cap), salvage the complete records.
+    """
+    if isinstance(obj, str):
+        try:
+            obj = json.loads(obj, strict=False)
+        except json.JSONDecodeError:
+            salvaged = _salvage_objects(obj)
+            return salvaged or None
+    if isinstance(obj, list):
+        return [r for r in obj if isinstance(r, dict)]
+    if isinstance(obj, dict):
+        for key in ("data", "records", "items", "result"):
+            if obj.get(key) is not None:
+                rows = _coerce_rows(obj[key])
+                if rows:
+                    return rows
+    return None
+
+
 def _extract_records(resp: dict[str, Any]) -> list[dict[str, Any]]:
     """Pull a list of records out of a Poool tools/call response."""
     result = resp.get("result", {})
-    structured = result.get("structuredContent") or {}
-    if isinstance(structured, dict):
-        records = structured.get("records") or structured.get("items")
-        if isinstance(records, list):
-            return [r for r in records if isinstance(r, dict)]
+    rows = _coerce_rows(result.get("structuredContent"))
+    if rows:
+        return rows
     for chunk in result.get("content", []) or []:
         if chunk.get("type") == "text" and isinstance(chunk.get("text"), str):
-            try:
-                parsed = json.loads(chunk["text"])
-            except json.JSONDecodeError:
-                continue
-            if isinstance(parsed, list):
-                return [r for r in parsed if isinstance(r, dict)]
+            rows = _coerce_rows(chunk["text"])
+            if rows:
+                return rows
     return []
 
 
@@ -326,28 +427,26 @@ async def create_poool_quote(
     """
     brand = await _load_brand(tenant_id)
     if brand is None or not brand.poool_enabled:
-        return {"ok": False, "poool_job_id": None, "error": "POOOL not enabled — configure it in Settings"}
-    if not brand.poool_api_key:
-        return {"ok": False, "poool_job_id": None, "error": "POOOL API key missing"}
+        return {"ok": False, "poool_job_id": None, "error": "POOOL not enabled — connect it in Settings"}
+    # Note: the Poool MCP holds its own credentials, so no per-tenant api key is
+    # required here — reachability + enabled is enough.
     # 1. Create the project.
     proj = await _call_tool(
         brand,
         "poool_api_create",
-        {"model": "project.project", "values": {"name": project_name}},
+        {"model_name": "projects", "data": {"name": project_name}},
     )
     if "error" in proj:
         return {"ok": False, "poool_job_id": None, "error": str(proj["error"].get("message"))}
     project_id = _first_created_id(proj)
     # 2. Create the quote (draft sale.order) referencing the project.
-    order_values: dict[str, Any] = {"name": project_name}
+    order_values: dict[str, Any] = {"title": project_name}
     if project_id is not None:
         order_values["project_id"] = project_id
-    if amount:
-        order_values["amount_total"] = amount
     order = await _call_tool(
         brand,
         "poool_api_create",
-        {"model": "sale.order", "values": order_values},
+        {"model_name": "orders", "data": order_values},
     )
     if "error" in order:
         return {"ok": False, "poool_job_id": str(project_id) if project_id else None,
