@@ -565,6 +565,28 @@ export interface PooolSyncSummary {
   recent_orders: { id: string; title: string }[];
 }
 
+export interface ActivityItem {
+  id: number;
+  kind: string;
+  subject: string;
+  status: string;
+  created_at: string | null;
+}
+
+// Tenant-wide activity timeline from ops.notifications (delivery, overdue, etc).
+export async function getActivity(): Promise<ActivityItem[]> {
+  if (PREVIEW) {
+    const now = Date.now();
+    return [
+      { id: 3, kind: 'payment_overdue', subject: 'Zahlung überfällig — 2026-014 Stadtwerke München', status: 'logged', created_at: new Date(now).toISOString() },
+      { id: 2, kind: 'delivery', subject: 'Lieferung — 2026-026 Messestand Branding IFA', status: 'logged', created_at: new Date(now - 3_600_000).toISOString() },
+      { id: 1, kind: 'invoice_raised', subject: 'Rechnung gestellt — 2026-021 Voss Logistik GmbH', status: 'logged', created_at: new Date(now - 7_200_000).toISOString() },
+    ];
+  }
+  const data = await request<unknown>('/api/copilot/activity');
+  return asArray<ActivityItem>(data, 'data');
+}
+
 export async function getPooolSummary(): Promise<PooolSyncSummary> {
   if (PREVIEW) {
     return {

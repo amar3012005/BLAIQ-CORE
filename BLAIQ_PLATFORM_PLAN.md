@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**Activity feed** — live notifications timeline (delivery, overdue, invoice raised) from `ops.notifications`:
+
+![Activity feed](docs/progress/activity-feed.png)
+
 **Analytics** — live KPIs (margin, cash exposure, throughput) from jobs + POOOL:
 
 ![Analytics KPI board](docs/progress/analytics.png)

@@ -350,3 +350,39 @@ async def poool_summary(
         message="ok",
     )
 
+
+# ──────────────────────────────────────────────
+# Activity feed — tenant-wide notifications timeline (delivery/overdue/etc).
+# ──────────────────────────────────────────────
+
+class ActivityItem(BaseModel):
+    id: int
+    kind: str
+    subject: str
+    status: str
+    created_at: str | None = None
+
+
+@router.get("/activity", response_model=APIResponse[list[ActivityItem]])
+async def activity_feed(
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[list[ActivityItem]]:
+    tenant_id = current_tenant_id.get("")
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, kind, subject, status, created_at FROM ops.notifications "
+                "WHERE tenant_id = CAST(:tid AS uuid) ORDER BY created_at DESC LIMIT 50"
+            ),
+            {"tid": tenant_id},
+        )
+    ).all()
+    items = [
+        ActivityItem(
+            id=int(r[0]), kind=r[1], subject=r[2], status=r[3],
+            created_at=r[4].isoformat() if r[4] else None,
+        )
+        for r in rows
+    ]
+    return APIResponse(data=items, message="ok")
+
