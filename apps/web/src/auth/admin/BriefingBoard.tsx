@@ -7,7 +7,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getBriefing, type Briefing } from './api';
+import { getBriefing, executeNextAction, type Briefing } from './api';
 import { PAL, monoSmall, sansBold, sans } from './theme';
 
 interface Sev { bg: string; fg: string; label: string }
@@ -22,10 +22,13 @@ export default function BriefingBoard(): JSX.Element {
   const [data, setData] = useState<Briefing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // per-insight action lifecycle, keyed by index
+  const [acted, setActed] = useState<Record<number, 'running' | 'done'>>({});
 
   const load = async (): Promise<void> => {
     setBusy(true);
     setError(null);
+    setActed({});
     try {
       setData(await getBriefing());
     } catch (e) {
@@ -36,6 +39,17 @@ export default function BriefingBoard(): JSX.Element {
   };
 
   useEffect(() => { void load(); }, []);
+
+  const runAction = async (idx: number, jobId: string, kind: string): Promise<void> => {
+    setActed(s => ({ ...s, [idx]: 'running' }));
+    try {
+      await executeNextAction(jobId, kind);
+      setActed(s => ({ ...s, [idx]: 'done' }));
+    } catch (e) {
+      setError((e as Error).message);
+      setActed(s => { const n = { ...s }; delete n[idx]; return n; });
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -87,7 +101,26 @@ export default function BriefingBoard(): JSX.Element {
                     {ins.job_number ? <span style={{ ...monoSmall, color: PAL.muted, marginLeft: 'auto' }}>{ins.job_number}</span> : null}
                   </div>
                   <div style={{ ...sans, fontSize: 13.5, color: PAL.ink, lineHeight: 1.6 }}>{ins.detail}</div>
-                  {ins.action ? (
+                  {ins.act_kind && ins.job_id ? (
+                    acted[i] === 'done' ? (
+                      <div style={{ ...monoSmall, color: '#0F6E56', background: '#E1F5EE', display: 'inline-block', padding: '5px 10px', borderRadius: 6, fontSize: 9, marginTop: 10 }}>
+                        ✓ DONE — {ins.act_label ?? ins.act_kind}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                        <span style={{ ...monoSmall, fontSize: 8, color: sev.fg }}>→ NEXT</span>
+                        <span style={{ ...sans, fontSize: 12.5, color: PAL.ink, flex: 1 }}>{ins.action ?? ins.act_label}</span>
+                        <button
+                          type="button"
+                          disabled={acted[i] === 'running'}
+                          onClick={() => { void runAction(i, ins.job_id!, ins.act_kind!); }}
+                          style={{ border: 'none', background: PAL.ink, color: PAL.white, cursor: acted[i] === 'running' ? 'wait' : 'pointer', ...monoSmall, fontSize: 9, padding: '6px 12px', borderRadius: 6 }}
+                        >
+                          {acted[i] === 'running' ? 'RUNNING…' : `✓ ${(ins.act_label ?? 'DO IT').toUpperCase()}`}
+                        </button>
+                      </div>
+                    )
+                  ) : ins.action ? (
                     <div style={{ ...sans, fontSize: 12.5, color: sev.fg, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ ...monoSmall, fontSize: 8 }}>→ NEXT</span>
                       <span>{ins.action}</span>

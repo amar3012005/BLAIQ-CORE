@@ -84,7 +84,7 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ![Run the Agency — batch-approve the Supervisor queue](docs/progress/run-agency.png)
 
-**AA4 — AI Daily Briefing (Chief of Staff)** — a proactive one-pass digest over the *whole* job book: headline, cash-watch line, and 3–5 severity-ranked insights, each with a job ref and the single next step. The agency's morning standup, and the default landing view. Verified live on prod (`claude-sonnet-4.6`): it flagged €20,900 of cash exposure across two overdue jobs as the day's top priority:
+**AA4 — AI Daily Briefing (Chief of Staff)** — a proactive one-pass digest over the *whole* job book: headline, cash-watch line, and 3–5 severity-ranked insights. **Each insight whose job maps to a rule-based Supervisor action is one-click runnable right from the standup** (the LLM narrates; the rule engine supplies the safe, executable action). The agency's morning standup, and the default landing view. Verified live on prod (`claude-sonnet-4.6`): flagged €20,900 of cash exposure across two overdue jobs, both with a one-click "Chase payment":
 
 ![AI Daily Briefing — Chief-of-Staff digest over the book](docs/progress/briefing.png)
 
@@ -117,7 +117,7 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + deployed:
 - **AA1 Admin Copilot** — grounded chat over live jobs (`POST /api/copilot`, OpenRouter httpx client). **🟢 Live on prod** with `claude-sonnet-4.6`.
 - **AA2 Agentic actions** — the Copilot proposes a tool-call (mark delivered, push POOOL, set finance status, chase payment, …) from natural language; PM approves before it runs (HITL). **🟢 Live on prod.**
-- **AA4 AI Daily Briefing** — `GET /api/copilot/briefing`: a Chief-of-Staff pass over the whole job book → headline + cash-watch + severity-ranked insights with job refs and next steps. The default admin landing view. **🟢 Live on prod, verified e2e.**
+- **AA4 AI Daily Briefing** — `GET /api/copilot/briefing`: a Chief-of-Staff pass over the whole job book → headline + cash-watch + severity-ranked insights with job refs and next steps. Insights that map to a Supervisor action are **one-click runnable from the standup**. The default admin landing view. **🟢 Live on prod, verified e2e.**
 - **AA5 AI Crew** — `POST /api/copilot/crew`: three specialist agents (Finance, Delivery, Account) deliberate over one job *in parallel*, each proposing an action through the same HITL approval + job-action endpoints. Auto-targets the most at-risk job, or review any job by number. **🟢 Live on prod, verified e2e.**
 - **AA5 Crew Sweep** — `POST /api/copilot/crew/sweep`: sends the full crew across the top-N at-risk jobs in one pass (jobs reviewed concurrently). The agency-wide standup. **🟢 Live on prod, verified e2e (3/4 jobs).**
 - **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.

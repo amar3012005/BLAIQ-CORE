@@ -736,6 +736,10 @@ export interface BriefingInsight {
   detail: string;
   job_number: string | null;
   action: string | null;
+  // Set when the insight's job maps to a runnable Supervisor action.
+  job_id: string | null;
+  act_kind: string | null;
+  act_label: string | null;
 }
 
 export interface Briefing {
@@ -756,16 +760,16 @@ export async function getBriefing(): Promise<Briefing> {
     const overdueTotal = overdue.reduce((s, j) => s + (j.invoice_amount ?? j.quote_amount ?? 0), 0);
     const insights: BriefingInsight[] = [];
     for (const j of overdue) {
-      insights.push({ severity: 'high', title: `Overdue invoice — ${j.client}`, detail: `${j.job_number} (${j.client}) has an overdue invoice of ${fmtEurShort(j.invoice_amount ?? j.quote_amount)}. Collect it.`, job_number: j.job_number, action: 'Send payment reminder' });
+      insights.push({ severity: 'high', title: `Overdue invoice — ${j.client}`, detail: `${j.job_number} (${j.client}) has an overdue invoice of ${fmtEurShort(j.invoice_amount ?? j.quote_amount)}. Collect it.`, job_number: j.job_number, action: 'Send payment reminder', job_id: j.id, act_kind: 'chase_payment', act_label: 'Chase payment' });
     }
     for (const j of deliveredUninvoiced) {
-      insights.push({ severity: 'high', title: `Delivered, not invoiced — ${j.client}`, detail: `${j.job_number} is delivered but still ${j.poool_status.replace(/_/g, ' ')} — ${fmtEurShort(j.quote_amount)} uncollected.`, job_number: j.job_number, action: 'Raise the invoice' });
+      insights.push({ severity: 'high', title: `Delivered, not invoiced — ${j.client}`, detail: `${j.job_number} is delivered but still ${j.poool_status.replace(/_/g, ' ')} — ${fmtEurShort(j.quote_amount)} uncollected.`, job_number: j.job_number, action: 'Raise the invoice', job_id: j.id, act_kind: 'invoice', act_label: 'Invoice client' });
     }
     for (const j of openQuotes.slice(0, 2)) {
-      insights.push({ severity: 'medium', title: `Open quote — ${j.client}`, detail: `${j.job_number} quote is ${j.poool_status.replace(/_/g, ' ')}; worth a follow-up to keep it moving.`, job_number: j.job_number, action: 'Follow up the quote' });
+      insights.push({ severity: 'medium', title: `Open quote — ${j.client}`, detail: `${j.job_number} quote is ${j.poool_status.replace(/_/g, ' ')}; worth a follow-up to keep it moving.`, job_number: j.job_number, action: 'Follow up the quote', job_id: j.id, act_kind: 'follow_up_quote', act_label: 'Follow up quote' });
     }
     if (insights.length === 0) {
-      insights.push({ severity: 'low', title: 'All clear', detail: 'No overdue invoices and nothing waiting to be billed. The book is healthy.', job_number: null, action: null });
+      insights.push({ severity: 'low', title: 'All clear', detail: 'No overdue invoices and nothing waiting to be billed. The book is healthy.', job_number: null, action: null, job_id: null, act_kind: null, act_label: null });
     }
     return {
       headline: overdue.length

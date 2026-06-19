@@ -864,6 +864,11 @@ class BriefingInsight(BaseModel):
     detail: str = ""
     job_number: str | None = None
     action: str | None = None
+    # When the insight's job has a matching rule-based Supervisor action, these
+    # let the standup run it in one click (FE → /next-actions/execute).
+    job_id: str | None = None
+    act_kind: str | None = None
+    act_label: str | None = None
 
 
 class Briefing(BaseModel):
@@ -908,19 +913,29 @@ async def briefing(
         raise HTTPException(status_code=503, detail=result.get("error") or "briefing unavailable")
 
     model_used = result.get("model") or copilot_model()
+    # Rule-based Supervisor actions, keyed by job_number, so we can make each
+    # insight one-click runnable (the LLM picks the narrative; the rule engine
+    # supplies the safe, executable action).
+    action_rows = await _load_action_rows(db, tenant_id)
+    action_by_job = {a.job_number: a for a in _compute_actions(action_rows, today)}
     try:
         parsed = _parse_briefing_json(result.get("text") or "")
-        insights = [
-            BriefingInsight(
+        insights = []
+        for i in (parsed.get("insights") or []):
+            if not isinstance(i, dict):
+                continue
+            jn = str(i["job_number"]).strip() if i.get("job_number") else None
+            act = action_by_job.get(jn) if jn else None
+            insights.append(BriefingInsight(
                 severity=str(i.get("severity") or "low").lower(),
                 title=str(i.get("title") or "").strip() or "Insight",
                 detail=str(i.get("detail") or "").strip(),
-                job_number=(str(i["job_number"]).strip() if i.get("job_number") else None),
+                job_number=jn,
                 action=(str(i["action"]).strip() if i.get("action") else None),
-            )
-            for i in (parsed.get("insights") or [])
-            if isinstance(i, dict)
-        ]
+                job_id=act.job_id if act else None,
+                act_kind=act.kind if act else None,
+                act_label=act.label if act else None,
+            ))
         data = Briefing(
             headline=str(parsed.get("headline") or "").strip() or "Agency briefing",
             cash_watch=str(parsed.get("cash_watch") or "").strip(),
