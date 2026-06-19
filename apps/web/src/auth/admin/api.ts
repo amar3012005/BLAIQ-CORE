@@ -468,7 +468,7 @@ function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
 }
 
 const previewIntegrations: OrgIntegrations = {
-  poool_url: 'http://poool-mcp:8888',
+  poool_url: 'http://poool-mcp:8000/mcp',
   poool_api_key_set: false,
   poool_api_key_preview: '',
   poool_enabled: false,

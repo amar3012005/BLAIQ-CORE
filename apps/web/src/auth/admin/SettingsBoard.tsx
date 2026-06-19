@@ -69,6 +69,51 @@ function Toggle({
   );
 }
 
+function ConnectRow({
+  connected,
+  saving,
+  onToggle,
+}: {
+  connected: boolean;
+  saving: boolean;
+  onToggle: (next: boolean) => void;
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+      <span
+        style={{
+          ...monoSmall,
+          fontSize: 9,
+          color: connected ? '#0F6E56' : PAL.muted,
+          background: connected ? '#E1F5EE' : PAL.bg,
+          padding: '4px 10px',
+          borderRadius: 12,
+        }}
+      >
+        {connected ? '● CONNECTED' : '○ NOT CONNECTED'}
+      </span>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => onToggle(!connected)}
+        style={{
+          marginLeft: 'auto',
+          border: 'none',
+          background: connected ? 'transparent' : PAL.accent,
+          color: connected ? PAL.muted : PAL.white,
+          boxShadow: connected ? `inset 0 0 0 1px ${PAL.divider}` : 'none',
+          cursor: saving ? 'wait' : 'pointer',
+          ...monoSmall,
+          fontSize: 9,
+          padding: '7px 16px',
+        }}
+      >
+        {saving ? '…' : connected ? 'DISCONNECT' : 'CONNECT'}
+      </button>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
@@ -122,6 +167,25 @@ export default function SettingsBoard(): JSX.Element {
     getOrgIntegrations().then(hydrate).catch((e: Error) => setError(e.message));
   }, []);
 
+  // One-click connect/disconnect for an integration.
+  const connectOne = async (which: 'poool' | 'clickup', enable: boolean): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const body: OrgIntegrationsUpdate =
+        which === 'poool'
+          ? { poool_enabled: enable, poool_url: pooolUrl.trim() || undefined }
+          : { clickup_enabled: enable, clickup_list_id: clickupListId.trim() || undefined };
+      const updated = await updateOrgIntegrations(body);
+      hydrate(updated);
+      setSavedAt(Date.now());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async (): Promise<void> => {
     setSaving(true);
     setError(null);
@@ -158,13 +222,14 @@ export default function SettingsBoard(): JSX.Element {
             title="POOOL · Finance"
             hint="Connect the POOOL MCP so quotes, invoices, and payment status sync into the finance board automatically (every ~30 min)."
           >
+            <ConnectRow connected={pooolEnabled} saving={saving} onToggle={(n) => { setPooolEnabled(n); void connectOne('poool', n); }} />
             <Field label="MCP URL">
               <input
                 style={inputStyle}
                 value={pooolUrl}
                 disabled={saving}
                 onChange={(e) => setPooolUrl(e.target.value)}
-                placeholder="http://poool-mcp:8888"
+                placeholder="http://poool-mcp:8000/mcp"
               />
             </Field>
             <Field label={data.poool_api_key_set ? `API Key (set · ${data.poool_api_key_preview})` : 'API Key'}>
@@ -177,18 +242,13 @@ export default function SettingsBoard(): JSX.Element {
                 placeholder={data.poool_api_key_set ? 'Leave blank to keep current key' : 'Paste API key'}
               />
             </Field>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Toggle on={pooolEnabled} disabled={saving} onChange={setPooolEnabled} />
-              <span style={{ ...sans, fontSize: 12, color: PAL.ink }}>
-                {pooolEnabled ? 'Sync enabled' : 'Sync disabled'}
-              </span>
-            </div>
           </Card>
 
           <Card
             title="ClickUp · Tasks"
             hint="When enabled, the poller mirrors ClickUp task status and revisions into the work board. OAuth is held by the workspace connector; set the default list jobs push tickets to."
           >
+            <ConnectRow connected={clickupEnabled} saving={saving} onToggle={(n) => { setClickupEnabled(n); void connectOne('clickup', n); }} />
             <Field label="Default List ID">
               <input
                 style={inputStyle}
@@ -198,12 +258,6 @@ export default function SettingsBoard(): JSX.Element {
                 placeholder="e.g. 901234567"
               />
             </Field>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Toggle on={clickupEnabled} disabled={saving} onChange={setClickupEnabled} />
-              <span style={{ ...sans, fontSize: 12, color: PAL.ink }}>
-                {clickupEnabled ? 'Sync enabled' : 'Sync disabled'}
-              </span>
-            </div>
           </Card>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, maxWidth: 560 }}>
