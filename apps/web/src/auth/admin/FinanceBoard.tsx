@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { listJobs, jobIsOverdue, type Job, type PooolStatus } from './api';
+import { listJobs, jobIsOverdue, getPooolSummary, type Job, type PooolStatus, type PooolSyncSummary } from './api';
 import { PAL, monoSmall, sansBold, sans, skeletonBar, emptyText } from './theme';
 import { ErrorBanner } from './JobBoard';
 
@@ -169,11 +169,13 @@ function Section({ title, jobs, color }: { title: string; jobs: Job[]; color?: s
 export default function FinanceBoard(): JSX.Element {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [poool, setPoool] = useState<PooolSyncSummary | null>(null);
 
   useEffect(() => {
     listJobs()
       .then(j => setJobs(j))
       .catch((e: Error) => setError(e.message));
+    getPooolSummary().then(setPoool).catch(() => setPoool(null));
   }, []);
 
   if (error) return <div style={{ padding: 20 }}><ErrorBanner message={error} /></div>;
@@ -197,6 +199,32 @@ export default function FinanceBoard(): JSX.Element {
         <StatCard label="PAID" value={fmtEur(s.total_paid)} color="#10B981" />
         <StatCard label="OVERDUE" value={fmtEur(s.total_overdue)} color="#EF4444" />
       </div>
+
+      {/* Live POOOL sync (real ops.poool_cache data) */}
+      {poool && (
+        <div style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, padding: '12px 16px', marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: poool.connected ? 8 : 0 }}>
+            <span style={{ ...monoSmall, color: PAL.muted }}>POOOL · LIVE SYNC</span>
+            <span style={{ ...monoSmall, fontSize: 8, color: poool.connected ? '#0F6E56' : PAL.muted, background: poool.connected ? '#E1F5EE' : PAL.bg, padding: '3px 8px', borderRadius: 10 }}>
+              {poool.connected ? '● CONNECTED' : '○ NOT SYNCED'}
+            </span>
+            {poool.connected && (
+              <span style={{ ...monoSmall, color: PAL.muted, fontSize: 8, marginLeft: 'auto' }}>
+                {poool.projects} projects · {poool.orders} orders · {poool.clients} clients
+              </span>
+            )}
+          </div>
+          {poool.connected && poool.recent_orders.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {poool.recent_orders.map(o => (
+                <span key={o.id} style={{ ...sans, fontSize: 11, color: PAL.ink, background: PAL.white, border: `1px solid ${PAL.divider}`, padding: '3px 8px' }}>
+                  #{o.id} {o.title}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {jobs.length === 0 && <div style={emptyText}>No jobs with finance data yet.</div>}
 

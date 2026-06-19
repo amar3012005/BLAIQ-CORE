@@ -553,6 +553,37 @@ export async function askCopilot(message: string, history: CopilotTurn[] = []): 
 }
 
 // ──────────────────────────────────────────────────────────────
+// POOOL sync summary (live ops.poool_cache) — shown in Finance
+// ──────────────────────────────────────────────────────────────
+
+export interface PooolSyncSummary {
+  connected: boolean;
+  synced_at: string | null;
+  projects: number;
+  orders: number;
+  clients: number;
+  recent_orders: { id: string; title: string }[];
+}
+
+export async function getPooolSummary(): Promise<PooolSyncSummary> {
+  if (PREVIEW) {
+    return {
+      connected: true,
+      synced_at: new Date().toISOString(),
+      projects: 8,
+      orders: 2,
+      clients: 12,
+      recent_orders: [
+        { id: '5', title: 'Markenstrategie' },
+        { id: '6', title: 'Geschäftsausstattung' },
+      ],
+    };
+  }
+  const data = await request<{ data: PooolSyncSummary }>('/api/copilot/poool-summary');
+  return data.data;
+}
+
+// ──────────────────────────────────────────────────────────────
 // Supervisor — rule-based next-actions queue (Track AA)
 // ──────────────────────────────────────────────────────────────
 

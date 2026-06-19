@@ -74,6 +74,12 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ---
 
+## Progress screenshots
+
+**Finance board — live POOOL sync** (real `ops.poool_cache`: 8 projects · 2 orders · 12 clients):
+
+![Finance board with live POOOL sync](docs/progress/finance-poool.png)
+
 ## Track AA — Agentic Administration (in progress)
 
 The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + deployed:

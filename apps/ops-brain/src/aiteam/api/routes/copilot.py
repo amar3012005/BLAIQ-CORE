@@ -287,3 +287,66 @@ async def execute_action(
 
     return APIResponse(data=None, message=f"{body.kind} done")
 
+
+# ──────────────────────────────────────────────
+# POOOL sync summary — surfaces live ops.poool_cache in the Finance board.
+# ──────────────────────────────────────────────
+
+class PooolSyncSummary(BaseModel):
+    connected: bool
+    synced_at: str | None = None
+    projects: int = 0
+    orders: int = 0
+    clients: int = 0
+    recent_orders: list[dict] = Field(default_factory=list)
+
+
+@router.get("/poool-summary", response_model=APIResponse[PooolSyncSummary])
+async def poool_summary(
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[PooolSyncSummary]:
+    tenant_id = current_tenant_id.get("")
+    counts = {
+        r[0]: int(r[1])
+        for r in (
+            await db.execute(
+                text(
+                    "SELECT kind, count(*) FROM ops.poool_cache "
+                    "WHERE tenant_id = CAST(:tid AS uuid) GROUP BY kind"
+                ),
+                {"tid": tenant_id},
+            )
+        ).all()
+    }
+    synced_at = (
+        await db.execute(
+            text(
+                "SELECT max(fetched_at) FROM ops.poool_cache "
+                "WHERE tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"tid": tenant_id},
+        )
+    ).scalar_one_or_none()
+    order_rows = (
+        await db.execute(
+            text(
+                "SELECT external_id, payload->>'title' AS title FROM ops.poool_cache "
+                "WHERE tenant_id = CAST(:tid AS uuid) AND kind = 'order' "
+                "ORDER BY fetched_at DESC LIMIT 6"
+            ),
+            {"tid": tenant_id},
+        )
+    ).all()
+    total = sum(counts.values())
+    return APIResponse(
+        data=PooolSyncSummary(
+            connected=total > 0,
+            synced_at=synced_at.isoformat() if synced_at else None,
+            projects=counts.get("project", 0),
+            orders=counts.get("order", 0),
+            clients=counts.get("client", 0),
+            recent_orders=[{"id": r[0], "title": r[1] or "(untitled)"} for r in order_rows],
+        ),
+        message="ok",
+    )
+
