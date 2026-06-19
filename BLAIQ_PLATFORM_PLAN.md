@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**Analytics** — live KPIs (margin, cash exposure, throughput) from jobs + POOOL:
+
+![Analytics KPI board](docs/progress/analytics.png)
+
 **Admin Copilot + Supervisor** — grounded chat over live jobs, with a rule-based next-actions queue (one-click HITL):
 
 ![Admin Copilot and Supervisor](docs/progress/copilot-supervisor.png)

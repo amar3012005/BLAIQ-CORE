@@ -14,7 +14,7 @@ import ActivityFeed from './ActivityFeed';
 import SettingsBoard from './SettingsBoard';
 import CopilotBoard from './CopilotBoard';
 import ErrorBoundary from './ErrorBoundary';
-import { AnalyticsView } from './Placeholders';
+import AnalyticsBoard from './AnalyticsBoard';
 
 type TabId =
   | 'copilot'
@@ -162,7 +162,7 @@ export default function AdminShell(): JSX.Element {
           {tab === 'finance' && <FinanceBoard />}
           {tab === 'work' && <TasksWall />}
           {tab === 'activity' && <ActivityFeed />}
-          {tab === 'analytics' && <AnalyticsView />}
+          {tab === 'analytics' && <AnalyticsBoard />}
           {tab === 'settings' && <SettingsBoard />}
         </ErrorBoundary>
       </div>
