@@ -34,6 +34,7 @@ export interface Job {
   poool_job_id?: string | null;
   quote_amount?: number | null;
   third_party_costs?: number | null;
+  production_fee?: number | null;  // computed server-side (15% of third_party_costs)
   cost_items: CostItem[];
   invoice_amount?: number | null;
   payment_due_date?: string | null;
@@ -249,6 +250,39 @@ export async function getJob(id: string): Promise<Job | null> {
   } catch {
     return null;
   }
+}
+
+// Intake (workflow step 1→2): turn a raw client inquiry into a drafted job.
+// Writes to BLAIQ's own DB only — never POOOL.
+export async function intakeJob(text: string, client?: string): Promise<Job> {
+  if (PREVIEW) {
+    const now = new Date().toISOString();
+    const year = new Date().getFullYear();
+    const seq = previewStore.filter(j => j.job_number.startsWith(`${year}-`)).length + 30;
+    const firstLine = text.trim().split('\n')[0] ?? 'Neue Anfrage';
+    const job: Job = {
+      id: `job-${++previewSeq}`,
+      job_number: `${year}-${String(seq).padStart(3, '0')}`,
+      title: firstLine.slice(0, 60) || 'Neue Anfrage',
+      client: client || (/(?:from|von|client|kunde)[:\s]+([A-ZÄÖÜ][\w& .-]{2,40})/i.exec(text)?.[1]?.trim() ?? ''),
+      poool_status: 'quote_pending', poool_job_id: null, quote_amount: null,
+      third_party_costs: 0, production_fee: null, cost_items: [], invoice_amount: null,
+      payment_due_date: null, clickup_folder_id: null, clickup_ticket_ids: [], revision_count: 0,
+      server_folder_path: null, delivery_status: 'in_progress', delivered_at: null,
+      notes: `${text.trim().slice(0, 200)}\n\n[Drafted from client inquiry]`,
+      created_at: now, updated_at: now,
+    };
+    previewStore.unshift(job);
+    return { ...job };
+  }
+  const r = await fetch(`${BASE}/api/jobs/intake`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, client: client ?? null }),
+  });
+  const b = (await r.json().catch(() => ({}))) as { data?: Job; detail?: string; error?: string };
+  if (!r.ok) throw new Error(b.detail || b.error || `HTTP ${r.status}`);
+  return b.data as Job;
 }
 
 export async function createJob(body: JobCreate): Promise<Job> {

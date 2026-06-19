@@ -24,7 +24,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Date, DateTime, String, Text, select
+from sqlalchemy import Date, DateTime, String, Text, select, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -262,6 +262,118 @@ async def create_job(
         logger.warning("auto server-folder create failed (job=%s)", job.id, exc_info=True)
 
     return APIResponse(data=_to_pydantic(job), message="Job created")
+
+
+# ──────────────────────────────────────────────
+# Intake (workflow PDF step 1→2): a client inquiry (email/Protonet text) is
+# turned into a drafted Job. The LLM extracts title/client/scope; we create the
+# job in BLAIQ's own DB (NOT POOOL — POOOL push stays an explicit later action).
+# Source-agnostic: any channel can POST the raw inquiry text here.
+# ──────────────────────────────────────────────
+
+class IntakeRequest(BaseModel):
+    text: str
+    client: str | None = None
+
+
+_INTAKE_SYSTEM = """You are the intake assistant for the creative agency B&B Markenagentur.
+A client inquiry just arrived (email or Protonet). Extract a structured draft job from it.
+Respond with ONLY a JSON object: {"title": "...", "client": "...", "summary": "one sentence scope", "suggested_quote_eur": number or null}
+- title: a short project title, in the inquiry's own language (German if the inquiry is German).
+- client: the company or person name if identifiable, else "".
+- summary: one sentence describing the requested work.
+- suggested_quote_eur: a number ONLY if the inquiry explicitly states a budget; otherwise null.
+Never invent details that are not in the inquiry. Output JSON only."""
+
+
+@router.post("/intake", response_model=APIResponse[Job], status_code=201)
+async def intake_job(
+    body: IntakeRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Job]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="empty inquiry")
+
+    import json as _json
+
+    from aiteam.integrations.llm import chat
+
+    draft = {"title": "", "client": (body.client or "").strip(), "summary": "", "quote": None}
+    res = await chat(
+        [
+            {"role": "system", "content": _INTAKE_SYSTEM},
+            {"role": "user", "content": body.text[:4000]},
+        ],
+        max_tokens=300, temperature=0.1,
+    )
+    if res.get("ok"):
+        try:
+            t = (res.get("text") or "").strip()
+            if t.startswith("```"):
+                t = t.split("```")[1]
+                t = t[4:] if t.lower().startswith("json") else t
+            s, e = t.find("{"), t.rfind("}")
+            p = _json.loads(t[s:e + 1])
+            draft["title"] = str(p.get("title") or "").strip() or draft["title"]
+            if p.get("client"):
+                draft["client"] = str(p["client"]).strip()
+            draft["summary"] = str(p.get("summary") or "").strip()
+            q = p.get("suggested_quote_eur")
+            draft["quote"] = float(q) if isinstance(q, (int, float)) else None
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass
+    if not draft["title"]:
+        first = body.text.strip().splitlines()[0] if body.text.strip() else ""
+        draft["title"] = first[:80] or "Neue Anfrage"
+
+    # Next draft job number: {year}-NNN, one past the highest existing this year.
+    year = date.today().year
+    rows = (
+        await db.execute(
+            text(
+                "SELECT job_number FROM ops.jobs WHERE tenant_id = CAST(:tid AS uuid) "
+                "AND job_number LIKE :pat"
+            ),
+            {"tid": tenant_id, "pat": f"{year}-%"},
+        )
+    ).all()
+    mx = 0
+    for (jn,) in rows:
+        try:
+            mx = max(mx, int(str(jn).split("-")[-1]))
+        except (ValueError, IndexError):
+            pass
+    job_number = f"{year}-{mx + 1:03d}"
+
+    note = (draft["summary"] + "\n\n" if draft["summary"] else "") + "[Drafted from client inquiry]"
+    job = JobModel(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        job_number=job_number,
+        title=draft["title"],
+        client=draft["client"],
+        quote_amount=draft["quote"],
+        notes=note,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    try:
+        from aiteam.integrations.serverfiles import create_job_folder
+
+        r = await create_job_folder(tenant_id, client=job.client, job_number=job.job_number)
+        if r.get("ok") and r.get("path"):
+            job.server_folder_path = str(r["path"])
+            await db.commit()
+            await db.refresh(job)
+    except Exception:
+        logger.warning("intake server-folder create failed (job=%s)", job.id, exc_info=True)
+
+    return APIResponse(data=_to_pydantic(job), message="Draft job created from inquiry")
 
 
 @router.get("", response_model=APIListResponse[Job])
