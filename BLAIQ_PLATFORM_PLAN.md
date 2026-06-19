@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**Admin Copilot + Supervisor** — grounded chat over live jobs, with a rule-based next-actions queue (one-click HITL):
+
+![Admin Copilot and Supervisor](docs/progress/copilot-supervisor.png)
+
 **Finance board — live POOOL sync** (real `ops.poool_cache`: 8 projects · 2 orders · 12 clients):
 
 ![Finance board with live POOOL sync](docs/progress/finance-poool.png)
