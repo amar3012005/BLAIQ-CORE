@@ -145,6 +145,11 @@ class Job(BaseModel):
     poool_job_id: str | None = None
     quote_amount: float | None = None
     third_party_costs: float | None = None
+    # Produktionshonorar — the agency's 15% fee on passed-through third-party
+    # costs (workflow PDF step 3a.2). Computed read-only; not stored, so it can
+    # never drift from third_party_costs. Mirrors the web client's
+    # withProductionFee()/PRODUCTION_FEE_RATE so server + UI agree.
+    production_fee: float | None = None
     cost_items: list[CostItem] = Field(default_factory=list)
     invoice_amount: float | None = None
     payment_due_date: str | None = None
@@ -186,7 +191,11 @@ class JobUpdate(BaseModel):
     notes: str | None = None
 
 
+PRODUCTION_FEE_RATE = 0.15  # agency Produktionshonorar on third-party costs
+
+
 def _to_pydantic(m: JobModel) -> Job:
+    tpc = float(m.third_party_costs) if m.third_party_costs else 0.0
     return Job(
         id=m.id,
         job_number=m.job_number,
@@ -196,6 +205,7 @@ def _to_pydantic(m: JobModel) -> Job:
         poool_job_id=m.poool_job_id,
         quote_amount=m.quote_amount,
         third_party_costs=m.third_party_costs,
+        production_fee=round(tpc * PRODUCTION_FEE_RATE, 2) if tpc else None,
         cost_items=[CostItem(**c) for c in (m.cost_items or []) if isinstance(c, dict)],
         invoice_amount=m.invoice_amount,
         payment_due_date=m.payment_due_date.isoformat() if m.payment_due_date else None,
