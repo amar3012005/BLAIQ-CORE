@@ -74,6 +74,19 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ---
 
+## Track AA — Agentic Administration (in progress)
+
+The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + deployed:
+- **AA1 Admin Copilot** — grounded chat over live jobs (`POST /api/copilot`, OpenRouter httpx client). Pipeline verified to the LLM-credential boundary; live answers need a funded LLM key (OpenRouter key is currently spent).
+- **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.
+- **One-click Connect** — POOOL + ClickUp connect/disconnect from Settings in a single click.
+
+**🟢 POOOL MCP — LIVE.** ops-brain now reaches the `poool-mcp` container (bridged via the `blaiq-mcp` network, persisted in compose), does the full MCP streamable-HTTP handshake, and syncs real data into `ops.poool_cache` (12 clients, 8 projects, 2 orders). A tolerant parser salvages complete records past the server's 25 KB response cap.
+
+**Known external blockers (need the operator):**
+- **LLM credits** — the OpenRouter key is out of credits; tops up → the Copilot's live answers + LLM-driven agentic actions go live.
+- **Email delivery** — there is no email-sending credential/connector wired; per-feature email reports need an SMTP/API key or a Gmail connector.
+
 ## 2. Where we are today
 
 > Status: 2026-06-15 — **A1 + A2 shipped to production** (Hetzner, served via the Cloudflare quick tunnel). Single tenant `BLAIQ` live with seeded sample jobs.
