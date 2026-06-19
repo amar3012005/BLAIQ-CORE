@@ -76,6 +76,10 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ## Progress screenshots
 
+**AA4 — AI Daily Briefing (Chief of Staff)** — a proactive one-pass digest over the *whole* job book: headline, cash-watch line, and 3–5 severity-ranked insights, each with a job ref and the single next step. The agency's morning standup, and the default landing view. Verified live on prod (`claude-sonnet-4.6`): it flagged €20,900 of cash exposure across two overdue jobs as the day's top priority:
+
+![AI Daily Briefing — Chief-of-Staff digest over the book](docs/progress/briefing.png)
+
 **AA5 — AI Crew (multi-agent, HITL)** — instead of one Copilot, a crew of specialist agents (💰 Finance, 📦 Delivery, 🤝 Account) review a job *in parallel*, each from its own remit, and each may propose an action the PM approves. Verified live on prod with the LLM (`claude-sonnet-4.6`): the crew auto-picked the most at-risk job `2026-014`, Finance + Account both proposed *chase payment* on the overdue €12,500 invoice, Delivery cleared it:
 
 ![AI Crew — specialist agents deliberate over a job](docs/progress/crew.png)
@@ -105,6 +109,7 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 The AI layer over Administration (see `TRACK_AA_AGENTIC_ADMIN.md`). Shipped + deployed:
 - **AA1 Admin Copilot** — grounded chat over live jobs (`POST /api/copilot`, OpenRouter httpx client). **🟢 Live on prod** with `claude-sonnet-4.6`.
 - **AA2 Agentic actions** — the Copilot proposes a tool-call (mark delivered, push POOOL, set finance status, chase payment, …) from natural language; PM approves before it runs (HITL). **🟢 Live on prod.**
+- **AA4 AI Daily Briefing** — `GET /api/copilot/briefing`: a Chief-of-Staff pass over the whole job book → headline + cash-watch + severity-ranked insights with job refs and next steps. The default admin landing view. **🟢 Live on prod, verified e2e.**
 - **AA5 AI Crew** — `POST /api/copilot/crew`: three specialist agents (Finance, Delivery, Account) deliberate over one job *in parallel*, each proposing an action through the same HITL approval + job-action endpoints. Auto-targets the most at-risk job, or review any job by number. **🟢 Live on prod, verified e2e.**
 - **AA Supervisor** — rule-based next-actions queue (overdue→chase, delivered→invoice, aging quote→follow-up), one-click HITL `DO IT`. Fully working without an LLM. Verified on prod.
 - **One-click Connect** — POOOL + ClickUp connect/disconnect from Settings in a single click.

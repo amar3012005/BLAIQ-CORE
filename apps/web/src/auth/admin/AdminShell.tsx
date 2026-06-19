@@ -14,10 +14,12 @@ import ActivityFeed from './ActivityFeed';
 import SettingsBoard from './SettingsBoard';
 import CopilotBoard from './CopilotBoard';
 import CrewBoard from './CrewBoard';
+import BriefingBoard from './BriefingBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
 
 type TabId =
+  | 'briefing'
   | 'copilot'
   | 'crew'
   | 'jobs'
@@ -36,6 +38,7 @@ const SECTIONS: Section[] = [
   {
     heading: 'AI',
     items: [
+      { id: 'briefing', label: 'Briefing', hint: 'Daily Chief-of-Staff digest' },
       { id: 'copilot', label: 'Copilot', hint: 'Ask + act on your agency' },
       { id: 'crew', label: 'Crew', hint: 'Specialist agents deliberate' },
     ],
@@ -66,7 +69,7 @@ const SECTIONS: Section[] = [
 const NAV_WIDTH = 220;
 
 export default function AdminShell(): JSX.Element {
-  const [tab, setTab] = useState<TabId>('copilot');
+  const [tab, setTab] = useState<TabId>('briefing');
 
   return (
     <div
@@ -160,6 +163,7 @@ export default function AdminShell(): JSX.Element {
 
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
         <ErrorBoundary resetKey={tab}>
+          {tab === 'briefing' && <BriefingBoard />}
           {tab === 'copilot' && <CopilotBoard />}
           {tab === 'crew' && <CrewBoard />}
           {tab === 'jobs' && <JobBoard />}

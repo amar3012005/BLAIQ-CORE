@@ -727,3 +727,112 @@ async def crew_deliberate(
         ),
         message="ok",
     )
+
+
+# ──────────────────────────────────────────────
+# AA4 — AI Daily Briefing. A proactive "Chief of Staff" pass over the WHOLE
+# job book: one LLM call returns a structured morning digest (headline,
+# prioritised insights with severity + job refs, a cash-watch line). This is
+# the company standup; the per-job drill-down lives in the Crew (AA5) and the
+# one-click fixes in the Supervisor queue.
+# ──────────────────────────────────────────────
+
+_BRIEFING_SYSTEM = """You are the Chief of Staff for the creative agency B&B Markenagentur, briefing the project manager.
+From the JOB DATA below, write a short, punchy morning briefing on the state of the agency.
+
+Respond with ONLY a JSON object (no markdown, no prose around it) of exactly this shape:
+{
+  "headline": "one sentence on the overall state of the agency right now",
+  "cash_watch": "one sentence on cash: what is overdue, what is about to be invoiced/collected (EUR)",
+  "insights": [
+    {"severity": "high|medium|low", "title": "short title", "detail": "one or two sentences, concrete", "job_number": "2026-014 or null", "action": "the single next step, or null"}
+  ]
+}
+
+Rules:
+- 3 to 5 insights, ordered most urgent first. Ground every claim in the JOB DATA; cite job numbers. Never invent jobs or numbers.
+- "high" = money at risk or a client/delivery problem; "medium" = should act this week; "low" = informational.
+- Money is in EUR. Today's date is given below. Output JSON only."""
+
+
+class BriefingInsight(BaseModel):
+    severity: str = "low"
+    title: str
+    detail: str = ""
+    job_number: str | None = None
+    action: str | None = None
+
+
+class Briefing(BaseModel):
+    headline: str
+    cash_watch: str = ""
+    insights: list[BriefingInsight] = Field(default_factory=list)
+    generated_on: str
+    model: str
+
+
+def _parse_briefing_json(raw: str) -> dict:
+    import json as _json
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        # strip ```json … ``` fences
+        s = s.split("```", 2)[1] if s.count("```") >= 2 else s.strip("`")
+        if s.lower().startswith("json"):
+            s = s[4:]
+    s = s.strip()
+    start, end = s.find("{"), s.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        s = s[start:end + 1]
+    return _json.loads(s)
+
+
+@router.get("/briefing", response_model=APIResponse[Briefing])
+async def briefing(
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[Briefing]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+
+    today = date.today()
+    context = await _build_job_context(db, tenant_id)
+    messages = [
+        {"role": "system", "content": _BRIEFING_SYSTEM + "\n\n" + context},
+        {"role": "user", "content": "Give me today's briefing."},
+    ]
+    result = await chat(messages, max_tokens=900, temperature=0.2)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "briefing unavailable")
+
+    model_used = result.get("model") or copilot_model()
+    try:
+        parsed = _parse_briefing_json(result.get("text") or "")
+        insights = [
+            BriefingInsight(
+                severity=str(i.get("severity") or "low").lower(),
+                title=str(i.get("title") or "").strip() or "Insight",
+                detail=str(i.get("detail") or "").strip(),
+                job_number=(str(i["job_number"]).strip() if i.get("job_number") else None),
+                action=(str(i["action"]).strip() if i.get("action") else None),
+            )
+            for i in (parsed.get("insights") or [])
+            if isinstance(i, dict)
+        ]
+        data = Briefing(
+            headline=str(parsed.get("headline") or "").strip() or "Agency briefing",
+            cash_watch=str(parsed.get("cash_watch") or "").strip(),
+            insights=insights,
+            generated_on=today.isoformat(),
+            model=model_used,
+        )
+    except (ValueError, TypeError, KeyError):
+        # Fallback: surface the raw model text as a single insight rather than 500.
+        data = Briefing(
+            headline="Agency briefing",
+            cash_watch="",
+            insights=[BriefingInsight(severity="low", title="Briefing", detail=(result.get("text") or "").strip()[:600])],
+            generated_on=today.isoformat(),
+            model=model_used,
+        )
+
+    return APIResponse(data=data, message="ok")
