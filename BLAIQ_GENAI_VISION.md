@@ -1,0 +1,57 @@
+# BLAIQ GenAI — Marketing & Brand Studio (Vision)
+
+**Reference:** Higgsfield AI Marketing Studio (researched 2026-06-20). **Differentiator:** Higgsfield extracts a brand *per product URL, per session*; BLAIQ has **persistent Brand DNA + Brand Tone per tenant** — agency-grade, reused across every asset, every client, every campaign. Every BLAIQ generation is on-brand *by construction*.
+
+This is the target feature set for BLAIQ GenAI. Each feature is driven by Brand DNA + Brand Tone.
+
+## What Higgsfield Marketing Studio does (the bar)
+- **URL → assets**: paste a product/app URL → auto-extract product name, description, images, brand colours.
+- **3 production styles**: UGC · CGI · Cinematic, switchable in one workspace.
+- **10+ ad formats**: talking-head, product review, tutorial, unboxing, virtual try-on (UGC); hyper-motion/pure-CGI, pro try-on, product demo (CGI); TV spot, Wild Card "AI directs" (cinematic).
+- **Avatars**: 40+ presets + custom text-to-avatar (Soul 2.0); pin/rename/**reuse across campaigns** (spokesperson consistency).
+- **Variant/batch**: dozens of variants across formats × avatars × directions from one URL → A/B tests, channel-specific, localized.
+- **Reference-based**: upload a viral ad → AI analyses structure → "same format, your brand, your face".
+- **Hook optimization**: proven 3-second openers; builds the ad around the hook.
+- **Engine**: Seedance 2.0 video (lip-sync, physics, character consistency). **Team**: shared projects, roles.
+- **Apps**: Click-to-Ad, Billboard Ad, Truck Ad, Bullet-Time product rotation, Headshot, Outfit/Character Swap, Relight, Background Remover, Angles/Shots (multi-camera from one image), Expand Image.
+
+## BLAIQ GenAI — visioned features (brand-driven)
+
+### A. Brand Studio (foundation)
+- Brand DNA + Brand Tone editor ✅ (exists). **Compile DNA → machine-readable tokens** (palette hex, typography, iconography, voice pillars, vocabulary) cached per tenant; injected into *every* modality. Visual Brand Lock ✅ shipped (prompt-level); next: structured token compile.
+
+### B. Brand & Asset Intake
+- Extend intake: **paste a product/campaign URL or brief** → auto-extract product, images, and (cross-check) brand colours against Brand DNA → a reusable **brand/product profile**. (BLAIQ intake already drafts jobs from inquiry text — extend to products/URLs + asset pull.)
+
+### C. Modality engines (precise, clean, on-brand)
+- **Text/Copy** ✅ — brand-tone-aware (ads, captions, scripts, proposals).
+- **Decks** ✅ v1 — brand-locked HTML deck generation (engine live). Next: more layouts, export, deck templates library.
+- **Images** 🔜 — brand-locked product/marketing images: product shots, billboard/OOH, bullet-time rotation, try-on, lifestyle. Multi-angle/"Shots", relight, background-remove, expand. (19 providers wired.)
+- **Video** 🔜 — UGC / CGI / cinematic / TV-spot via the existing 7-stage pipeline + Higgsfield/Seedance (key already in `tenant_brand`). Brand DNA into the script + visual direction; HITL gate before the expensive render.
+
+### D. Ad-format & template library
+- Curated, brand-locked templates per style (UGC talking-head/unboxing/try-on; CGI hyper-motion/product demo; cinematic TV-spot) — pick a format, get an on-brand asset.
+
+### E. Spokesperson / avatar consistency
+- Brand spokespersons: create + pin + reuse across campaigns for a consistent face/voice (maps to Higgsfield avatars; BLAIQ ties them to the brand).
+
+### F. Variant & batch generation
+- One brief → many on-brand variants across formats/channels/locales for A/B testing — the agency's volume play.
+
+### G. Reference-based creation
+- "Make me an ad like *this* one, in our brand" — analyse a reference's structure, regenerate brand-locked.
+
+### H. Hook / opener optimization
+- Proven opener patterns; brand-tone hooks; (later) virality scoring.
+
+### I. Convergence with Administration (Track C)
+- Generate campaign deliverables **tied to a Job** (the deck/images/video for job 2026-0xx), delivered via the Server track, billed via POOOL. The agency's creative output and its operations become one loop.
+
+## Current state → priority
+1. **Decks** — engine ✅, add UI + templates + export. *(needs a studio login to wire UI)*
+2. **Brand-token compile** — structured tokens from DNA (free, verifiable). **Next safe build.**
+3. **Images** — brand-locked product/marketing images. *(needs image-provider creds + OK to spend)*
+4. **Video** — wire Higgsfield/Seedance + brand into the 7-stage pipeline + HITL. *(needs provider creds + spend OK)*
+5. **Intake → product/URL profiles**, ad-format library, variants, avatars, reference-based — layer on top.
+
+**Blockers to verify the paid modalities (images/video):** provider credentials + explicit OK to spend real generation credits. **To wire any studio UI:** a login (the creative studio is auth-gated; seed creds are empty).
