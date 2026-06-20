@@ -74,6 +74,20 @@ Every arrow above is a step BLAIQ automates. The two pillars share one tenant, o
 
 ---
 
+## Track B — GenAI (honest state, 2026-06-20)
+
+Goal spec: **precise, clean output across text · images · videos · decks, all driven by Brand DNA + Brand Tone.**
+
+What exists vs. what's real:
+- **Brand DNA + Tone** — stored (`tenant_brand`) + editable UI (BrandPage) + injected into prompts. ✅
+- **Text** — generation works, brand-tone-aware. ✅
+- **Image** — 19 providers + dispatcher work, but **brand not locked into prompts**. 🟡
+- **Video** — full 7-stage pipeline (script→storyboard→ref→TTS→i2v→stitch) architected, but **UI doesn't drive it + brand not locked**. 🟡
+- **Decks** — 113+ templates + framework, but **UI stubbed + brand from design-system tokens, not Brand DNA**. 🟡
+- **Missions / Workflows / Swarm** — UI tabs present but stubbed; no persistent `ops.missions`. 🔴
+
+Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipped): a **Visual Brand Lock** block in `/api/v1/org/prompt-augment` that forces extraction + application of the brand palette/typography/iconography for visual kinds (image/video/deck/UI). Activates per-modality as each generation path adopts `prompt-augment`. Next: wire decks → images → video → persistent Missions (Track C convergence: deliver Admin jobs via generated artifacts).
+
 ## Progress screenshots
 
 **P5 — Intake: client inquiry → drafted job (workflow steps 1→2)** — paste a raw email/Protonet inquiry; the LLM extracts title, client, scope, and any stated budget and creates a quote-pending draft job in BLAIQ (auto job-number + server folder; POOOL push stays a separate explicit step). Source-agnostic `POST /api/jobs/intake`. Verified live on prod: a German inquiry → job `2026-027 "Imagebroschüre Voss Logistik"`, client *Voss Logistik GmbH*, €9,000 quote:

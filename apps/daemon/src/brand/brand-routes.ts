@@ -150,6 +150,26 @@ export function registerBrandRoutes(router: Router): void {
           brand.brandToneMd,
         );
       }
+      // Visual Brand Lock — for image/video/deck/UI work, the Brand DNA above
+      // is prose; force the model to EXTRACT and apply it as concrete visual
+      // rules so output is on-brand by construction, not generic. Only added
+      // when there is a Brand DNA to lock onto and the kind is visual.
+      const VISUAL_KINDS = new Set([
+        'image', 'video', 'deck', 'slide', 'presentation', 'poster', 'prototype',
+        'page', 'landing', 'app', 'dashboard', 'wireframe', 'mock', 'mockup', 'design',
+      ]);
+      if (brand.brandDnaMd && brand.brandDnaMd.trim().length > 0 && VISUAL_KINDS.has(kind)) {
+        blocks.push(
+          `# Visual Brand Lock — apply to this ${kind} (non-negotiable)\n` +
+          'Before producing anything visual, extract these from the Brand DNA above and apply them VERBATIM:\n' +
+          '- **Color palette** — use the brand\'s exact colours (hex / named) for backgrounds, text, accents. No generic, default, or stock colours.\n' +
+          '- **Typography** — the brand\'s specified typefaces, weights, and size hierarchy.\n' +
+          '- **Iconography & imagery** — the brand\'s icon style and photo/illustration/texture treatment.\n' +
+          '- **Layout & composition** — the brand\'s grid, spacing density, and visual motifs.\n' +
+          'Hard rules: every colour, font, and motif must trace to the Brand DNA. Do NOT invent off-brand styling or fall back to a default theme. ' +
+          'If the Brand DNA omits a needed value, pick the closest on-brand option and note the choice. The result must be unmistakably this brand.',
+        );
+      }
       let recallText = '';
       if (brand.hivemindEnabled && brand.hivemindApiKey && query) {
         const lowered = query.toLowerCase().trim();
