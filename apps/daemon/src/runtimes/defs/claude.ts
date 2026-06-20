@@ -51,8 +51,16 @@ export const claudeAgentDef = {
       if (caps.partialMessages) {
         args.push('--include-partial-messages');
       }
+      // When Claude Code is routed to a custom provider (ANTHROPIC_BASE_URL,
+      // e.g. OpenRouter), the daemon's built-in model ids (claude-opus-4-8[1m])
+      // aren't valid there and would 404. Only pass --model if it's a provider
+      // slug (contains "/"); otherwise let the ANTHROPIC_MODEL env — set for the
+      // custom endpoint — govern the model.
+      const customBase = (process.env.ANTHROPIC_BASE_URL || '').trim() !== '';
       if (options.model && options.model !== 'default') {
-        args.push('--model', options.model);
+        if (!customBase || options.model.includes('/')) {
+          args.push('--model', options.model);
+        }
       }
       const dirs = (extraAllowedDirs || []).filter(
         (d) => typeof d === 'string' && d.length > 0,

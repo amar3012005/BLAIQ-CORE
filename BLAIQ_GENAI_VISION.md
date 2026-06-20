@@ -25,6 +25,13 @@ DNA + Tone + Hivemind = the context for **every** modality, not just text. (Stat
 
 ## BLAIQ GenAI — visioned features (brand-driven)
 
+### ✅✅ FULL MissionBuilder agent flow LIVE at full scale (2026-06-20)
+The GenAI agent path now runs **server-side via OpenRouter, no per-browser BYOK, no direct Anthropic key**. The bundled Claude Code CLI is routed to OpenRouter's Anthropic-compatible endpoint:
+- `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, `ANTHROPIC_AUTH_TOKEN=<OpenRouter key>`, `ANTHROPIC_MODEL=anthropic/claude-sonnet-4.6`, `ANTHROPIC_SMALL_FAST_MODEL=anthropic/claude-haiku-4.5`, `DISABLE_INTERLEAVED_THINKING=1`, `MAX_THINKING_TOKENS=0` (thinking off — OpenRouter's compat doesn't surface thinking tokens, which had returned empty results).
+- Daemon fixes: the tenant sandbox now forwards these vars (`sandboxed-spawn.ts`), and the claude adapter no longer forces its built-in `claude-opus-4-8[1m]` slug when a custom base URL is set, letting the OpenRouter model govern (`claude.ts`).
+
+**Proven end-to-end in the real app**: a plain German query in a mission ("Schreibe einen LinkedIn-Post über unsere KI-Markenplattform") → the daemon auto-applied Brand DNA + Tone (+Hivemind) → the agent generated an on-brand B&B post via `claude-sonnet-4.6` ("Mensch × Maschine = Marke … Sinn für Marken. Jetzt mit Maschine. #BBMarkenagentur") in 6s. **No brand info was typed by the user** — exactly the intended flow.
+
 ### ✅ Verified in the REAL MissionBuilder flow (2026-06-20)
 The canonical GenAI UI is **BlaiqShell + MissionBuilder** (5-step wizard: TYPE · NAME · BRAND · CONFIG · LAUNCH → `createProject` → agent → TextArtifact/Image/Video panels). Logged into the real app (session minted for the B&B tenant) and confirmed: a `deck` mission's generation injects, via `prompt-augment`, the **real B&B Brand DNA + Brand Tone + Visual Brand Lock** (dark #0A0A0A, orange #FF6008, Univers Next, signature dot, "Sinn für Marken"). Refinement shipped: the **deck-framework now binds the Brand DNA palette/typography to the deck `:root` with precedence** over design-system defaults — so pitch decks render on-brand, not on the generic placeholder theme. (Running a generation through the UI itself additionally needs an execution mode — Local CLI or BYOK key — configured for the user.)
 

@@ -73,6 +73,18 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      # Route the bundled Claude Code CLI agent through OpenRouter (Anthropic
+      # Messages API at /api/v1/messages) so MissionBuilder agent missions run
+      # server-side with no direct Anthropic key. Auth token = the OpenRouter key.
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-https://openrouter.ai/api}
+      ANTHROPIC_AUTH_TOKEN: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-anthropic/claude-sonnet-4.6}
+      ANTHROPIC_SMALL_FAST_MODEL: ${ANTHROPIC_SMALL_FAST_MODEL:-anthropic/claude-haiku-4.5}
+      # OpenRouter's Anthropic-compat doesn't surface thinking tokens, which made
+      # the CLI return empty results. Disable interleaved/extended thinking so the
+      # text response comes through cleanly.
+      DISABLE_INTERLEAVED_THINKING: ${DISABLE_INTERLEAVED_THINKING:-1}
+      MAX_THINKING_TOKENS: ${MAX_THINKING_TOKENS:-0}
       APP_DOMAIN: ${APP_DOMAIN:-}
       API_DOMAIN: ${API_DOMAIN:-}
       OD_RUN_MIGRATIONS: "1"

@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**MissionBuilder GenAI live at full scale — agent via OpenRouter, brand-locked (Track B)** — the real Open Design MissionBuilder agent now runs server-side over OpenRouter (bundled Claude Code routed to OpenRouter's Anthropic-compat endpoint; no BYOK, no direct Anthropic key). A plain user query auto-applies Brand DNA + Tone (+ Hivemind) and generates on-brand output. Proven live: a German LinkedIn-post mission → an on-brand B&B post via `claude-sonnet-4.6`, no brand info typed:
+
+![MissionBuilder agent — brand-locked LinkedIn post via OpenRouter](docs/progress/missionbuilder-agent-bb.png)
+
+
 **GenAI running at full scale — brand-locked image, server-side (Track B)** — Open Design's image pipeline (`POST /api/v1/image/render`) generates real media **server-side via the env OpenRouter key — no BYOK, no CLI** — and enriches every first-gen prompt with Brand DNA + Tone + Hivemind. Proven live in the real app (session into the B&B tenant): a B&B key visual on the real brand — dark `#0A0A0A`, orange `#FF6008` signature dot, "Mensch × Maschine = Marke" — from Nano Banana 2:
 
 ![Brand-locked B&B image generated server-side](docs/progress/genai-image-bb.png)

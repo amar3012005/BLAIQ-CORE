@@ -32,6 +32,17 @@ const SHARED_LLM_KEYS = [
   'GROQ_API_KEY',
   'MISTRAL_API_KEY',
   'XAI_API_KEY',
+  'OPENROUTER_API_KEY',
+  // Route the bundled Claude Code CLI through a custom provider (e.g. OpenRouter's
+  // Anthropic-compatible endpoint) so agent missions run server-side without an
+  // interactive `claude login`. Forwarded into the tenant sandbox so the spawned
+  // CLI can authenticate + pick the provider model.
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL',
+  'DISABLE_INTERLEAVED_THINKING',
+  'MAX_THINKING_TOKENS',
 ];
 
 // Vars that are always safe to forward from the daemon's own env.
