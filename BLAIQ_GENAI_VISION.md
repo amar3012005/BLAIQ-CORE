@@ -25,6 +25,13 @@ DNA + Tone + Hivemind = the context for **every** modality, not just text. (Stat
 
 ## BLAIQ GenAI — visioned features (brand-driven)
 
+### ✅ All four modalities verified end-to-end (2026-06-20)
+Driven live in the real app over OpenRouter, brand-locked, with built-in HITL:
+- **Text** ✅ — brand-toned LinkedIn post via `claude-sonnet-4.6`, plain query, no brand info typed.
+- **Image** ✅ — brand-locked B&B key visual (dark #0A0A0A, orange #FF6008 dot) server-side via `/api/v1/image/render` (brand DNA+Tone+Hivemind enrich).
+- **Deck** ✅ — full flow: query → "Quick brief" HITL form → agent builds a 6-slide brand-locked deck (Preview 01/06).
+- **Video** ✅ — `/api/v1/video/render`: brand recall → brand-aware German **discovery HITL gate** (visual concept / audience / voiceover / CTA / assets), pauses before frame render (`hitlEnabled` → no expensive cost to verify). Gates: discovery → script → references → frames.
+
 ### ✅✅ FULL MissionBuilder agent flow LIVE at full scale (2026-06-20)
 The GenAI agent path now runs **server-side via OpenRouter, no per-browser BYOK, no direct Anthropic key**. The bundled Claude Code CLI is routed to OpenRouter's Anthropic-compatible endpoint:
 - `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, `ANTHROPIC_AUTH_TOKEN=<OpenRouter key>`, `ANTHROPIC_MODEL=anthropic/claude-sonnet-4.6`, `ANTHROPIC_SMALL_FAST_MODEL=anthropic/claude-haiku-4.5`, `DISABLE_INTERLEAVED_THINKING=1`, `MAX_THINKING_TOKENS=0` (thinking off — OpenRouter's compat doesn't surface thinking tokens, which had returned empty results).
