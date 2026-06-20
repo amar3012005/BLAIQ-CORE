@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**GenAI · Campaign orchestrator — one brief → full on-brand campaign (Track B, Higgsfield-match #1)** — `POST /api/copilot/campaign` + Studio "✦ Campaign": one line in → concept (headline · big idea · key message · channels) + a brand-locked 5-slide deck + multi-platform social posts (one-click post links) + image & video briefs, all from Brand DNA + Tone. Verified live: "Launch our AI brand platform" → *"Mensch × Maschine. Endlich eine Marke."* with the #FF6008 dot motif throughout:
+
+![GenAI Campaign orchestrator — one brief, full campaign](docs/progress/studio-campaign.png)
+
+
 **GenAI video — full render to final.mp4, brand-locked (Track B)** — drove the video pipeline through every HITL gate (discovery → script → references → frames) to a finished video: **14.7s, H.264 + AAC, 848×480**, generated over OpenRouter + video provider, brand-aware throughout. A real rendered frame — cinematic eye with an orange `#FF6008`-rimmed iris and the dot as the pupil (Mensch × Maschine + the B&B signature dot):
 
 ![Frame from the rendered brand-locked B&B video](docs/progress/genai-video-frame-bb.png)

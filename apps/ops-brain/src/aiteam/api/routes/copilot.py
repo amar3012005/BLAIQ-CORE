@@ -1285,3 +1285,132 @@ async def generate_social(
         ),
         message="ok",
     )
+
+
+# ──────────────────────────────────────────────
+# GenAI · Campaign orchestrator (Track B). One brief → a coordinated, on-brand
+# campaign: concept + a brand-locked deck + multi-platform social copy + image/
+# video briefs. Reuses the deck + social engines; Brand DNA/Tone govern all of
+# it. Read-only on brand data; image/video render stays a separate explicit step.
+# ──────────────────────────────────────────────
+
+_CAMPAIGN_SYSTEM = """You are the campaign lead at the creative agency B&B Markenagentur.
+From the brief + the Brand DNA/Tone below, design ONE coordinated campaign. Brand Tone governs every word; Brand DNA governs visual direction.
+
+Respond with ONLY a JSON object:
+{
+  "headline": "the campaign's big headline",
+  "big_idea": "one-sentence creative idea / through-line",
+  "key_message": "the single message every asset must land",
+  "channels": ["LinkedIn", "Instagram", "..."],
+  "image_brief": "art-direction for the hero key visual — palette/typography/motif from the Brand DNA, the scene, mood (ready to feed an image model)",
+  "video_brief": "a 1-2 sentence teaser concept for a short brand video, on-brand",
+  "social": [ {"platform": "linkedin", "body": "ready-to-post copy", "hashtags": ["#one"]} ]
+}
+Rules: produce one social entry per requested platform, each in the right format + the brand's language (German if the brand is German). Output JSON only."""
+
+
+class CampaignRequest(BaseModel):
+    brief: str
+    platforms: list[str] = Field(default_factory=lambda: ["linkedin", "instagram"])
+    deck: bool = True
+
+
+class CampaignResponse(BaseModel):
+    headline: str
+    big_idea: str
+    key_message: str
+    channels: list[str] = Field(default_factory=list)
+    social: list[SocialArtifact] = Field(default_factory=list)
+    image_brief: str = ""
+    video_brief: str = ""
+    deck_html: str | None = None
+    deck_title: str | None = None
+    deck_slides: int = 0
+    model: str
+
+
+@router.post("/campaign", response_model=APIResponse[CampaignResponse])
+async def generate_campaign(
+    body: CampaignRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[CampaignResponse]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.brief.strip():
+        raise HTTPException(status_code=400, detail="empty brief")
+
+    dna, tone = await _load_brand_md(db, tenant_id)
+    platforms = [p.lower().strip() for p in (body.platforms or ["linkedin", "instagram"])][:5]
+
+    # 1) Campaign concept + social set + image/video briefs (one structured call).
+    concept_prompt = (
+        f"BRAND TONE:\n{tone or '(confident, concise)'}\n\n"
+        f"BRAND DNA:\n{dna or '(none)'}\n\n"
+        f"PLATFORMS: {', '.join(platforms)}\n\nCAMPAIGN BRIEF: {body.brief}"
+    )
+    res = await chat(
+        [{"role": "system", "content": _CAMPAIGN_SYSTEM}, {"role": "user", "content": concept_prompt}],
+        max_tokens=1600, temperature=0.5,
+    )
+    if not res.get("ok"):
+        raise HTTPException(status_code=503, detail=res.get("error") or "campaign generation unavailable")
+    try:
+        spec = _parse_briefing_json(res.get("text") or "")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=502, detail="campaign model returned unparseable output")
+    model_used = res.get("model") or copilot_model()
+
+    social: list[SocialArtifact] = []
+    for s in (spec.get("social") or []):
+        if not isinstance(s, dict):
+            continue
+        plat = str(s.get("platform") or "").lower().strip() or "linkedin"
+        text_body = str(s.get("body") or "").strip()
+        tags = [str(h).strip() for h in (s.get("hashtags") or []) if str(h).strip()]
+        social.append(SocialArtifact(
+            platform=plat, title=str(spec.get("headline") or body.brief)[:80],
+            body=text_body, hashtags=tags,
+            share_url=_social_share_url(plat, text_body, tags),
+            char_count=len(text_body), model=model_used,
+        ))
+
+    deck_html = deck_title = None
+    deck_slides = 0
+    if body.deck:
+        # 2) Deck for the campaign (reuses the brand-locked deck engine).
+        dprompt = (
+            f"BRAND DNA (visual identity):\n{dna or '(minimal, elegant defaults)'}\n\n"
+            f"BRAND TONE (voice):\n{tone or '(confident, concise)'}\n\n"
+            f"TOPIC: {spec.get('headline') or body.brief}\n"
+            f"Key message: {spec.get('key_message') or ''}\nMake exactly 5 content slides."
+        )
+        dres = await chat(
+            [{"role": "system", "content": _DECK_SYSTEM}, {"role": "user", "content": dprompt}],
+            max_tokens=1500, temperature=0.4,
+        )
+        if dres.get("ok"):
+            try:
+                dspec = _parse_briefing_json(dres.get("text") or "")
+                if isinstance(dspec, dict):
+                    deck_html = _render_deck_html(dspec)
+                    deck_title = str(dspec.get("title") or spec.get("headline") or body.brief)
+                    deck_slides = len(dspec.get("slides") or [])
+            except (ValueError, TypeError):
+                pass
+
+    return APIResponse(
+        data=CampaignResponse(
+            headline=str(spec.get("headline") or "").strip() or body.brief,
+            big_idea=str(spec.get("big_idea") or "").strip(),
+            key_message=str(spec.get("key_message") or "").strip(),
+            channels=[str(c) for c in (spec.get("channels") or [])],
+            social=social,
+            image_brief=str(spec.get("image_brief") or "").strip(),
+            video_brief=str(spec.get("video_brief") or "").strip(),
+            deck_html=deck_html, deck_title=deck_title, deck_slides=deck_slides,
+            model=model_used,
+        ),
+        message="ok",
+    )

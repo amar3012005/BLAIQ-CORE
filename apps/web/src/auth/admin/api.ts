@@ -878,6 +878,49 @@ export async function generateSocial(platform: SocialPlatform, topic: string): P
   return data.data;
 }
 
+// ── Campaign orchestrator: one brief → coordinated on-brand campaign ──
+
+export interface Campaign {
+  headline: string;
+  big_idea: string;
+  key_message: string;
+  channels: string[];
+  social: SocialArtifact[];
+  image_brief: string;
+  video_brief: string;
+  deck_html: string | null;
+  deck_title: string | null;
+  deck_slides: number;
+  model: string;
+}
+
+export async function generateCampaign(brief: string, platforms: SocialPlatform[] = ['linkedin', 'instagram'], deck = true): Promise<Campaign> {
+  if (PREVIEW) {
+    const mk = (platform: string, body: string, tags: string[]): SocialArtifact =>
+      ({ platform, title: 'Mensch × Maschine. Endlich eine Marke.', body, hashtags: tags, share_url: previewShareUrl(platform, body, tags), char_count: body.length, model: 'preview' });
+    return {
+      headline: 'Mensch × Maschine. Endlich eine Marke.',
+      big_idea: 'Die KI-Markenplattform von B&B macht aus dem Spannungsfeld von Intuition und Algorithmus das schärfste Markenwerkzeug — ein Punkt, der alles verändert.',
+      key_message: 'Menschliche Haltung und maschinelle Präzision zu echter Markenwirkung vereint.',
+      channels: ['LinkedIn', 'Instagram'],
+      social: [
+        mk('linkedin', 'Mensch × Maschine = Marke.\n\nUnsere KI-Markenplattform ist live — Markenstrategie, die denkt. Sinn für Marken, jetzt mit Maschine.', ['#Marke', '#KI', '#BBMarkenagentur']),
+        mk('instagram', 'Ein Punkt verändert alles. ●\nMensch × Maschine = Marke.', ['#SinnFürMarken', '#KIMarketing']),
+      ],
+      image_brief: 'Dark-first hero visual on #0A0A0A. A single large filled circle in #FF6008 — the B&B signature dot — centered, editorial restraint.',
+      video_brief: '15-Sek-Teaser: schwarzer Screen, ein oranger Punkt erscheint und pulsiert, Claim erscheint.',
+      deck_html: '<!DOCTYPE html><html><body style="background:#0A0A0A;color:#fff;font-family:sans-serif;padding:40px"><h1>Mensch × Maschine. Endlich eine Marke.</h1><p style="color:#FF6008">B&B · Preview campaign deck</p></body></html>',
+      deck_title: 'Mensch × Maschine. Endlich eine Marke.',
+      deck_slides: 5,
+      model: 'preview',
+    };
+  }
+  const data = await request<{ data: Campaign }>('/api/copilot/campaign', {
+    method: 'POST', body: JSON.stringify({ brief, platforms, deck }),
+  });
+  return data.data;
+}
+
 // ──────────────────────────────────────────────────────────────
 // POOOL sync summary (live ops.poool_cache) — shown in Finance
 // ──────────────────────────────────────────────────────────────
