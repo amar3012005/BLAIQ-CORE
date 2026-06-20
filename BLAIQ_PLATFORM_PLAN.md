@@ -83,12 +83,17 @@ What exists vs. what's real:
 - **Text** — generation works, brand-tone-aware. ✅
 - **Image** — 19 providers + dispatcher work, but **brand not locked into prompts**. 🟡
 - **Video** — full 7-stage pipeline (script→storyboard→ref→TTS→i2v→stitch) architected, but **UI doesn't drive it + brand not locked**. 🟡
-- **Decks** — 113+ templates + framework, but **UI stubbed + brand from design-system tokens, not Brand DNA**. 🟡
+- **Decks** — **brand-locked generation engine LIVE** (`POST /api/copilot/deck`): reads Brand DNA/Tone → LLM extracts on-brand palette/typography + writes slide copy in brand voice → renders a self-contained HTML deck whose `:root` carries the brand colours. Verified by *rendering the real output*: a 7-slide German deck using the exact brand palette (#F1F0EC/#111111/#6E6A63). UI trigger still pending (studio is auth-gated). ✅ engine / 🟡 UI
 - **Missions / Workflows / Swarm** — UI tabs present but stubbed; no persistent `ops.missions`. 🔴
 
 Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipped): a **Visual Brand Lock** block in `/api/v1/org/prompt-augment` that forces extraction + application of the brand palette/typography/iconography for visual kinds (image/video/deck/UI). Activates per-modality as each generation path adopts `prompt-augment`. Next: wire decks → images → video → persistent Missions (Track C convergence: deliver Admin jobs via generated artifacts).
 
 ## Progress screenshots
+
+**GenAI · Decks — brand-locked deck generation (Track B)** — `POST /api/copilot/deck` turns a topic into a clean, on-brand slide deck: the LLM pulls the palette/typography from the tenant's Brand DNA verbatim and writes the copy in Brand Tone; output is a self-contained HTML deck. This is the *actual rendered output* for "Markenstrategie & Kreativleistungen 2026", using the real brand colours:
+
+![Brand-locked generated deck slide](docs/progress/deck.png)
+
 
 **P5 — Intake: client inquiry → drafted job (workflow steps 1→2)** — paste a raw email/Protonet inquiry; the LLM extracts title, client, scope, and any stated budget and creates a quote-pending draft job in BLAIQ (auto job-number + server folder; POOOL push stays a separate explicit step). Source-agnostic `POST /api/jobs/intake`. Verified live on prod: a German inquiry → job `2026-027 "Imagebroschüre Voss Logistik"`, client *Voss Logistik GmbH*, €9,000 quote:
 

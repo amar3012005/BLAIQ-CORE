@@ -126,6 +126,22 @@ async def _build_job_context(db: AsyncSession, tenant_id: str) -> str:
     return summary + "JOB DATA:\n" + "\n".join(lines) + "\n"
 
 
+async def _load_brand_md(db: AsyncSession, tenant_id: str) -> tuple[str, str]:
+    """Read brand_dna_md + brand_tone_md from tenant_brand (read-only)."""
+    row = (
+        await db.execute(
+            text(
+                "SELECT brand_dna_md, brand_tone_md FROM tenant_brand "
+                "WHERE tenant_id = CAST(:tid AS uuid)"
+            ),
+            {"tid": tenant_id},
+        )
+    ).first()
+    if not row:
+        return "", ""
+    return (row[0] or ""), (row[1] or "")
+
+
 async def _poool_context_line(db: AsyncSession, tenant_id: str) -> str:
     """One-line real POOOL summary for the AI grounding context (read-only)."""
     row = (
@@ -1011,3 +1027,159 @@ async def briefing(
         )
 
     return APIResponse(data=data, message="ok")
+
+
+# ──────────────────────────────────────────────
+# GenAI · Decks (Track B). Brand-locked slide-deck generation: read the tenant's
+# Brand DNA + Tone, let the LLM extract on-brand visual tokens AND write the
+# slide content for a topic, then render a self-contained HTML deck whose :root
+# carries the brand palette/typography. Output is the actual deck (verifiable by
+# rendering it) — no POOOL, no external writes.
+# ──────────────────────────────────────────────
+
+import html as _html
+
+_DECK_SYSTEM = """You are a senior presentation designer at the creative agency B&B Markenagentur.
+Produce a clean, minimal, on-brand slide deck for the given topic.
+
+You are given the agency's Brand DNA (visual identity) and Brand Tone (voice). Rules:
+- Pull the colour palette and typography from the Brand DNA VERBATIM where given. For anything missing, choose the closest elegant on-brand value (do not invent loud/generic colours).
+- All copy must follow the Brand Tone — vocabulary, archetype, rhythm. Concise, confident, no filler.
+- Each content slide: a short heading + 2–4 tight bullet points. Avoid walls of text.
+
+Respond with ONLY a JSON object of exactly this shape:
+{
+  "title": "deck title",
+  "subtitle": "one-line subtitle",
+  "bg": "#hex background", "ink": "#hex main text", "muted": "#hex secondary text", "accent": "#hex accent",
+  "font": "a CSS font-family stack, e.g. 'Inter, Helvetica, Arial, sans-serif'",
+  "slides": [ {"heading": "...", "bullets": ["...", "..."]} ]
+}
+Output JSON only — no markdown fences, no prose."""
+
+
+class DeckRequest(BaseModel):
+    topic: str
+    slides: int = 6
+
+
+class DeckResponse(BaseModel):
+    html: str
+    title: str
+    slide_count: int
+    palette: dict
+    model: str
+
+
+def _render_deck_html(spec: dict) -> str:
+    bg = str(spec.get("bg") or "#F1F0EC")
+    ink = str(spec.get("ink") or "#111111")
+    muted = str(spec.get("muted") or "#6E6A63")
+    accent = str(spec.get("accent") or "#C8553D")
+    font = str(spec.get("font") or "'Inter', Helvetica, Arial, sans-serif")
+    title = _html.escape(str(spec.get("title") or "Untitled"))
+    subtitle = _html.escape(str(spec.get("subtitle") or ""))
+
+    def esc(s: object) -> str:
+        return _html.escape(str(s))
+
+    slides_html = [
+        f'<section class="slide title-slide active">'
+        f'<div class="kicker">B&amp;B MARKENAGENTUR</div>'
+        f'<h1>{title}</h1>'
+        f'<p class="sub">{subtitle}</p></section>'
+    ]
+    for i, sl in enumerate(spec.get("slides") or [], start=1):
+        if not isinstance(sl, dict):
+            continue
+        heading = esc(sl.get("heading") or "")
+        bullets = "".join(
+            f"<li>{esc(b)}</li>" for b in (sl.get("bullets") or []) if str(b).strip()
+        )
+        slides_html.append(
+            f'<section class="slide">'
+            f'<div class="num">{i:02d}</div>'
+            f'<h2>{heading}</h2>'
+            f'<ul>{bullets}</ul></section>'
+        )
+    total = len(slides_html)
+    body = "\n".join(slides_html)
+    return f"""<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+:root {{ --bg:{bg}; --ink:{ink}; --muted:{muted}; --accent:{accent}; --font:{font}; }}
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+html,body {{ height:100%; background:#111; font-family:var(--font); }}
+.stage {{ position:relative; width:100vw; height:100vh; overflow:hidden; }}
+.slide {{ position:absolute; inset:0; display:none; flex-direction:column; justify-content:center;
+  padding:9vh 10vw; background:var(--bg); color:var(--ink); }}
+.slide.active {{ display:flex; }}
+.kicker {{ font-size:1.1vw; letter-spacing:.4em; color:var(--muted); margin-bottom:3vh; }}
+.title-slide h1 {{ font-size:6.5vw; line-height:1.05; font-weight:800; letter-spacing:-.02em; max-width:80%; }}
+.title-slide .sub {{ font-size:2vw; color:var(--muted); margin-top:3vh; max-width:70%; }}
+.title-slide::after {{ content:""; position:absolute; left:10vw; bottom:9vh; width:9vw; height:.6vh; background:var(--accent); }}
+.slide h2 {{ font-size:3.6vw; font-weight:700; letter-spacing:-.01em; margin-bottom:4vh; }}
+.slide h2::before {{ content:""; display:block; width:6vw; height:.5vh; background:var(--accent); margin-bottom:2.5vh; }}
+.slide ul {{ list-style:none; display:flex; flex-direction:column; gap:2.4vh; }}
+.slide li {{ font-size:1.9vw; line-height:1.4; padding-left:2.4vw; position:relative; max-width:78%; }}
+.slide li::before {{ content:""; position:absolute; left:0; top:.8vh; width:1vw; height:1vw; background:var(--accent); border-radius:50%; }}
+.num {{ position:absolute; top:8vh; right:10vw; font-size:1.4vw; color:var(--accent); letter-spacing:.2em; }}
+.foot {{ position:fixed; bottom:3vh; right:4vw; font-size:1vw; color:var(--muted); z-index:5; }}
+</style></head>
+<body><div class="stage">
+{body}
+<div class="foot">B&amp;B · <span id="pg">1</span>/{total}</div>
+</div>
+<script>
+let i=0; const s=[...document.querySelectorAll('.slide')];
+function go(n){{ i=Math.max(0,Math.min(s.length-1,n)); s.forEach((e,k)=>e.classList.toggle('active',k===i)); document.getElementById('pg').textContent=i+1; }}
+document.addEventListener('keydown',e=>{{ if(e.key==='ArrowRight'||e.key===' ')go(i+1); if(e.key==='ArrowLeft')go(i-1); }});
+document.addEventListener('click',()=>go(i+1));
+</script></body></html>"""
+
+
+@router.post("/deck", response_model=APIResponse[DeckResponse])
+async def generate_deck(
+    body: DeckRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[DeckResponse]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.topic.strip():
+        raise HTTPException(status_code=400, detail="empty topic")
+
+    dna, tone = await _load_brand_md(db, tenant_id)
+    n = max(3, min(int(body.slides or 6), 12))
+    prompt = (
+        f"BRAND DNA (visual identity):\n{dna or '(none set — choose minimal, elegant defaults)'}\n\n"
+        f"BRAND TONE (voice):\n{tone or '(none set — confident, concise, professional)'}\n\n"
+        f"TOPIC: {body.topic}\nMake exactly {n} content slides."
+    )
+    result = await chat(
+        [{"role": "system", "content": _DECK_SYSTEM}, {"role": "user", "content": prompt}],
+        max_tokens=1500, temperature=0.4,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "deck generation unavailable")
+
+    try:
+        spec = _parse_briefing_json(result.get("text") or "")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=502, detail="deck model returned unparseable output")
+    if not isinstance(spec, dict):
+        raise HTTPException(status_code=502, detail="deck model returned no spec")
+
+    deck_html = _render_deck_html(spec)
+    palette = {k: spec.get(k) for k in ("bg", "ink", "muted", "accent", "font")}
+    return APIResponse(
+        data=DeckResponse(
+            html=deck_html,
+            title=str(spec.get("title") or body.topic),
+            slide_count=len(spec.get("slides") or []),
+            palette=palette,
+            model=result.get("model") or copilot_model(),
+        ),
+        message="ok",
+    )
