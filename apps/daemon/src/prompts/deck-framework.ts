@@ -318,7 +318,7 @@ Decks regress when each turn re-authors the scale-to-fit logic, the keyboard han
 When the user asks for slides, your TodoWrite plan **must** start with "copy the deck framework verbatim" before any content step. The intended order is:
 
 \`\`\`
-1.  Bind the active direction's palette + fonts to :root in the framework
+1.  Bind the BRAND DNA palette + fonts to :root in the framework — use the brand's EXACT colours and typefaces from the Brand DNA / Visual Brand Lock in your context (e.g. --bg = brand background, --fg = brand ink, --accent = brand accent). The Brand DNA takes precedence over any design-system or template default. No generic/placeholder colours.
 2.  Copy the canonical skeleton below as index.html (nothing else first)
 3.  Plan the slide arc and theme rhythm (state aloud before writing)
 4.  Add per-deck classes inside the second <style> block
@@ -335,7 +335,7 @@ When you start a new deck, your output is a single HTML file built from the cano
 
 You may edit only inside slots marked \`SLOT:\`:
 - \`SLOT: deck title\` — the \`<title>\` element.
-- \`SLOT: theme tokens\` — the \`:root\` CSS custom properties (\`--bg\`, \`--fg\`, \`--accent\`, \`--shell\`, …). Add new tokens here if needed.
+- \`SLOT: theme tokens\` — the \`:root\` CSS custom properties (\`--bg\`, \`--fg\`, \`--accent\`, \`--shell\`, …). These MUST be set to the Brand DNA's exact values where provided: \`--bg\` = brand background, \`--fg\` = brand ink, \`--accent\` = brand accent (hex verbatim), fonts = brand typefaces. Replace the placeholder defaults — never ship a deck on the generic defaults when a Brand DNA is in context. Add new tokens here if needed.
 - \`SLOT: per-deck styles\` — the second \`<style>\` block. Define classes used by your slide content (e.g. \`.title\`, \`.big-stat\`, \`.grid-3\`, custom typography). **Never redefine** \`.deck-shell\`, \`.deck-stage\`, \`.slide\`, \`.deck-counter\`, \`.deck-hint\`, or anything inside \`@media print\`.
 - \`SLOT: slides\` — the \`<section class="slide">\` blocks. Add as many as the brief calls for. The first slide MUST be \`<section class="slide active" …>\`; the rest are \`<section class="slide" …>\` (no \`active\`). The script auto-counts them.
 - \`SLOT: slide N content\` — content inside each \`<section>\`.

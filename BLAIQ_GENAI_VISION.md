@@ -25,6 +25,9 @@ DNA + Tone + Hivemind = the context for **every** modality, not just text. (Stat
 
 ## BLAIQ GenAI — visioned features (brand-driven)
 
+### ✅ Verified in the REAL MissionBuilder flow (2026-06-20)
+The canonical GenAI UI is **BlaiqShell + MissionBuilder** (5-step wizard: TYPE · NAME · BRAND · CONFIG · LAUNCH → `createProject` → agent → TextArtifact/Image/Video panels). Logged into the real app (session minted for the B&B tenant) and confirmed: a `deck` mission's generation injects, via `prompt-augment`, the **real B&B Brand DNA + Brand Tone + Visual Brand Lock** (dark #0A0A0A, orange #FF6008, Univers Next, signature dot, "Sinn für Marken"). Refinement shipped: the **deck-framework now binds the Brand DNA palette/typography to the deck `:root` with precedence** over design-system defaults — so pitch decks render on-brand, not on the generic placeholder theme. (Running a generation through the UI itself additionally needs an execution mode — Local CLI or BYOK key — configured for the user.)
+
 ### A. Brand Studio (foundation)
 - Brand DNA + Brand Tone editor ✅ (exists). **Compile DNA → machine-readable tokens** (palette hex, typography, iconography, voice pillars, vocabulary) cached per tenant; injected into *every* modality. Visual Brand Lock ✅ shipped (prompt-level); next: structured token compile.
 
