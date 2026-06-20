@@ -182,9 +182,15 @@ export function registerBrandRoutes(router: Router): void {
             lowered,
           );
         const isTextKind = kind === 'text';
+        const isVisualKind = VISUAL_KINDS.has(kind);
+        // Every modality gets company context. Text + questions recall as before,
+        // and visual builds (image/video/deck/...) now recall too — so creative
+        // output is grounded in the company brain, not just the prompt. Together
+        // with the Brand DNA + Brand Tone blocks above this is the three-layer
+        // context (DNA + Tone + Hivemind) every BLAIQ generation runs on.
         const shouldRecall =
           query.length > 0 &&
-          (isTextKind || (query.length < 320 && (isQuestion || !isBuildVerb)));
+          (isTextKind || isVisualKind || (query.length < 320 && (isQuestion || !isBuildVerb)));
         if (shouldRecall) {
           const { hivemindRecall } = await import('./hivemind-client.js');
           const recall = await hivemindRecall(brand.hivemindUrl, brand.hivemindApiKey, query, 6);

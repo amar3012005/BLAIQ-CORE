@@ -2,7 +2,15 @@
 
 **Reference:** Higgsfield AI Marketing Studio (researched 2026-06-20). **Differentiator:** Higgsfield extracts a brand *per product URL, per session*; BLAIQ has **persistent Brand DNA + Brand Tone per tenant** — agency-grade, reused across every asset, every client, every campaign. Every BLAIQ generation is on-brand *by construction*.
 
-This is the target feature set for BLAIQ GenAI. Each feature is driven by Brand DNA + Brand Tone.
+This is the target feature set for BLAIQ GenAI. **Every generation — images, video, pitch text, social artifacts (Instagram/LinkedIn/reports), decks — runs on the same three context layers:**
+
+## Context architecture (the core principle)
+Every BLAIQ GenAI output is grounded by **three layers**, injected before generation:
+1. **Brand DNA** — visual identity (palette, typography, iconography, texture). → on-brand visuals.
+2. **Brand Tone** — voice, vocabulary, archetype, grammar. → on-brand copy.
+3. **Hivemind recall** — the company brain (`hivemind_recall` MCP, daemon-side preflight) pulls the *right company/product/campaign facts* for the specific request and injects them as context.
+
+DNA + Tone + Hivemind = the context for **every** modality, not just text. (Status: prompt-augment injects all three; Hivemind recall was text/question-only and is now extended to visual builds too — image/video/deck. The ops-brain deck engine still needs the Hivemind layer wired — follow-up.)
 
 ## What Higgsfield Marketing Studio does (the bar)
 - **URL → assets**: paste a product/app URL → auto-extract product name, description, images, brand colours.
