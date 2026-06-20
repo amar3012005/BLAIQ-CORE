@@ -33,6 +33,7 @@ DNA + Tone + Hivemind = the context for **every** modality, not just text. (Stat
 
 ### C. Modality engines (precise, clean, on-brand)
 - **Text/Copy** ✅ — brand-tone-aware (ads, captions, scripts, proposals).
+- **Social artifacts** ✅ — `POST /api/copilot/social`: Instagram/LinkedIn/X/Facebook/report copy + hashtags, brand-toned, with a **one-click prefilled "Post to {platform}"** composer link (real API auto-post = future OAuth, per platform). In the GenAI Studio tab.
 - **Decks** ✅ v1 — brand-locked HTML deck generation (engine live). Next: more layouts, export, deck templates library.
 - **Images** 🔜 — brand-locked product/marketing images: product shots, billboard/OOH, bullet-time rotation, try-on, lifestyle. Multi-angle/"Shots", relight, background-remove, expand. (19 providers wired.)
 - **Video** 🔜 — UGC / CGI / cinematic / TV-spot via the existing 7-stage pipeline + Higgsfield/Seedance (key already in `tenant_brand`). Brand DNA into the script + visual direction; HITL gate before the expensive render.

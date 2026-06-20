@@ -1183,3 +1183,105 @@ async def generate_deck(
         ),
         message="ok",
     )
+
+
+# ──────────────────────────────────────────────
+# GenAI · Social artifacts (Track B). Brand-locked copy for social platforms +
+# reports, in Brand Tone, with a prefilled one-click "post" link to the
+# platform's web composer (the user clicks publish — no API creds needed).
+# Read-only on brand data; no external writes.
+# ──────────────────────────────────────────────
+
+from urllib.parse import quote as _urlquote
+
+_SOCIAL_GUIDANCE = {
+    "instagram": "Instagram caption: a punchy hook line, 2–4 short lines with line breaks, at most 1–2 emoji, end with 5–10 relevant hashtags.",
+    "linkedin": "LinkedIn post: a strong first-line hook, 2–3 short paragraphs, a clear CTA, 3–5 professional hashtags. Confident, no fluff.",
+    "x": "X / Twitter post: ONE post under 280 characters total, 1–2 hashtags max, sharp and quotable.",
+    "facebook": "Facebook post: conversational, medium length, one clear point + CTA, 2–4 hashtags.",
+    "report": "Short report / executive summary: a title, 3–5 sections with a heading + 1–2 sentences each. No hashtags, no emoji. Professional.",
+}
+
+_SOCIAL_SYSTEM = """You are the social & content lead at the creative agency B&B Markenagentur.
+Write a single ready-to-publish piece for the requested platform about the topic.
+The Brand Tone below governs every word — vocabulary, archetype, rhythm. Match the platform's format exactly.
+
+Respond with ONLY a JSON object:
+{ "title": "short internal title", "body": "the full post text, ready to publish", "hashtags": ["#one", "#two"] }
+- body: the complete copy, in the brand's language (German if the brand is German). Include line breaks where natural. Do NOT put the hashtags inside body — list them in the hashtags array.
+- hashtags: [] for reports. Output JSON only."""
+
+
+class SocialRequest(BaseModel):
+    platform: str = "linkedin"
+    topic: str
+
+
+class SocialArtifact(BaseModel):
+    platform: str
+    title: str
+    body: str
+    hashtags: list[str] = Field(default_factory=list)
+    share_url: str | None = None
+    char_count: int = 0
+    model: str
+
+
+def _social_share_url(platform: str, body: str, hashtags: list[str]) -> str | None:
+    tags = " ".join(hashtags)
+    full = (body + ("\n\n" + tags if tags else "")).strip()
+    enc = _urlquote(full)
+    if platform == "linkedin":
+        return f"https://www.linkedin.com/feed/?shareActive=true&text={enc}"
+    if platform == "x":
+        return f"https://twitter.com/intent/tweet?text={enc}"
+    if platform == "facebook":
+        return f"https://www.facebook.com/sharer/sharer.php?u=https://bundb.de&quote={enc}"
+    # instagram has no web post-composer intent; report is a document → no link.
+    return None
+
+
+@router.post("/social", response_model=APIResponse[SocialArtifact])
+async def generate_social(
+    body: SocialRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[SocialArtifact]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.topic.strip():
+        raise HTTPException(status_code=400, detail="empty topic")
+    platform = (body.platform or "linkedin").lower().strip()
+    guidance = _SOCIAL_GUIDANCE.get(platform, _SOCIAL_GUIDANCE["linkedin"])
+
+    dna, tone = await _load_brand_md(db, tenant_id)
+    prompt = (
+        f"BRAND TONE (voice — follow exactly):\n{tone or '(confident, concise, professional)'}\n\n"
+        f"BRAND DNA (for context):\n{dna or '(none)'}\n\n"
+        f"PLATFORM: {platform}\nFORMAT: {guidance}\n\nTOPIC: {body.topic}"
+    )
+    result = await chat(
+        [{"role": "system", "content": _SOCIAL_SYSTEM}, {"role": "user", "content": prompt}],
+        max_tokens=800, temperature=0.5,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "social generation unavailable")
+    try:
+        spec = _parse_briefing_json(result.get("text") or "")
+    except (ValueError, TypeError):
+        spec = {"title": body.topic, "body": (result.get("text") or "").strip(), "hashtags": []}
+
+    text_body = str(spec.get("body") or "").strip()
+    tags = [str(h).strip() for h in (spec.get("hashtags") or []) if str(h).strip()]
+    return APIResponse(
+        data=SocialArtifact(
+            platform=platform,
+            title=str(spec.get("title") or body.topic).strip(),
+            body=text_body,
+            hashtags=tags,
+            share_url=_social_share_url(platform, text_body, tags),
+            char_count=len(text_body),
+            model=result.get("model") or copilot_model(),
+        ),
+        message="ok",
+    )

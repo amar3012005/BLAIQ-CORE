@@ -15,6 +15,7 @@ import SettingsBoard from './SettingsBoard';
 import CopilotBoard from './CopilotBoard';
 import CrewBoard from './CrewBoard';
 import BriefingBoard from './BriefingBoard';
+import StudioBoard from './StudioBoard';
 import IntakeBoard from './IntakeBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
@@ -23,6 +24,7 @@ type TabId =
   | 'briefing'
   | 'copilot'
   | 'crew'
+  | 'studio'
   | 'intake'
   | 'jobs'
   | 'finance'
@@ -43,6 +45,7 @@ const SECTIONS: Section[] = [
       { id: 'briefing', label: 'Briefing', hint: 'Daily Chief-of-Staff digest' },
       { id: 'copilot', label: 'Copilot', hint: 'Ask + act on your agency' },
       { id: 'crew', label: 'Crew', hint: 'Specialist agents deliberate' },
+      { id: 'studio', label: 'Studio', hint: 'Decks + social, one-click post' },
     ],
   },
   {
@@ -169,6 +172,7 @@ export default function AdminShell(): JSX.Element {
           {tab === 'briefing' && <BriefingBoard />}
           {tab === 'copilot' && <CopilotBoard />}
           {tab === 'crew' && <CrewBoard />}
+          {tab === 'studio' && <StudioBoard />}
           {tab === 'intake' && <IntakeBoard />}
           {tab === 'jobs' && <JobBoard />}
           {tab === 'finance' && <FinanceBoard />}

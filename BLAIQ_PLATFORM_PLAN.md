@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**GenAI Studio — social artifacts + one-click post (Track B)** — `POST /api/copilot/social` writes brand-toned copy per platform (Instagram / LinkedIn / X / Facebook / report) with hashtags, and a **prefilled one-click "Post to {platform}"** link to the platform's web composer (you click publish — no API creds needed; Instagram/report fall back to copy). Plus deck generate + download (.html → PDF). Verified e2e: a 507-char on-brand LinkedIn post + share URL, and an Instagram caption with the signature dot + 10 hashtags:
+
+![GenAI Studio — social post with one-click Post to LinkedIn](docs/progress/studio-social.png)
+
+
 **GenAI · Decks — brand-locked deck generation in the REAL B&B brand (Track B)** — `POST /api/copilot/deck` turns a topic into a clean, on-brand slide deck. The tenant's Brand DNA + Tone are now the **real B&B identity** (dark `#0A0A0A`, B&B Orange `#FF6008`, Univers Next, signature dot, "Sinn für Marken" — sourced from the agency's own bb-* skills + bundb.de). Same engine, real brand → authentic output: dark slides, orange accents, copy in B&B voice ("Mensch × Maschine = Marke"). Actual rendered output:
 
 ![B&B-branded generated deck slide — dark + orange #FF6008](docs/progress/deck-bb-brand.png)

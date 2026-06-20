@@ -820,6 +820,65 @@ export async function getBriefing(): Promise<Briefing> {
 }
 
 // ──────────────────────────────────────────────────────────────
+// GenAI Studio — decks + social artifacts (brand-locked, Track B)
+// ──────────────────────────────────────────────────────────────
+
+export interface DeckResult {
+  html: string;
+  title: string;
+  slide_count: number;
+  palette: Record<string, unknown>;
+  model: string;
+}
+
+export async function generateDeck(topic: string, slides = 6): Promise<DeckResult> {
+  if (PREVIEW) {
+    const html = `<!DOCTYPE html><html><body style="background:#0A0A0A;color:#fff;font-family:sans-serif;padding:40px"><h1 style="color:#fff">${topic}</h1><p style="color:#FF6008">B&B · Preview deck</p></body></html>`;
+    return { html, title: topic, slide_count: slides, palette: { bg: '#0A0A0A', accent: '#FF6008' }, model: 'preview' };
+  }
+  const data = await request<{ data: DeckResult }>('/api/copilot/deck', {
+    method: 'POST', body: JSON.stringify({ topic, slides }),
+  });
+  return data.data;
+}
+
+export type SocialPlatform = 'instagram' | 'linkedin' | 'x' | 'facebook' | 'report';
+
+export interface SocialArtifact {
+  platform: string;
+  title: string;
+  body: string;
+  hashtags: string[];
+  share_url: string | null;
+  char_count: number;
+  model: string;
+}
+
+function previewShareUrl(platform: string, body: string, hashtags: string[]): string | null {
+  const full = encodeURIComponent((body + (hashtags.length ? '\n\n' + hashtags.join(' ') : '')).trim());
+  if (platform === 'linkedin') return `https://www.linkedin.com/feed/?shareActive=true&text=${full}`;
+  if (platform === 'x') return `https://twitter.com/intent/tweet?text=${full}`;
+  if (platform === 'facebook') return `https://www.facebook.com/sharer/sharer.php?u=https://bundb.de&quote=${full}`;
+  return null;
+}
+
+export async function generateSocial(platform: SocialPlatform, topic: string): Promise<SocialArtifact> {
+  if (PREVIEW) {
+    const tags = platform === 'report' ? [] : ['#SinnFürMarken', '#Markenagentur', '#KI'];
+    const body = platform === 'report'
+      ? `# ${topic}\n\nMensch × Maschine = Marke. Diese Kurzanalyse fasst die Kernpunkte zusammen — klar, wirkungsvoll, unverwechselbar.`
+      : platform === 'x'
+        ? `Marken entstehen nicht durch Zufall — sie werden gestaltet. ${topic}.`
+        : `Mensch × Maschine = Marke.\n\n${topic}: Wir verbinden strategische Intuition mit KI-gestützter Kreativität — für Marken mit Haltung.\n\nKein Trend. Kein Zufall. Sinn.`;
+    return { platform, title: topic, body, hashtags: tags, share_url: previewShareUrl(platform, body, tags), char_count: body.length, model: 'preview' };
+  }
+  const data = await request<{ data: SocialArtifact }>('/api/copilot/social', {
+    method: 'POST', body: JSON.stringify({ platform, topic }),
+  });
+  return data.data;
+}
+
+// ──────────────────────────────────────────────────────────────
 // POOOL sync summary (live ops.poool_cache) — shown in Finance
 // ──────────────────────────────────────────────────────────────
 
