@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**GenAI video — full render to final.mp4, brand-locked (Track B)** — drove the video pipeline through every HITL gate (discovery → script → references → frames) to a finished video: **14.7s, H.264 + AAC, 848×480**, generated over OpenRouter + video provider, brand-aware throughout. A real rendered frame — cinematic eye with an orange `#FF6008`-rimmed iris and the dot as the pupil (Mensch × Maschine + the B&B signature dot):
+
+![Frame from the rendered brand-locked B&B video](docs/progress/genai-video-frame-bb.png)
+
+
 **MissionBuilder deck — full HITL flow, brand-locked, end-to-end (Track B)** — a plain query → the agent's **"Quick brief" HITL discovery form** (audience / speaker notes / story arc / content) → on answering, the agent builds a **6-slide brand-locked B&B deck** (dark `#0A0A0A`, orange `#FF6008` signature dot), rendered live in Preview (01/06). All via OpenRouter, no brand info typed. Left: the HITL form; right: the built deck.
 
 ![MissionBuilder deck HITL discovery form](docs/progress/missionbuilder-deck-hitl.png)

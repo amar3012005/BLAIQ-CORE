@@ -30,7 +30,7 @@ Driven live in the real app over OpenRouter, brand-locked, with built-in HITL:
 - **Text** ✅ — brand-toned LinkedIn post via `claude-sonnet-4.6`, plain query, no brand info typed.
 - **Image** ✅ — brand-locked B&B key visual (dark #0A0A0A, orange #FF6008 dot) server-side via `/api/v1/image/render` (brand DNA+Tone+Hivemind enrich).
 - **Deck** ✅ — full flow: query → "Quick brief" HITL form → agent builds a 6-slide brand-locked deck (Preview 01/06).
-- **Video** ✅ — `/api/v1/video/render`: brand recall → brand-aware German **discovery HITL gate** (visual concept / audience / voiceover / CTA / assets), pauses before frame render (`hitlEnabled` → no expensive cost to verify). Gates: discovery → script → references → frames.
+- **Video** ✅ — `/api/v1/video/render`: brand recall → brand-aware German discovery HITL gate → script → reference sheets → i2v frames → stitch. **Full render proven**: drove all gates to a finished **final.mp4 (14.7s, H.264+AAC, 848×480)**, brand-aware (dark, orange #FF6008, eye+dot = Mensch×Maschine). Gates: discovery → script → references → frames, each via `POST /api/v1/video/:projectId/hitl/:gate {approve}`.
 
 ### ✅✅ FULL MissionBuilder agent flow LIVE at full scale (2026-06-20)
 The GenAI agent path now runs **server-side via OpenRouter, no per-browser BYOK, no direct Anthropic key**. The bundled Claude Code CLI is routed to OpenRouter's Anthropic-compatible endpoint:
