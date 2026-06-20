@@ -90,6 +90,13 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**GenAI running at full scale — brand-locked image, server-side (Track B)** — Open Design's image pipeline (`POST /api/v1/image/render`) generates real media **server-side via the env OpenRouter key — no BYOK, no CLI** — and enriches every first-gen prompt with Brand DNA + Tone + Hivemind. Proven live in the real app (session into the B&B tenant): a B&B key visual on the real brand — dark `#0A0A0A`, orange `#FF6008` signature dot, "Mensch × Maschine = Marke" — from Nano Banana 2:
+
+![Brand-locked B&B image generated server-side](docs/progress/genai-image-bb.png)
+
+**Architecture note (headless scale):** image / video / audio / memory run server-side from env keys today. Chat/text/deck generation goes through OD's agent path — a server-side CLI agent OR per-browser BYOK; a server-side direct-API chat mode (daemon → env OpenRouter) is the keystone next build for fully headless text/deck at scale. Admin + GenAI already share one frontend (BlaiqShell bottom nav: Home·Missions·…·**Admin**).
+
+
 **GenAI Studio — social artifacts + one-click post (Track B)** — `POST /api/copilot/social` writes brand-toned copy per platform (Instagram / LinkedIn / X / Facebook / report) with hashtags, and a **prefilled one-click "Post to {platform}"** link to the platform's web composer (you click publish — no API creds needed; Instagram/report fall back to copy). Plus deck generate + download (.html → PDF). Verified e2e: a 507-char on-brand LinkedIn post + share URL, and an Instagram caption with the signature dot + 10 hashtags:
 
 ![GenAI Studio — social post with one-click Post to LinkedIn](docs/progress/studio-social.png)
