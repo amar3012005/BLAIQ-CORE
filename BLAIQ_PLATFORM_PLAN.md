@@ -90,9 +90,9 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
-**GenAI · Decks — brand-locked deck generation (Track B)** — `POST /api/copilot/deck` turns a topic into a clean, on-brand slide deck: the LLM pulls the palette/typography from the tenant's Brand DNA verbatim and writes the copy in Brand Tone; output is a self-contained HTML deck. This is the *actual rendered output* for "Markenstrategie & Kreativleistungen 2026", using the real brand colours:
+**GenAI · Decks — brand-locked deck generation in the REAL B&B brand (Track B)** — `POST /api/copilot/deck` turns a topic into a clean, on-brand slide deck. The tenant's Brand DNA + Tone are now the **real B&B identity** (dark `#0A0A0A`, B&B Orange `#FF6008`, Univers Next, signature dot, "Sinn für Marken" — sourced from the agency's own bb-* skills + bundb.de). Same engine, real brand → authentic output: dark slides, orange accents, copy in B&B voice ("Mensch × Maschine = Marke"). Actual rendered output:
 
-![Brand-locked generated deck slide](docs/progress/deck.png)
+![B&B-branded generated deck slide — dark + orange #FF6008](docs/progress/deck-bb-brand.png)
 
 
 **P5 — Intake: client inquiry → drafted job (workflow steps 1→2)** — paste a raw email/Protonet inquiry; the LLM extracts title, client, scope, and any stated budget and creates a quote-pending draft job in BLAIQ (auto job-number + server folder; POOOL push stays a separate explicit step). Source-agnostic `POST /api/jobs/intake`. Verified live on prod: a German inquiry → job `2026-027 "Imagebroschüre Voss Logistik"`, client *Voss Logistik GmbH*, €9,000 quote:
