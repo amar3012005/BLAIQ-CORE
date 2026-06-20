@@ -90,6 +90,12 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**MissionBuilder deck — full HITL flow, brand-locked, end-to-end (Track B)** — a plain query → the agent's **"Quick brief" HITL discovery form** (audience / speaker notes / story arc / content) → on answering, the agent builds a **6-slide brand-locked B&B deck** (dark `#0A0A0A`, orange `#FF6008` signature dot), rendered live in Preview (01/06). All via OpenRouter, no brand info typed. Left: the HITL form; right: the built deck.
+
+![MissionBuilder deck HITL discovery form](docs/progress/missionbuilder-deck-hitl.png)
+![MissionBuilder built brand-locked deck](docs/progress/missionbuilder-deck-bb.png)
+
+
 **MissionBuilder GenAI live at full scale — agent via OpenRouter, brand-locked (Track B)** — the real Open Design MissionBuilder agent now runs server-side over OpenRouter (bundled Claude Code routed to OpenRouter's Anthropic-compat endpoint; no BYOK, no direct Anthropic key). A plain user query auto-applies Brand DNA + Tone (+ Hivemind) and generates on-brand output. Proven live: a German LinkedIn-post mission → an on-brand B&B post via `claude-sonnet-4.6`, no brand info typed:
 
 ![MissionBuilder agent — brand-locked LinkedIn post via OpenRouter](docs/progress/missionbuilder-agent-bb.png)
