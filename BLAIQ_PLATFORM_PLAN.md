@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**Campaign now auto-renders a real brand key visual (Track B)** — the orchestrator renders the hero image into the OD project (not just a brief): one brief → project with `campaign.md` + `deck.html` + a real on-brand `image_v1.png`. Verified: a dark `#0A0A0A` key visual with the orange `#FF6008` dot and the **B&B.** wordmark:
+
+![Auto-rendered B&B campaign key visual](docs/progress/campaign-hero-bb.png)
+
+
 **Campaign orchestrator unified with Open Design — one system (Track B+C)** — the orchestrator now **creates a real Open Design project and writes the campaign assets into it** (`deck.html` + `campaign.md`) via the daemon trust bridge, so Studio output lives in OD's project/Artifacts system (editable in MissionBuilder) — not a parallel surface. Optional `job_number` ties a campaign to a POOOL job (Admin↔GenAI convergence). The real OD project with its files:
 
 ![Campaign saved as a real Open Design project](docs/progress/campaign-od-project.png)

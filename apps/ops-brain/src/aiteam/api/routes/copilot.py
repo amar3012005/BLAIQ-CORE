@@ -1310,7 +1310,7 @@ Respond with ONLY a JSON object:
 Rules: produce one social entry per requested platform, each in the right format + the brand's language (German if the brand is German). Output JSON only."""
 
 
-async def _daemon_post(tenant_id: str, path: str, body: dict) -> dict | None:
+async def _daemon_post(tenant_id: str, path: str, body: dict, timeout: float = 30.0) -> dict | None:
     """Trusted server-to-server POST to the Open Design daemon (verifyOpsTrust:
     X-Ops-Trust = HMAC(OPS_BRAIN_TRUST_TOKEN, '<tenant>:<ts>')). Used to create a
     real OD project + write campaign assets into it so Studio output lives in the
@@ -1332,7 +1332,7 @@ async def _daemon_post(tenant_id: str, path: str, body: dict) -> dict | None:
             token.encode("utf-8"), f"{tenant_id}:{ts}".encode("utf-8"), hashlib.sha256
         ).hexdigest()
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(base + path, json=body, headers=headers)
             if r.status_code >= 400:
                 logger.warning("daemon POST %s -> %s %s", path, r.status_code, r.text[:200])
@@ -1368,6 +1368,7 @@ class CampaignRequest(BaseModel):
     deck: bool = True
     job_number: str | None = None   # optional: link the campaign to a POOOL job (Track C)
     create_project: bool = True     # create a real Open Design project + write assets
+    render_image: bool = True       # also render the real key-visual image into the project
 
 
 class CampaignResponse(BaseModel):
@@ -1383,6 +1384,7 @@ class CampaignResponse(BaseModel):
     deck_slides: int = 0
     od_project_id: str | None = None   # real Open Design project holding the assets
     od_project_url: str | None = None  # open in the OD workspace / Artifacts
+    hero_image_path: str | None = None # rendered brand key-visual in the project
     job_number: str | None = None
     model: str
 
@@ -1463,7 +1465,7 @@ async def generate_campaign(
     # Unify with Open Design: create a real OD project and write the campaign
     # assets into it (deck.html + campaign.md), so Studio output lands in the
     # same project/Artifacts system as MissionBuilder — one system, not two.
-    od_project_id = od_project_url = None
+    od_project_id = od_project_url = od_hero_image_path = None
     if body.create_project:
         import uuid as _uuid
         pid = f"campaign-{_uuid.uuid4().hex[:10]}"
@@ -1479,6 +1481,16 @@ async def generate_campaign(
             await _daemon_post(tenant_id, f"/api/projects/{pid}/files", {"name": "campaign.md", "content": md})
             if deck_html:
                 await _daemon_post(tenant_id, f"/api/projects/{pid}/files", {"name": "deck.html", "content": deck_html})
+            # Render the real brand key-visual into the same project (the daemon's
+            # image pipeline re-enriches the brief with Brand DNA+Tone+Hivemind).
+            if body.render_image and image_brief:
+                img = await _daemon_post(
+                    tenant_id, "/api/v1/image/render",
+                    {"project_id": pid, "prompt": image_brief, "aspect": "16:9"},
+                    timeout=90.0,
+                )
+                if img and img.get("file_path"):
+                    od_hero_image_path = img["file_path"]
 
     return APIResponse(
         data=CampaignResponse(
@@ -1491,6 +1503,7 @@ async def generate_campaign(
             video_brief=video_brief,
             deck_html=deck_html, deck_title=deck_title, deck_slides=deck_slides,
             od_project_id=od_project_id, od_project_url=od_project_url,
+            hero_image_path=od_hero_image_path,
             job_number=body.job_number,
             model=model_used,
         ),

@@ -893,6 +893,7 @@ export interface Campaign {
   deck_slides: number;
   od_project_id: string | null;
   od_project_url: string | null;
+  hero_image_path: string | null;
   job_number: string | null;
   model: string;
 }
@@ -917,6 +918,7 @@ export async function generateCampaign(brief: string, platforms: SocialPlatform[
       deck_slides: 5,
       od_project_id: 'campaign-preview',
       od_project_url: '/projects/campaign-preview',
+      hero_image_path: null,
       job_number: null,
       model: 'preview',
     };

@@ -259,6 +259,14 @@ function CampaignView(): JSX.Element {
             </div>
           </div>
 
+          {/* Hero key visual (real rendered brand image) */}
+          {c.hero_image_path && (
+            <div style={card}>
+              <div style={lbl}>KEY VISUAL — RENDERED</div>
+              <img src={c.hero_image_path} alt="campaign key visual" style={{ width: '100%', maxWidth: 640, borderRadius: 8, display: 'block' }} />
+            </div>
+          )}
+
           {/* Deck */}
           {c.deck_html && (
             <div style={card}>
