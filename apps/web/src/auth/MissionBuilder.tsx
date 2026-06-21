@@ -418,15 +418,27 @@ export default function MissionBuilder({
                   padding: '20px 18px',
                   background: active ? P.selected : P.card,
                   border: `1.5px solid ${active ? P.accent : P.divider}`,
+                  borderRadius: 10,
+                  boxShadow: active ? '0 6px 20px rgba(255,106,42,0.12)' : '0 1px 2px rgba(17,17,17,0.05)',
                   cursor: 'pointer',
-                  transition: 'all 180ms ease',
+                  transition: 'background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
                   ...sans,
                 }}
                 onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.background = P.hover;
+                  if (!active) {
+                    e.currentTarget.style.background = P.hover;
+                    e.currentTarget.style.borderColor = P.accentBorder;
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(17,17,17,0.08)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.background = P.card;
+                  if (!active) {
+                    e.currentTarget.style.background = P.card;
+                    e.currentTarget.style.borderColor = P.divider;
+                    e.currentTarget.style.boxShadow = '0 1px 2px rgba(17,17,17,0.05)';
+                    e.currentTarget.style.transform = 'none';
+                  }
                 }}
               >
                 {active && (
@@ -1551,6 +1563,7 @@ function StepHeader({ label, sub }: { label: string; sub: string }): JSX.Element
         color: P.ink,
         margin: 0,
         lineHeight: 1.2,
+        letterSpacing: '-0.02em',
       }}>
         {label}
       </h2>

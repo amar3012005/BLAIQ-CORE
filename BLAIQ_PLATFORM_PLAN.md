@@ -355,3 +355,13 @@ Feasibility-first, value-first — each step unlocks the next:
 **Admin · Clients — per-client book (Track A)** — new Clients tab + `GET /api/copilot/clients`: jobs grouped by client with quoted/invoiced/paid/overdue + last activity, read-only from `ops.jobs`. Verified live (Stadtwerke €12,500 overdue, Café Mehlwald €6,200 paid):
 
 ![Admin Clients — per-client book](docs/progress/admin-clients.png)
+
+**UI/UX polish — shared design language (Admin + GenAI)** — a coherent design pass across both surfaces:
+- **Shared token foundation** (`admin/theme.ts`): semantic colors (ok/danger/warn) replacing scattered hex, radius/shadow/transition scale, a `card()` helper, a `title` type token, and a `THEME_CSS` stylesheet giving inline-styled components real `:hover` states (cards lift, rows highlight, nav items respond).
+- **Admin nav**: active item now reads as a raised white pill with accent bar; every item has hover feedback (previously none).
+- **Job cards**: redesigned from a cramped left-packed column into a two-column card — identity + status pills left, **prominent right-aligned amount** (was buried in 8px mono) with a `● PAST DUE` flag; rounded, shadowed, hover-lift.
+- **Clients/Briefing**: row hover, consistent semantic colors, soft card shadows.
+- **GenAI** (MissionBuilder + BlaiqShell): type cards gained matching radius + hover-lift + shadow; search box and top-bar controls are pill-rounded with hover/focus states — same language as Admin.
+
+![Admin Jobs — redesigned cards](docs/progress/ui-polish-admin-jobs.png)
+![GenAI home — refined cards](docs/progress/ui-polish-genai-home.png)

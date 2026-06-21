@@ -131,6 +131,7 @@ function TopSystemBar(): JSX.Element {
 
       {/* Search */}
       <label
+        className="blaiq-search"
         style={{
           margin: '0 auto',
           height: 28,
@@ -142,6 +143,8 @@ function TopSystemBar(): JSX.Element {
           padding: '0 12px',
           border: `1px solid ${PAL.divider}`,
           background: PAL.panel,
+          borderRadius: 999,
+          transition: 'border-color 160ms ease',
         }}
       >
         <Search size={12} color={PAL.muted} style={{ flexShrink: 0 }} />
@@ -189,15 +192,16 @@ function TopSystemBar(): JSX.Element {
             Live
           </span>
         </div>
-        <button type="button" style={pillBtn()}>Share</button>
-        <button type="button" style={iconBtn()}>
+        <button type="button" className="blaiq-pill" style={pillBtn()}>Share</button>
+        <button type="button" className="blaiq-iconbtn" style={iconBtn()}>
           <Users size={13} />
         </button>
-        <button type="button" style={iconBtn()}>
+        <button type="button" className="blaiq-iconbtn" style={iconBtn()}>
           <Bell size={13} />
         </button>
         <button
           type="button"
+          className="blaiq-iconbtn"
           style={iconBtn()}
           title="Open settings (⌘,)"
           onClick={() => window.dispatchEvent(new CustomEvent('blaiq:open-settings', { detail: { section: 'execution' } }))}
@@ -205,7 +209,7 @@ function TopSystemBar(): JSX.Element {
           <Settings size={13} />
         </button>
         {(user?.role === 'owner' || user?.role === 'admin') && (
-          <button type="button" style={pillBtn()}>Admin</button>
+          <button type="button" className="blaiq-pill" style={pillBtn()}>Admin</button>
         )}
       </div>
     </header>
@@ -222,6 +226,8 @@ function pillBtn(): CSSProperties {
     color: PAL.ink,
     cursor: 'pointer',
     fontFamily: '"Inter", sans-serif',
+    borderRadius: 999,
+    transition: 'background 160ms ease, border-color 160ms ease',
   };
 }
 
@@ -236,6 +242,8 @@ function iconBtn(): CSSProperties {
     background: 'transparent',
     color: PAL.ink,
     cursor: 'pointer',
+    borderRadius: 8,
+    transition: 'background 160ms ease, border-color 160ms ease',
   };
 }
 
@@ -464,6 +472,9 @@ export default function BlaiqShell({ children }: { children: ReactNode }): JSX.E
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        .blaiq-pill:hover { background: ${PAL.hoverBg} !important; border-color: ${PAL.muted} !important; }
+        .blaiq-iconbtn:hover { background: ${PAL.hoverBg} !important; border-color: ${PAL.muted} !important; }
+        .blaiq-search:focus-within { border-color: ${PAL.accent} !important; }
       `}</style>
       <TopSystemBar />
       <main

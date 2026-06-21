@@ -26,7 +26,7 @@ import {
   type PooolStatus,
   type DeliveryStatus,
 } from './api';
-import { PAL, monoSmall, sansBold, sans, pill, skeletonBar, emptyText } from './theme';
+import { PAL, monoSmall, sansBold, sans, pill, skeletonBar, emptyText, card, title } from './theme';
 
 // ──────────────────────────────────────────────────────────────
 // Status colour map
@@ -808,17 +808,22 @@ export default function JobBoard(): JSX.Element {
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ ...monoSmall, color: PAL.muted }}>
-            JOBS {jobs ? `· ${jobs.length}` : ''}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <span style={{ ...title }}>Jobs</span>
+            <span style={{ ...monoSmall, color: PAL.muted }}>
+              {jobs ? `${jobs.length} · TRI-TRACK` : 'TRI-TRACK'}
+            </span>
           </div>
           <button
             type="button"
+            className="bq-btn"
             onClick={() => setShowNew(true)}
             style={{
-              padding: '4px 12px',
+              padding: '6px 14px',
               background: PAL.accent,
               border: 'none',
+              borderRadius: 999,
               cursor: 'pointer',
               ...monoSmall,
               color: PAL.white,
@@ -835,70 +840,79 @@ export default function JobBoard(): JSX.Element {
         )}
 
         {jobs && jobs.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {jobs.map(job => {
               const active = selected?.id === job.id;
               const pc = POOOL_COLOR[job.poool_status] ?? PAL.muted;
               const dc = DELIVERY_COLOR[job.delivery_status] ?? PAL.muted;
 
+              const overdue = jobIsOverdue(job);
               return (
                 <button
                   key={job.id}
                   type="button"
+                  className={`bq-card${active ? ' is-active' : ''}`}
                   onClick={() => setSelected(job)}
                   style={{
+                    ...card(active),
                     textAlign: 'left',
-                    padding: '12px 14px',
-                    background: active ? PAL.ink : PAL.panel,
-                    color: active ? PAL.white : PAL.ink,
-                    border: `1px solid ${active ? PAL.ink : PAL.divider}`,
+                    padding: '14px 16px',
                     cursor: 'pointer',
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6,
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 14,
                   }}
                 >
-                  {/* Top row: job number + title */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ ...monoSmall, color: active ? PAL.divider : PAL.muted, fontSize: 8 }}>
-                      {job.job_number}
-                    </span>
-                    <span style={{ ...sansBold, fontSize: 12 }}>{job.title}</span>
-                  </div>
+                  {/* Left: identity + status */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span style={{ ...monoSmall, color: active ? 'rgba(255,255,255,0.55)' : PAL.muted, fontSize: 8 }}>
+                        {job.job_number}
+                      </span>
+                      <span style={{ ...sansBold, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {job.title}
+                      </span>
+                    </div>
 
-                  {/* Client */}
-                  {job.client && (
-                    <span style={{ ...sans, fontSize: 11, color: active ? PAL.divider : PAL.muted }}>
-                      {job.client}
-                    </span>
-                  )}
-
-                  {/* Track status pills */}
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {/* POOOL */}
-                    <span style={{ ...pill(active ? PAL.white : pc) }}>
-                      {pooolLabel(job.poool_status)}
-                    </span>
-                    {/* Overdue flag */}
-                    {jobIsOverdue(job) && job.poool_status !== 'overdue' && (
-                      <span style={{ ...pill(active ? PAL.white : '#EF4444') }}>overdue</span>
+                    {job.client && (
+                      <span style={{ ...sans, fontSize: 11.5, color: active ? 'rgba(255,255,255,0.7)' : PAL.muted }}>
+                        {job.client}
+                      </span>
                     )}
-                    {/* ClickUp */}
-                    <span style={{ ...pill(active ? PAL.divider : PAL.muted) }}>
-                      {job.revision_count > 0 ? `rev ${job.revision_count}` : 'no revisions'}
-                    </span>
-                    {/* Delivery */}
-                    <span style={{ ...pill(active ? PAL.white : dc) }}>
-                      {deliveryLabel(job.delivery_status)}
-                    </span>
+
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 1 }}>
+                      <span style={{ ...pill(active ? PAL.white : pc) }}>
+                        {pooolLabel(job.poool_status)}
+                      </span>
+                      {overdue && job.poool_status !== 'overdue' && (
+                        <span style={{ ...pill(active ? PAL.white : PAL.danger) }}>overdue</span>
+                      )}
+                      <span style={{ ...pill(active ? 'rgba(255,255,255,0.5)' : PAL.muted) }}>
+                        {job.revision_count > 0 ? `rev ${job.revision_count}` : 'no revisions'}
+                      </span>
+                      <span style={{ ...pill(active ? PAL.white : dc) }}>
+                        {deliveryLabel(job.delivery_status)}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Quote amount */}
-                  {job.quote_amount != null && (
-                    <span style={{ ...monoSmall, color: active ? PAL.divider : PAL.muted, fontSize: 8 }}>
-                      Quote {fmtEur(job.quote_amount)}
-                    </span>
-                  )}
+                  {/* Right: the money — prominent, was buried in tiny mono */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+                    {job.quote_amount != null ? (
+                      <>
+                        <span style={{ ...sansBold, fontSize: 14, color: active ? PAL.white : PAL.ink, whiteSpace: 'nowrap' }}>
+                          {fmtEur(job.quote_amount)}
+                        </span>
+                        <span style={{ ...monoSmall, color: active ? 'rgba(255,255,255,0.5)' : PAL.muted, fontSize: 7 }}>QUOTE</span>
+                      </>
+                    ) : (
+                      <span style={{ ...monoSmall, color: active ? 'rgba(255,255,255,0.5)' : PAL.muted, fontSize: 8 }}>NO QUOTE</span>
+                    )}
+                    {overdue && (
+                      <span style={{ ...monoSmall, color: active ? PAL.white : PAL.danger, fontSize: 7, marginTop: 2 }}>● PAST DUE</span>
+                    )}
+                  </div>
                 </button>
               );
             })}

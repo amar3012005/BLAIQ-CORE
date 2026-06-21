@@ -6,7 +6,7 @@
 'use client';
 
 import React, { useState, type CSSProperties } from 'react';
-import { PAL, monoSmall, sansBold } from './theme';
+import { PAL, monoSmall, sansBold, THEME_CSS } from './theme';
 import JobBoard from './JobBoard';
 import FinanceBoard from './FinanceBoard';
 import TasksWall from './TasksWall';
@@ -89,6 +89,7 @@ export default function AdminShell(): JSX.Element {
         background: PAL.bg,
       }}
     >
+      <style>{THEME_CSS}</style>
       <aside
         style={{
           width: NAV_WIDTH,
@@ -134,6 +135,7 @@ export default function AdminShell(): JSX.Element {
                 <button
                   key={item.id}
                   type="button"
+                  className={`bq-nav${active ? ' is-active' : ''}`}
                   onClick={() => setTab(item.id)}
                   style={navItemStyle(active)}
                 >
@@ -196,11 +198,14 @@ function navItemStyle(active: boolean): CSSProperties {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: '8px 18px 8px 0',
-    background: active ? PAL.bg : 'transparent',
+    padding: '9px 18px 9px 0',
+    margin: '1px 8px 1px 0',
+    background: active ? PAL.white : 'transparent',
+    boxShadow: active ? '0 1px 2px rgba(17,17,17,0.05)' : 'none',
+    borderRadius: '0 8px 8px 0',
     border: 'none',
     cursor: 'pointer',
     textAlign: 'left' as const,
-    width: '100%',
+    width: 'calc(100% - 8px)',
   };
 }
