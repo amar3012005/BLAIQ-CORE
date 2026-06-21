@@ -11,6 +11,8 @@ import {
   pushJobToPoool,
   pushJobToClickup,
   createServerFolder,
+  generateCampaign,
+  type Campaign,
   listServerFiles,
   listJobNotifications,
   type ServerFile,
@@ -221,6 +223,9 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [serverFiles, setServerFiles] = useState<ServerFile[] | null>(null);
   const [notifications, setNotifications] = useState<JobNotification[] | null>(null);
+  const [campaignBusy, setCampaignBusy] = useState(false);
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [campaignErr, setCampaignErr] = useState<string | null>(null);
 
   // Load notifications raised for this job.
   useEffect(() => {
@@ -312,6 +317,19 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       setFolderErr((e as Error).message);
     } finally {
       setCreatingFolder(false);
+    }
+  };
+
+  const makeCampaign = async (): Promise<void> => {
+    setCampaignBusy(true);
+    setCampaignErr(null);
+    try {
+      const brief = `${job.title}${job.notes ? ' — ' + job.notes : ''} (Kunde: ${job.client || '—'})`;
+      setCampaign(await generateCampaign(brief, ['linkedin', 'instagram'], true));
+    } catch (e) {
+      setCampaignErr((e as Error).message);
+    } finally {
+      setCampaignBusy(false);
     }
   };
 
@@ -579,6 +597,35 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
         {pushCuErr && (
           <div style={{ ...sans, fontSize: 11, color: '#B45309', marginTop: 2 }}>{pushCuErr}</div>
         )}
+      </div>
+
+      {/* GenAI marketing — Admin ↔ GenAI convergence: a full brand campaign for this job */}
+      <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>MARKETING — CAMPAIGN</div>
+      <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
+        {!campaign ? (
+          <button
+            type="button"
+            disabled={campaignBusy}
+            onClick={() => { void makeCampaign(); }}
+            style={{ border: 'none', background: PAL.accent, color: PAL.white, cursor: campaignBusy ? 'wait' : 'pointer', ...monoSmall, fontSize: 9, padding: '6px 12px' }}
+          >
+            {campaignBusy ? 'BUILDING CAMPAIGN…' : '✦ CREATE CAMPAIGN FOR THIS JOB'}
+          </button>
+        ) : (
+          <div style={{ ...sans, fontSize: 12, color: PAL.ink }}>
+            <div style={{ ...sansBold, fontSize: 13 }}>{campaign.headline}</div>
+            <div style={{ color: PAL.muted, marginTop: 4 }}>
+              {campaign.deck_slides} slides · {campaign.social.length} posts · key visual · brand-locked
+            </div>
+            {campaign.od_project_url && (
+              <a href={campaign.od_project_url} target="_blank" rel="noreferrer"
+                style={{ display: 'inline-block', marginTop: 8, background: PAL.accent, color: PAL.white, textDecoration: 'none', ...monoSmall, fontSize: 8, padding: '5px 10px' }}>
+                ↗ OPEN IN OPEN DESIGN
+              </a>
+            )}
+          </div>
+        )}
+        {campaignErr && <div style={{ ...sans, fontSize: 11, color: '#B45309', marginTop: 6 }}>{campaignErr}</div>}
       </div>
 
       {/* Server track */}

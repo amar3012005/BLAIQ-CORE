@@ -347,3 +347,7 @@ Feasibility-first, value-first — each step unlocks the next:
 ---
 
 *This is a living plan. Track A detail: see the workflow roadmap. Current deployment state + per-phase deploy steps: `deploy/` and the session memory.*
+
+**Admin ↔ GenAI convergence — campaign from a job (Track C)** — the Jobs board detail now has a **MARKETING — CAMPAIGN** action: one click on a client job runs the orchestrator with the job context, creating a brand-locked campaign (concept + deck + social + key visual) in a real Open Design project linked back to the job. Verified in-app on job 2026-014:
+
+![Create campaign from a job — Admin↔GenAI convergence](docs/progress/job-campaign-convergence.png)
