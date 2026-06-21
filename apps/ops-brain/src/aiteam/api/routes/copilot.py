@@ -1310,10 +1310,64 @@ Respond with ONLY a JSON object:
 Rules: produce one social entry per requested platform, each in the right format + the brand's language (German if the brand is German). Output JSON only."""
 
 
+async def _daemon_post(tenant_id: str, path: str, body: dict) -> dict | None:
+    """Trusted server-to-server POST to the Open Design daemon (verifyOpsTrust:
+    X-Ops-Trust = HMAC(OPS_BRAIN_TRUST_TOKEN, '<tenant>:<ts>')). Used to create a
+    real OD project + write campaign assets into it so Studio output lives in the
+    same project/Artifacts system as MissionBuilder. Best-effort: returns None on
+    failure so campaign generation still succeeds."""
+    import hashlib
+    import hmac
+    import os
+    import time
+
+    import httpx
+
+    base = os.environ.get("BLAIQ_DAEMON_URL", "http://open-design:7456").rstrip("/")
+    token = os.environ.get("OPS_BRAIN_TRUST_TOKEN", "").strip()
+    ts = str(int(time.time() * 1000))
+    headers = {"Content-Type": "application/json", "X-Tenant-Id": tenant_id, "X-Ops-Trust-Ts": ts}
+    if token:
+        headers["X-Ops-Trust"] = hmac.new(
+            token.encode("utf-8"), f"{tenant_id}:{ts}".encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(base + path, json=body, headers=headers)
+            if r.status_code >= 400:
+                logger.warning("daemon POST %s -> %s %s", path, r.status_code, r.text[:200])
+                return None
+            return r.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("daemon POST %s failed: %s", path, exc)
+        return None
+
+
+def _campaign_markdown(spec: dict, social: list, video_brief: str, image_brief: str, job_number: str | None) -> str:
+    lines = [
+        f"# Campaign — {spec.get('headline') or ''}", "",
+        f"**Big idea:** {spec.get('big_idea') or ''}", "",
+        f"**Key message:** {spec.get('key_message') or ''}", "",
+        f"**Channels:** {', '.join(str(c) for c in (spec.get('channels') or []))}", "",
+    ]
+    if job_number:
+        lines += [f"**Linked job:** {job_number}", ""]
+    lines += ["## Social posts", ""]
+    for s in social:
+        tags = " ".join(s.hashtags) if s.hashtags else ""
+        lines += [f"### {s.platform}", "", s.body, "", tags, ""]
+    lines += ["## Key visual — image brief", "", image_brief or "(none)", ""]
+    lines += ["## Video — teaser brief", "", video_brief or "(none)", ""]
+    lines += ["## Deck", "", "See `deck.html` in this project (brand-locked slides)."]
+    return "\n".join(lines)
+
+
 class CampaignRequest(BaseModel):
     brief: str
     platforms: list[str] = Field(default_factory=lambda: ["linkedin", "instagram"])
     deck: bool = True
+    job_number: str | None = None   # optional: link the campaign to a POOOL job (Track C)
+    create_project: bool = True     # create a real Open Design project + write assets
 
 
 class CampaignResponse(BaseModel):
@@ -1327,6 +1381,9 @@ class CampaignResponse(BaseModel):
     deck_html: str | None = None
     deck_title: str | None = None
     deck_slides: int = 0
+    od_project_id: str | None = None   # real Open Design project holding the assets
+    od_project_url: str | None = None  # open in the OD workspace / Artifacts
+    job_number: str | None = None
     model: str
 
 
@@ -1400,6 +1457,29 @@ async def generate_campaign(
             except (ValueError, TypeError):
                 pass
 
+    image_brief = str(spec.get("image_brief") or "").strip()
+    video_brief = str(spec.get("video_brief") or "").strip()
+
+    # Unify with Open Design: create a real OD project and write the campaign
+    # assets into it (deck.html + campaign.md), so Studio output lands in the
+    # same project/Artifacts system as MissionBuilder — one system, not two.
+    od_project_id = od_project_url = None
+    if body.create_project:
+        import uuid as _uuid
+        pid = f"campaign-{_uuid.uuid4().hex[:10]}"
+        name = (str(spec.get("headline") or body.brief)[:80]) or "Campaign"
+        meta = {"kind": "campaign", "source": "campaign-orchestrator"}
+        if body.job_number:
+            meta["jobNumber"] = body.job_number
+        proj = await _daemon_post(tenant_id, "/api/projects", {"id": pid, "name": name, "metadata": meta})
+        if proj:
+            od_project_id = pid
+            od_project_url = f"/projects/{pid}"
+            md = _campaign_markdown(spec, social, video_brief, image_brief, body.job_number)
+            await _daemon_post(tenant_id, f"/api/projects/{pid}/files", {"name": "campaign.md", "content": md})
+            if deck_html:
+                await _daemon_post(tenant_id, f"/api/projects/{pid}/files", {"name": "deck.html", "content": deck_html})
+
     return APIResponse(
         data=CampaignResponse(
             headline=str(spec.get("headline") or "").strip() or body.brief,
@@ -1407,9 +1487,11 @@ async def generate_campaign(
             key_message=str(spec.get("key_message") or "").strip(),
             channels=[str(c) for c in (spec.get("channels") or [])],
             social=social,
-            image_brief=str(spec.get("image_brief") or "").strip(),
-            video_brief=str(spec.get("video_brief") or "").strip(),
+            image_brief=image_brief,
+            video_brief=video_brief,
             deck_html=deck_html, deck_title=deck_title, deck_slides=deck_slides,
+            od_project_id=od_project_id, od_project_url=od_project_url,
+            job_number=body.job_number,
             model=model_used,
         ),
         message="ok",

@@ -891,6 +891,9 @@ export interface Campaign {
   deck_html: string | null;
   deck_title: string | null;
   deck_slides: number;
+  od_project_id: string | null;
+  od_project_url: string | null;
+  job_number: string | null;
   model: string;
 }
 
@@ -912,6 +915,9 @@ export async function generateCampaign(brief: string, platforms: SocialPlatform[
       deck_html: '<!DOCTYPE html><html><body style="background:#0A0A0A;color:#fff;font-family:sans-serif;padding:40px"><h1>Mensch × Maschine. Endlich eine Marke.</h1><p style="color:#FF6008">B&B · Preview campaign deck</p></body></html>',
       deck_title: 'Mensch × Maschine. Endlich eine Marke.',
       deck_slides: 5,
+      od_project_id: 'campaign-preview',
+      od_project_url: '/projects/campaign-preview',
+      job_number: null,
       model: 'preview',
     };
   }

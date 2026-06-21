@@ -39,7 +39,8 @@ Screenshots captured 2026-06-20 (this folder): `home.png`, `marketing-studio-int
 | Pricing / plans | n/a (agency-internal) | not needed (single agency); optionally per-client cost rollups |
 
 ## Recommended build order (closing the gap)
-1. ✅ **Campaign orchestrator — SHIPPED** (`POST /api/copilot/campaign`, Studio "✦ Campaign"). One brief → concept (headline + big idea + key message + channels) + a brand-locked 5-slide deck + multi-platform social (with one-click post links) + image & video briefs. Verified live: "Launch our AI brand platform" → "Mensch × Maschine. Endlich eine Marke." with the dot motif, all on-brand. This is the "one prompt → campaign" headline.
+1. ✅✅ **Campaign orchestrator — SHIPPED + UNIFIED with Open Design.** It now **creates a real Open Design project and writes the assets into it** (`deck.html` + `campaign.md`) via the daemon trust bridge — so Studio output lives in OD's project/Artifacts system, editable in MissionBuilder. One system, not two. Optional `job_number` links a campaign to a POOOL job (Admin↔GenAI convergence). Verified: project `campaign-…` with `deck.html` + `campaign.md` visible in the real OD UI.
+1. ✅ **Campaign orchestrator (original) — SHIPPED** (`POST /api/copilot/campaign`, Studio "✦ Campaign"). One brief → concept (headline + big idea + key message + channels) + a brand-locked 5-slide deck + multi-platform social (with one-click post links) + image & video briefs. Verified live: "Launch our AI brand platform" → "Mensch × Maschine. Endlich eine Marke." with the dot motif, all on-brand. This is the "one prompt → campaign" headline.
 2. **Ad-format + mode presets** (UGC/CGI/cinematic × template library) — turns freeform missions into pick-a-format speed.
 3. **URL/product intake** → product profile (matches "from link to ad").
 4. **Variant engine** — N brand variants per brief for A/B + channels.

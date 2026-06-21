@@ -90,6 +90,11 @@ Root gap: Brand DNA is **prose**, only locked into *text*. Foundation fix (shipp
 
 ## Progress screenshots
 
+**Campaign orchestrator unified with Open Design — one system (Track B+C)** — the orchestrator now **creates a real Open Design project and writes the campaign assets into it** (`deck.html` + `campaign.md`) via the daemon trust bridge, so Studio output lives in OD's project/Artifacts system (editable in MissionBuilder) — not a parallel surface. Optional `job_number` ties a campaign to a POOOL job (Admin↔GenAI convergence). The real OD project with its files:
+
+![Campaign saved as a real Open Design project](docs/progress/campaign-od-project.png)
+
+
 **GenAI · Campaign orchestrator — one brief → full on-brand campaign (Track B, Higgsfield-match #1)** — `POST /api/copilot/campaign` + Studio "✦ Campaign": one line in → concept (headline · big idea · key message · channels) + a brand-locked 5-slide deck + multi-platform social posts (one-click post links) + image & video briefs, all from Brand DNA + Tone. Verified live: "Launch our AI brand platform" → *"Mensch × Maschine. Endlich eine Marke."* with the #FF6008 dot motif throughout:
 
 ![GenAI Campaign orchestrator — one brief, full campaign](docs/progress/studio-campaign.png)

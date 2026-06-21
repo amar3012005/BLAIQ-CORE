@@ -247,6 +247,16 @@ function CampaignView(): JSX.Element {
             <div style={{ ...sans, fontSize: 13.5, opacity: 0.9, marginTop: 10 }}>{c.big_idea}</div>
             <div style={{ ...sans, fontSize: 12.5, opacity: 0.7, marginTop: 8 }}>Key message: {c.key_message}</div>
             {c.channels.length > 0 && <div style={{ ...monoSmall, opacity: 0.6, marginTop: 10 }}>{c.channels.join(' · ')}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+              {c.od_project_url && (
+                <a href={c.od_project_url} target="_blank" rel="noreferrer"
+                  style={{ textDecoration: 'none', background: PAL.accent, color: PAL.white, ...monoSmall, fontSize: 9, padding: '7px 14px', borderRadius: 6 }}>
+                  ↗ OPEN IN OPEN DESIGN
+                </a>
+              )}
+              {c.job_number && <span style={{ ...monoSmall, opacity: 0.7, fontSize: 8 }}>LINKED JOB · {c.job_number}</span>}
+              {c.od_project_id && <span style={{ ...monoSmall, opacity: 0.5, fontSize: 8 }}>saved as a real OD project · deck.html + campaign.md</span>}
+            </div>
           </div>
 
           {/* Deck */}
