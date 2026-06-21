@@ -929,6 +929,67 @@ export async function generateCampaign(brief: string, platforms: SocialPlatform[
   return data.data;
 }
 
+// ── Hooks + virality (Editor's QA pass) ──
+
+export interface HookVariant { text: string; angle: string; why: string; }
+export interface ViralityScore { score: number; verdict: string; strengths: string[]; improvements: string[]; }
+export interface HooksResult { hooks: HookVariant[]; virality: ViralityScore; model: string; }
+
+export async function generateHooks(concept: string, platform?: string): Promise<HooksResult> {
+  if (PREVIEW) {
+    return {
+      hooks: [
+        { text: 'Ein Punkt verändert alles.', angle: 'pattern interrupt', why: 'Der Signature-Dot macht neugierig, bevor ein Wort fällt.' },
+        { text: 'Marken entstehen nicht durch Zufall.', angle: 'bold claim', why: 'Provokante These, die Haltung signalisiert.' },
+        { text: 'Was, wenn deine Marke mitdenkt?', angle: 'curiosity gap', why: 'Offene Frage zieht in den Spannungsbogen.' },
+        { text: 'Du kennst das Gefühl: austauschbar.', angle: 'relatable tension', why: 'Spricht den Schmerzpunkt direkt an.' },
+      ],
+      virality: { score: 72, verdict: 'Starke Haltung, braucht einen schärferen visuellen Aufhänger in Sekunde eins.', strengths: ['Klare Markenstimme', 'Einprägsames Motiv (Punkt)'], improvements: ['Ersten Frame visuell zuspitzen', 'Konkreten Proof-Point früher zeigen'] },
+      model: 'preview',
+    };
+  }
+  const data = await request<{ data: HooksResult }>('/api/copilot/hooks', {
+    method: 'POST', body: JSON.stringify({ concept, platform }),
+  });
+  return data.data;
+}
+
+// ── URL/product intake → reusable product profile ("paste a link, get an ad") ──
+
+export interface ProductProfile {
+  url: string;
+  product_name: string;
+  one_liner: string;
+  value_props: string[];
+  audience: string;
+  observed_colors: string[];
+  observed_tone: string;
+  brand_fit: string;
+  suggested_brief: string;
+  model: string;
+}
+
+export async function productIntake(url: string): Promise<ProductProfile> {
+  if (PREVIEW) {
+    return {
+      url,
+      product_name: 'B&B Markenagentur',
+      one_liner: 'Strategische Markenführung mit Sinn — Mensch × Maschine.',
+      value_props: ['Markenstrategie mit Haltung', 'KI-gestützte Kreativproduktion', 'Von Claim bis Kampagne aus einer Hand'],
+      audience: 'Mittelständische Marken mit Anspruch',
+      observed_colors: ['#0A0A0A', '#FF6008'],
+      observed_tone: 'klar, selbstbewusst, reduziert',
+      brand_fit: 'Deckt sich exakt mit der Brand DNA (dark-first, Signature-Dot, Orange). Den Kontrast Mensch × Maschine als Leitidee ausspielen.',
+      suggested_brief: 'Kampagne, die B&B als KI-gestützte Markenagentur positioniert: ein oranger Punkt als Anker, Claim „Mensch × Maschine = Marke", über LinkedIn + Instagram.',
+      model: 'preview',
+    };
+  }
+  const data = await request<{ data: ProductProfile }>('/api/copilot/product-intake', {
+    method: 'POST', body: JSON.stringify({ url }),
+  });
+  return data.data;
+}
+
 // ── Clients rollup (per-client view of the book) ──
 
 export interface ClientRollup {

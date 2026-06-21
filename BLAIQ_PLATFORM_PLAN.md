@@ -388,3 +388,13 @@ Each gate now announces *who* is presenting (avatar + role + an in-character not
 Verified live on prod: a real video mission paused at the discovery gate presented by Soraya (Story Writer) with persona-voiced, brand-aware, crew-aware questions.
 
 ![Studio Crew — Story Writer presents the discovery gate](docs/progress/genai-studio-crew-gate.png)
+
+**GenAI · Higgsfield roadmap COMPLETE (#3, #5, #6, #7)** — the four remaining parity items, all on-brand by construction and mapped to the Studio Crew:
+- **#3 URL/product intake** (`/api/copilot/product-intake`, Admin Intake) — paste a product link → SSRF-guarded fetch → product profile (name, value-props, colours, tone) cross-checked vs Brand DNA → ready-to-run brief. *Story Writer's brief source.* Verified live on bundb.de.
+- **#5 Spokespersons + reference-based** (ImagePipelinePanel CAST row) — ✦ Spokesperson generates a reusable consistent on-brand presenter; + Reference uploads an external image for "an ad like this, in our brand". *Director's casting.* Verified: a real 4-pose consistent spokesperson.
+- **#6 Image-preset apps** (APPS row) — Billboard · Bullet-time · Relight · Multi-angle · Expand, one-click transforms of the active image. *Cinematographer's lens kit.*
+- **#7 Hooks + virality** (`/api/copilot/hooks`, Studio "Hooks & Virality") — 4 angled 3-sec openers + an honest 0-100 score with fixes. *Editor's QA pass.* Verified live (scored a concept 38, critical verdict). Premium Seedance i2v stays key-gated via the existing `ctx.higgsfield` path.
+
+![Product intake — paste a link](docs/progress/genai-product-intake.png)
+![Brand spokesperson — consistent, reusable](docs/progress/genai-spokesperson.png)
+![Hooks + virality — the Editor's QA](docs/progress/genai-hooks-virality.png)

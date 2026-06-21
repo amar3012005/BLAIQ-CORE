@@ -6,7 +6,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { generateSocial, generateDeck, generateCampaign, type SocialArtifact, type SocialPlatform, type DeckResult, type Campaign } from './api';
+import { generateSocial, generateDeck, generateCampaign, generateHooks, type SocialArtifact, type SocialPlatform, type DeckResult, type Campaign, type HooksResult } from './api';
 import { PAL, monoSmall, sansBold, sans } from './theme';
 
 const PLATFORMS: { id: SocialPlatform; label: string; canPost: boolean }[] = [
@@ -18,7 +18,7 @@ const PLATFORMS: { id: SocialPlatform; label: string; canPost: boolean }[] = [
 ];
 
 export default function StudioBoard(): JSX.Element {
-  const [mode, setMode] = useState<'campaign' | 'social' | 'deck'>('campaign');
+  const [mode, setMode] = useState<'campaign' | 'social' | 'deck' | 'hooks'>('campaign');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -27,17 +27,17 @@ export default function StudioBoard(): JSX.Element {
         <span style={{ ...monoSmall, color: PAL.muted, marginLeft: 'auto' }}>BRAND DNA + TONE · ON-BRAND BY DEFAULT</span>
       </div>
       <div style={{ display: 'flex', gap: 6, padding: '12px 20px', borderBottom: `1px solid ${PAL.divider}` }}>
-        {(['campaign', 'social', 'deck'] as const).map(m => (
+        {(['campaign', 'social', 'deck', 'hooks'] as const).map(m => (
           <button key={m} type="button" onClick={() => setMode(m)}
             style={{ ...monoSmall, fontSize: 9, padding: '6px 14px', borderRadius: 6, cursor: 'pointer',
               border: `1px solid ${mode === m ? PAL.accent : PAL.divider}`,
               background: mode === m ? PAL.accent : 'transparent', color: mode === m ? PAL.white : PAL.muted }}>
-            {m === 'campaign' ? '✦ CAMPAIGN' : m === 'social' ? 'SOCIAL & CONTENT' : 'DECKS'}
+            {m === 'campaign' ? '✦ CAMPAIGN' : m === 'social' ? 'SOCIAL & CONTENT' : m === 'deck' ? 'DECKS' : 'HOOKS & VIRALITY'}
           </button>
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-        {mode === 'campaign' ? <CampaignView /> : mode === 'social' ? <Social /> : <Deck />}
+        {mode === 'campaign' ? <CampaignView /> : mode === 'social' ? <Social /> : mode === 'deck' ? <Deck /> : <Hooks />}
       </div>
     </div>
   );
@@ -201,6 +201,89 @@ function openHtml(html: string, title: string, download: boolean): void {
     window.open(url, '_blank');
   }
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function Hooks(): JSX.Element {
+  const [concept, setConcept] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<HooksResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState<number | null>(null);
+
+  const run = async (): Promise<void> => {
+    if (!concept.trim() || busy) return;
+    setBusy(true); setErr(null); setRes(null); setCopied(null);
+    try { setRes(await generateHooks(concept.trim())); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const card: React.CSSProperties = { background: PAL.white, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 16px' };
+  const scoreColor = (s: number): string => (s >= 75 ? '#0F6E56' : s >= 50 ? '#B45309' : '#B91C1C');
+
+  return (
+    <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ ...sans, fontSize: 13, color: PAL.muted }}>
+        Felix, the crew Editor, runs a final QA: proven 3-second openers + an honest stop-the-scroll score — in your Brand Tone.
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={concept} disabled={busy} onChange={e => setConcept(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') void run(); }}
+          placeholder="Paste a concept, script, or campaign idea to QA"
+          style={{ flex: 1, padding: '9px 12px', border: `1px solid ${PAL.divider}`, background: PAL.bg, ...sans, fontSize: 13, color: PAL.ink, outline: 'none', borderRadius: 6 }} />
+        <button type="button" disabled={busy || !concept.trim()} onClick={() => { void run(); }}
+          style={{ padding: '9px 16px', background: PAL.accent, border: 'none', cursor: busy ? 'wait' : 'pointer', ...monoSmall, color: PAL.white, borderRadius: 6 }}>
+          {busy ? 'SCORING…' : '✦ QA THIS'}
+        </button>
+      </div>
+
+      {err && <div style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.25)', color: '#B91C1C', padding: '10px 14px', borderRadius: 10, ...sans, fontSize: 13 }}>{err}</div>}
+
+      {res && (
+        <>
+          {/* Virality score */}
+          <div style={{ background: PAL.ink, color: PAL.white, borderRadius: 12, padding: '18px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span style={{ ...sansBold, fontSize: 34, color: scoreColor(res.virality.score) }}>{res.virality.score}</span>
+              <span style={{ ...monoSmall, opacity: 0.6 }}>/ 100 VIRALITY</span>
+            </div>
+            <div style={{ ...sans, fontSize: 13.5, opacity: 0.92, marginTop: 8 }}>{res.virality.verdict}</div>
+            <div style={{ display: 'flex', gap: 20, marginTop: 14, flexWrap: 'wrap' }}>
+              {res.virality.strengths.length > 0 && (
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ ...monoSmall, opacity: 0.6, marginBottom: 6 }}>STRENGTHS</div>
+                  {res.virality.strengths.map((s, i) => <div key={i} style={{ ...sans, fontSize: 12.5, opacity: 0.9, marginBottom: 4 }}>+ {s}</div>)}
+                </div>
+              )}
+              {res.virality.improvements.length > 0 && (
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ ...monoSmall, opacity: 0.6, marginBottom: 6 }}>RAISE THE SCORE</div>
+                  {res.virality.improvements.map((s, i) => <div key={i} style={{ ...sans, fontSize: 12.5, opacity: 0.9, marginBottom: 4 }}>→ {s}</div>)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Hook variants */}
+          {res.hooks.map((h, i) => (
+            <div key={i} style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ ...monoSmall, fontSize: 8, color: PAL.accent }}>{(h.angle || 'HOOK').toUpperCase()}</span>
+                <button type="button"
+                  onClick={() => { void navigator.clipboard.writeText(h.text).then(() => setCopied(i)).catch(() => {}); }}
+                  style={{ marginLeft: 'auto', border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '4px 9px', borderRadius: 6 }}>
+                  {copied === i ? '✓ COPIED' : 'COPY'}
+                </button>
+              </div>
+              <div style={{ ...sansBold, fontSize: 15, color: PAL.ink, lineHeight: 1.4 }}>“{h.text}”</div>
+              {h.why && <div style={{ ...sans, fontSize: 12.5, color: PAL.muted, marginTop: 6 }}>{h.why}</div>}
+            </div>
+          ))}
+          <div style={{ ...monoSmall, color: PAL.muted, fontSize: 8 }}>EDITOR · {res.model}</div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function CampaignView(): JSX.Element {

@@ -1288,6 +1288,256 @@ async def generate_social(
 
 
 # ──────────────────────────────────────────────
+# GenAI · Hooks + virality (Higgsfield parity #7 — the Editor's QA pass).
+# Given a concept/script, propose proven 3-second openers and score the
+# stop-the-scroll potential, brand-tone aware. Read-only on brand data.
+# ──────────────────────────────────────────────
+
+class HooksRequest(BaseModel):
+    concept: str = Field(..., description="campaign concept, script, or topic to QA")
+    platform: str | None = None
+
+
+class HookVariant(BaseModel):
+    text: str
+    angle: str
+    why: str
+
+
+class ViralityScore(BaseModel):
+    score: int
+    verdict: str
+    strengths: list[str]
+    improvements: list[str]
+
+
+class HooksResponse(BaseModel):
+    hooks: list[HookVariant]
+    virality: ViralityScore
+    model: str
+
+
+_HOOKS_SYSTEM = """You are the Editor of the BLAIQ creative crew, running a final QA pass on an ad concept before it ships. You judge stop-the-scroll potential like a performance-creative strategist.
+
+Respond with ONLY a JSON object:
+{
+  "hooks": [
+    {"text": "a 3-second opening line / first frame caption", "angle": "curiosity gap | bold claim | pattern interrupt | relatable tension", "why": "1 short sentence on why it stops the scroll"}
+  ],
+  "virality": {
+    "score": 0-100,
+    "verdict": "one honest sentence on its viral potential",
+    "strengths": ["2-3 concrete things working in its favour"],
+    "improvements": ["2-3 concrete, specific fixes to raise the score"]
+  }
+}
+Rules: exactly 4 hooks, each a DIFFERENT psychological angle, all in the Brand Tone and the brand's language (German if the brand is German). Be honest, not generous — a generic concept scores low. Output JSON only, no preamble, no markdown fence."""
+
+
+@router.post("/hooks", response_model=APIResponse[HooksResponse])
+async def generate_hooks(
+    body: HooksRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[HooksResponse]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.concept.strip():
+        raise HTTPException(status_code=400, detail="empty concept")
+
+    dna, tone = await _load_brand_md(db, tenant_id)
+    platform = (body.platform or "any").lower().strip()
+    prompt = (
+        f"BRAND TONE (voice — follow exactly):\n{tone or '(confident, concise, professional)'}\n\n"
+        f"BRAND DNA (for context):\n{dna or '(none)'}\n\n"
+        f"PLATFORM: {platform}\n\nCONCEPT / SCRIPT TO QA:\n{body.concept.strip()}"
+    )
+    result = await chat(
+        [{"role": "system", "content": _HOOKS_SYSTEM}, {"role": "user", "content": prompt}],
+        max_tokens=1100, temperature=0.6,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "hooks generation unavailable")
+    try:
+        spec = _parse_briefing_json(result.get("text") or "")
+    except (ValueError, TypeError):
+        spec = {}
+
+    hooks: list[HookVariant] = []
+    for h in (spec.get("hooks") or [])[:6]:
+        if not isinstance(h, dict):
+            continue
+        txt = str(h.get("text") or "").strip()
+        if not txt:
+            continue
+        hooks.append(HookVariant(text=txt, angle=str(h.get("angle") or "").strip(), why=str(h.get("why") or "").strip()))
+
+    v = spec.get("virality") if isinstance(spec.get("virality"), dict) else {}
+    try:
+        score = max(0, min(100, int(float(v.get("score", 0)))))
+    except (ValueError, TypeError):
+        score = 0
+    virality = ViralityScore(
+        score=score,
+        verdict=str(v.get("verdict") or "").strip(),
+        strengths=[str(s).strip() for s in (v.get("strengths") or []) if str(s).strip()][:4],
+        improvements=[str(s).strip() for s in (v.get("improvements") or []) if str(s).strip()][:4],
+    )
+    return APIResponse(
+        data=HooksResponse(hooks=hooks, virality=virality, model=result.get("model") or copilot_model()),
+        message="ok",
+    )
+
+
+# ──────────────────────────────────────────────
+# GenAI · URL/product intake (Higgsfield parity #3 — "paste a link, get an ad").
+# Fetch a product/app URL, extract a reusable product profile, cross-check it
+# against the tenant's Brand DNA/Tone, and hand back a ready-to-run brief.
+# ──────────────────────────────────────────────
+
+class ProductIntakeRequest(BaseModel):
+    url: str
+
+
+class ProductProfile(BaseModel):
+    url: str
+    product_name: str
+    one_liner: str
+    value_props: list[str]
+    audience: str
+    observed_colors: list[str]
+    observed_tone: str
+    brand_fit: str
+    suggested_brief: str
+    model: str
+
+
+_INTAKE_SYSTEM = """You are the Story Writer of the BLAIQ creative crew, turning a product page into a reusable creative brief. You extract what matters for an ad and judge how it fits the agency's brand.
+
+Respond with ONLY a JSON object:
+{
+  "product_name": "the product / company name",
+  "one_liner": "what it is, in one sharp sentence",
+  "value_props": ["3-5 concrete benefits / differentiators pulled from the page"],
+  "audience": "who it's for",
+  "observed_colors": ["any brand hex colours or named colours evident on the page"],
+  "observed_tone": "the page's own voice in a few words",
+  "brand_fit": "1-2 sentences: how this product aligns with or contrasts the Brand DNA/Tone below, and what to lean into for an on-brand ad",
+  "suggested_brief": "a ready-to-run, on-brand campaign brief (2-3 sentences) the crew can take straight into a mission"
+}
+Use only facts present on the page — never invent features or numbers. Write in the brand's language (German if the brand is German). Output JSON only."""
+
+
+def _strip_html(html: str) -> str:
+    """Crude HTML → text: drop scripts/styles, unwrap tags, collapse space."""
+    import re as _re
+
+    html = _re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
+    # keep title + meta description explicitly (often the cleanest summary)
+    head_bits: list[str] = []
+    m = _re.search(r"(?is)<title[^>]*>(.*?)</title>", html)
+    if m:
+        head_bits.append("TITLE: " + m.group(1).strip())
+    for m in _re.finditer(r'(?is)<meta[^>]+(?:name|property)=["\'](?:description|og:description|og:title)["\'][^>]+content=["\']([^"\']+)["\']', html):
+        head_bits.append("META: " + m.group(1).strip())
+    # any hex colours present (helps observed_colors)
+    colors = sorted(set(_re.findall(r"#[0-9a-fA-F]{6}", html)))[:12]
+    body = _re.sub(r"(?s)<[^>]+>", " ", html)
+    body = _re.sub(r"&[a-z]+;", " ", body)
+    body = _re.sub(r"\s+", " ", body).strip()
+    parts = head_bits + ([f"HEX COLOURS ON PAGE: {', '.join(colors)}"] if colors else []) + [body]
+    return "\n".join(parts)[:8000]
+
+
+def _intake_url_ok(url: str) -> bool:
+    """Allow only public http(s) URLs — block SSRF to internal hosts."""
+    from urllib.parse import urlparse
+
+    try:
+        u = urlparse(url)
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    host = u.hostname.lower()
+    if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
+        return False
+    blocked_prefixes = ("127.", "10.", "192.168.", "169.254.", "0.")
+    if host.startswith(blocked_prefixes):
+        return False
+    if host.startswith("172."):
+        try:
+            second = int(host.split(".")[1])
+            if 16 <= second <= 31:
+                return False
+        except (ValueError, IndexError):
+            return False
+    return True
+
+
+@router.post("/product-intake", response_model=APIResponse[ProductProfile])
+async def product_intake(
+    body: ProductIntakeRequest,
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[ProductProfile]:
+    import httpx
+
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    url = (body.url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    if not _intake_url_ok(url):
+        raise HTTPException(status_code=400, detail="invalid or disallowed URL")
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (BLAIQ product intake)"}) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            html = r.text
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"could not fetch URL: {str(exc)[:200]}") from exc
+
+    page_text = _strip_html(html)
+    if len(page_text) < 40:
+        raise HTTPException(status_code=422, detail="page had no extractable text")
+
+    dna, tone = await _load_brand_md(db, tenant_id)
+    prompt = (
+        f"BRAND DNA (visual identity):\n{dna or '(none)'}\n\n"
+        f"BRAND TONE (voice):\n{tone or '(confident, concise, professional)'}\n\n"
+        f"PRODUCT PAGE URL: {url}\n\nPAGE CONTENT:\n{page_text}"
+    )
+    result = await chat(
+        [{"role": "system", "content": _INTAKE_SYSTEM}, {"role": "user", "content": prompt}],
+        max_tokens=1100, temperature=0.3,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error") or "product intake unavailable")
+    try:
+        spec = _parse_briefing_json(result.get("text") or "")
+    except (ValueError, TypeError):
+        spec = {}
+
+    return APIResponse(
+        data=ProductProfile(
+            url=url,
+            product_name=str(spec.get("product_name") or "").strip(),
+            one_liner=str(spec.get("one_liner") or "").strip(),
+            value_props=[str(s).strip() for s in (spec.get("value_props") or []) if str(s).strip()][:6],
+            audience=str(spec.get("audience") or "").strip(),
+            observed_colors=[str(s).strip() for s in (spec.get("observed_colors") or []) if str(s).strip()][:12],
+            observed_tone=str(spec.get("observed_tone") or "").strip(),
+            brand_fit=str(spec.get("brand_fit") or "").strip(),
+            suggested_brief=str(spec.get("suggested_brief") or "").strip(),
+            model=result.get("model") or copilot_model(),
+        ),
+        message="ok",
+    )
+
+
+# ──────────────────────────────────────────────
 # GenAI · Campaign orchestrator (Track B). One brief → a coordinated, on-brand
 # campaign: concept + a brand-locked deck + multi-platform social copy + image/
 # video briefs. Reuses the deck + social engines; Brand DNA/Tone govern all of

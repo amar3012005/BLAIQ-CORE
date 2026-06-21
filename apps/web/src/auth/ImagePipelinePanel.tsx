@@ -103,6 +103,18 @@ const VARIANT_NOTES = [
   'Variation D — bolder art direction.',
 ];
 
+// Higgsfield-parity: image-preset "apps" — one-click transforms of the active
+// image (the Cinematographer's lens kit). Each runs a render with the current
+// image as reference + a transform scaffold; the daemon still brand-locks.
+interface ImageApp { id: string; label: string; prompt: string; }
+const IMAGE_APPS: ImageApp[] = [
+  { id: 'billboard', label: 'Billboard', prompt: 'Place this exact subject into a photorealistic out-of-home billboard mockup — large format on a city street or building facade, correct perspective and ambient lighting, passersby for scale. Keep the subject identical.' },
+  { id: 'bullet-time', label: 'Bullet-time', prompt: 'Recreate this subject as a dramatic bullet-time frozen-motion hero shot — a frozen moment with implied multi-angle camera sweep, crisp studio lighting, premium product-film energy. Keep the subject identical.' },
+  { id: 'relight', label: 'Relight', prompt: 'Relight this exact image with new cinematic lighting — soft key plus warm rim light, golden-hour mood. Preserve the subject, composition and identity exactly; only the lighting changes.' },
+  { id: 'multi-angle', label: 'Multi-angle', prompt: 'Show this exact subject from a fresh camera angle (three-quarter view / low angle / profile) — same subject, wardrobe, materials and lighting style, a different vantage point.' },
+  { id: 'expand', label: 'Expand', prompt: 'Expand the scene around this image — outpaint a wider environment that extends the existing composition naturally, keeping the original subject and framing intact and centered.' },
+];
+
 interface Props {
   projectId: string;
   aspect?: string;
@@ -125,6 +137,9 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   const [view, setView] = useState<'single' | 'grid'>('single');
   const [lastBatch, setLastBatch] = useState<number[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // Casting: an uploaded external reference ("an ad like this, in our brand").
+  const [refUpload, setRefUpload] = useState<{ name: string; dataUri: string } | null>(null);
+  const refFileRef = useRef<HTMLInputElement | null>(null);
   const [drawMode, setDrawMode] = useState(false);
   const [useRef_, setUseRef] = useState(true);   // false = fresh gen ignoring active version
   const [strokes, setStrokes] = useState<Array<{ x: number; y: number; size: number; erase: boolean }[]>>([]);
@@ -360,7 +375,12 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       //   - Refine (no mask): send the active version as ref.
       //   - Masked edit: composite the mask into the ref (black out the region).
       let refImage: string | undefined;
-      if (useRef_ && activeImage) {
+      let refScaffold = '';
+      if (refUpload) {
+        // External reference takes priority — "an ad like this, in our brand".
+        refImage = refUpload.dataUri;
+        refScaffold = 'Use the attached image as a structural reference — match its format, composition, and energy, but render it entirely in OUR brand (our palette, type, motif, product). Do not copy its brand or text.';
+      } else if (useRef_ && activeImage) {
         if (hasMask) {
           const refUri = await fetchAsDataUri(activeImage.url);
           refImage = (await buildMaskedRefDataUri(refUri)) || refUri;
@@ -370,7 +390,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       }
 
       const n = hasMask ? 1 : Math.min(Math.max(variantCount, 1), 4);
-      const base = prompt.trim();
+      const base = refScaffold ? `${refScaffold}\n\n${prompt.trim()}` : prompt.trim();
       setProgress({ done: 0, total: n });
 
       const settled = await Promise.allSettled(
@@ -402,7 +422,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       setGenerating(false);
       setProgress(null);
     }
-  }, [prompt, model, generating, activeImage, strokes, useRef_, variantCount, buildMaskedRefDataUri, composePrompt, renderOne]);
+  }, [prompt, model, generating, activeImage, strokes, useRef_, variantCount, refUpload, buildMaskedRefDataUri, composePrompt, renderOne]);
 
   // Keep generateRef pointing at the latest generate closure so the
   // event-listener effect (mounted once) always invokes the current one.
@@ -417,6 +437,39 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       generate();
     }
   }, [generate]);
+
+  // One-click image app: transform the active image with the app's scaffold.
+  // Forces ref mode (uses the active image) and auto-fires once state lands.
+  const runApp = useCallback((app: ImageApp) => {
+    if (!activeImage || generating) return;
+    setUseRef(true);
+    setStrokes([]);
+    setDrawMode(false);
+    setPrompt(app.prompt);
+    setTimeout(() => { generateRef.current?.(); }, 0);
+  }, [activeImage, generating]);
+
+  // Casting: generate a reusable brand spokesperson (a consistent presenter the
+  // crew can reuse as a reference across shots). Fresh gen, no active ref.
+  const runSpokesperson = useCallback(() => {
+    if (generating) return;
+    setUseRef(false);
+    setRefUpload(null);
+    setStrokes([]);
+    setDrawMode(false);
+    setPrompt('Brand spokesperson — a 2x2 photo grid of the SAME person across all four panels (front, three-quarter, profile, warm portrait) on a clean studio backdrop. Photoreal, editorial, consistent identity, wardrobe and styling reflecting our brand. A reusable on-brand presenter.');
+    setTimeout(() => { generateRef.current?.(); }, 0);
+  }, [generating]);
+
+  // Load an uploaded external reference image as a data URI.
+  const onRefFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fr = new FileReader();
+    fr.onloadend = () => setRefUpload({ name: file.name, dataUri: String(fr.result) });
+    fr.readAsDataURL(file);
+    e.target.value = '';
+  }, []);
 
   return (
     <div style={{
@@ -704,6 +757,26 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
         background: P.card,
         flexShrink: 0,
       }}>
+        {/* Casting — brand spokesperson + reference-based ("an ad like this") */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, color: P.muted, marginRight: 2 }}>CAST</span>
+          <button type="button" disabled={generating} onClick={runSpokesperson}
+            style={{ ...chip(false), borderColor: P.accent, color: P.accent, cursor: generating ? 'wait' : 'pointer', opacity: generating ? 0.5 : 1 }}>
+            ✦ Spokesperson
+          </button>
+          <button type="button" disabled={generating} onClick={() => refFileRef.current?.click()}
+            style={chip(!!refUpload)}>
+            {refUpload ? 'Reference ✓' : '+ Reference'}
+          </button>
+          {refUpload && (
+            <button type="button" onClick={() => setRefUpload(null)}
+              style={{ ...chip(false), color: P.muted }} title={refUpload.name}>
+              ✕ {refUpload.name.slice(0, 18)}
+            </button>
+          )}
+          <input ref={refFileRef} type="file" accept="image/*" onChange={onRefFile} style={{ display: 'none' }} />
+          {refUpload && <span style={{ ...mono, color: P.accent, fontSize: 8, marginLeft: 2 }}>↳ AN AD LIKE THIS, IN OUR BRAND</span>}
+        </div>
         {/* Format presets — set aspect + a brand-locked composition scaffold */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ ...mono, color: P.muted, marginRight: 2 }}>FORMAT</span>
@@ -747,6 +820,25 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
             );
           })}
         </div>
+        {/* Image apps — one-click transforms of the active image (lens kit) */}
+        {activeImage && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ ...mono, color: P.muted, marginRight: 2 }}>APPS</span>
+            {IMAGE_APPS.map((app) => (
+              <button
+                key={app.id}
+                type="button"
+                title={app.prompt}
+                disabled={generating}
+                onClick={() => runApp(app)}
+                style={{ ...chip(false), borderColor: P.accent, color: P.accent, cursor: generating ? 'wait' : 'pointer', opacity: generating ? 0.5 : 1 }}
+              >
+                {app.label}
+              </button>
+            ))}
+            <span style={{ ...mono, color: P.muted, fontSize: 8, marginLeft: 4 }}>↳ applies to v{activeVersion}</span>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ ...mono, color: P.muted }}>MODEL</span>
           <select
