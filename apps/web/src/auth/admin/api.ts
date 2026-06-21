@@ -929,6 +929,38 @@ export async function generateCampaign(brief: string, platforms: SocialPlatform[
   return data.data;
 }
 
+// ── Clients rollup (per-client view of the book) ──
+
+export interface ClientRollup {
+  client: string;
+  jobs: number;
+  quoted: number;
+  invoiced: number;
+  paid: number;
+  overdue_count: number;
+  overdue_amount: number;
+  last_activity: string | null;
+}
+
+export async function getClients(): Promise<ClientRollup[]> {
+  if (PREVIEW) {
+    const by = new Map<string, ClientRollup>();
+    for (const j of previewStore) {
+      const k = j.client || '—';
+      const c = by.get(k) ?? { client: k, jobs: 0, quoted: 0, invoiced: 0, paid: 0, overdue_count: 0, overdue_amount: 0, last_activity: j.created_at };
+      c.jobs += 1;
+      c.quoted += j.quote_amount ?? 0;
+      c.invoiced += j.invoice_amount ?? 0;
+      if (j.poool_status === 'paid') c.paid += j.invoice_amount ?? 0;
+      if (jobIsOverdue(j)) { c.overdue_count += 1; c.overdue_amount += j.invoice_amount ?? j.quote_amount ?? 0; }
+      by.set(k, c);
+    }
+    return [...by.values()].sort((a, b) => b.quoted - a.quoted);
+  }
+  const data = await request<unknown>('/api/copilot/clients');
+  return asArray<ClientRollup>(data, 'data');
+}
+
 // ──────────────────────────────────────────────────────────────
 // POOOL sync summary (live ops.poool_cache) — shown in Finance
 // ──────────────────────────────────────────────────────────────

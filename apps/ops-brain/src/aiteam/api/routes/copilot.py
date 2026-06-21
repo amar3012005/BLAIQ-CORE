@@ -1509,3 +1509,58 @@ async def generate_campaign(
         ),
         message="ok",
     )
+
+
+# ──────────────────────────────────────────────
+# Admin · Clients rollup. Per-client view of the agency's book (read-only):
+# jobs, quoted/invoiced/paid, overdue, last activity. An agency runs on clients;
+# this groups the live jobs by client so the PM sees each relationship at a glance.
+# ──────────────────────────────────────────────
+
+class ClientRollup(BaseModel):
+    client: str
+    jobs: int
+    quoted: float
+    invoiced: float
+    paid: float
+    overdue_count: int
+    overdue_amount: float
+    last_activity: str | None = None
+
+
+@router.get("/clients", response_model=APIResponse[list[ClientRollup]])
+async def clients_rollup(
+    db: AsyncSession = Depends(_get_db),
+) -> APIResponse[list[ClientRollup]]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    rows = (
+        await db.execute(
+            text(
+                "SELECT client, count(*), "
+                "COALESCE(sum(quote_amount),0), COALESCE(sum(invoice_amount),0), "
+                "COALESCE(sum(invoice_amount) FILTER (WHERE poool_status='paid'),0), "
+                "count(*) FILTER (WHERE poool_status IN ('invoiced','partially_paid','overdue') "
+                "  AND payment_due_date IS NOT NULL AND payment_due_date < CURRENT_DATE), "
+                "COALESCE(sum(COALESCE(invoice_amount,quote_amount)) FILTER (WHERE "
+                "  poool_status IN ('invoiced','partially_paid','overdue') "
+                "  AND payment_due_date IS NOT NULL AND payment_due_date < CURRENT_DATE),0), "
+                "max(created_at) "
+                "FROM ops.jobs WHERE tenant_id = CAST(:tid AS uuid) "
+                "AND client IS NOT NULL AND client <> '' "
+                "GROUP BY client ORDER BY 3 DESC"
+            ),
+            {"tid": tenant_id},
+        )
+    ).all()
+    out = [
+        ClientRollup(
+            client=r[0], jobs=int(r[1]),
+            quoted=float(r[2] or 0), invoiced=float(r[3] or 0), paid=float(r[4] or 0),
+            overdue_count=int(r[5] or 0), overdue_amount=float(r[6] or 0),
+            last_activity=r[7].isoformat() if r[7] else None,
+        )
+        for r in rows
+    ]
+    return APIResponse(data=out, message="ok")

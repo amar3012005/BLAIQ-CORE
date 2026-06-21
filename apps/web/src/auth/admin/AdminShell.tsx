@@ -17,6 +17,7 @@ import CrewBoard from './CrewBoard';
 import BriefingBoard from './BriefingBoard';
 import StudioBoard from './StudioBoard';
 import IntakeBoard from './IntakeBoard';
+import ClientsBoard from './ClientsBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
 
@@ -27,6 +28,7 @@ type TabId =
   | 'studio'
   | 'intake'
   | 'jobs'
+  | 'clients'
   | 'finance'
   | 'work'
   | 'activity'
@@ -53,6 +55,7 @@ const SECTIONS: Section[] = [
     items: [
       { id: 'intake', label: 'Intake', hint: 'Inquiry → drafted job' },
       { id: 'jobs', label: 'Jobs', hint: 'All jobs · tri-track status' },
+      { id: 'clients', label: 'Clients', hint: 'Per-client book' },
       { id: 'finance', label: 'Finance', hint: 'POOOL · quotes, invoices, payments' },
       { id: 'work', label: 'Work', hint: 'ClickUp · tickets + revision rounds' },
     ],
@@ -175,6 +178,7 @@ export default function AdminShell(): JSX.Element {
           {tab === 'studio' && <StudioBoard />}
           {tab === 'intake' && <IntakeBoard />}
           {tab === 'jobs' && <JobBoard />}
+          {tab === 'clients' && <ClientsBoard />}
           {tab === 'finance' && <FinanceBoard />}
           {tab === 'work' && <TasksWall />}
           {tab === 'activity' && <ActivityFeed />}

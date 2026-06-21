@@ -351,3 +351,7 @@ Feasibility-first, value-first — each step unlocks the next:
 **Admin ↔ GenAI convergence — campaign from a job (Track C)** — the Jobs board detail now has a **MARKETING — CAMPAIGN** action: one click on a client job runs the orchestrator with the job context, creating a brand-locked campaign (concept + deck + social + key visual) in a real Open Design project linked back to the job. Verified in-app on job 2026-014:
 
 ![Create campaign from a job — Admin↔GenAI convergence](docs/progress/job-campaign-convergence.png)
+
+**Admin · Clients — per-client book (Track A)** — new Clients tab + `GET /api/copilot/clients`: jobs grouped by client with quoted/invoiced/paid/overdue + last activity, read-only from `ops.jobs`. Verified live (Stadtwerke €12,500 overdue, Café Mehlwald €6,200 paid):
+
+![Admin Clients — per-client book](docs/progress/admin-clients.png)
