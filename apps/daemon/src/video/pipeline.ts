@@ -17,6 +17,7 @@ import path from 'node:path';
 import { jsonrepair } from 'jsonrepair';
 import { waitForReply, type HitlGate, type HitlReply } from './hitl-store.js';
 import { renderVideoOnce as higgsfieldRender } from './higgsfield-client.js';
+import { gateAgent, memberById, type GateAgent } from './crew.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = () => process.env.OPENROUTER_API_KEY || '';
@@ -82,6 +83,7 @@ export type ProgressEvent =
       stage: 'hitl';
       gate: HitlGate;
       title: string;
+      agent?: GateAgent; // the crew member presenting at this gate
       questions?: Array<{ id: string; question: string; hint?: string }>;
       previewMarkdown?: string;
       previewImages?: string[]; // file basenames under projectDir
@@ -350,7 +352,9 @@ async function generateStoryboard(
   hivemindContext: string,
 ): Promise<Storyboard> {
   const shotCount = Math.max(4, Math.min(8, Math.ceil(brief.length / 6)));
-  const system = `You are a senior creative director + cinematographer crafting a cinematic, Higgsfield-style brand promo video.
+  const system = `${memberById('story-writer').voice}
+
+Working with your Director and Cinematographer, you are crafting a cinematic, Higgsfield-style brand promo video.
 Think like a working film director — every shot MUST have ACTION. No static "person stands and smiles" frames. Every shot specifies movement: subject motion (gesture, walk, turn, reach, react) and camera motion (dolly, push-in, tilt, pan, orbit, handheld float). Plot arc with momentum: hook → tension → reveal → CTA.
 
 # Brand DNA (visual identity)
@@ -556,7 +560,7 @@ export async function renderVideo(
         [
           {
             role: 'system',
-            content: 'You are a senior video creative director running a 5-minute discovery call. Output ONLY a JSON array of 3-5 short, sharp questions that you MUST know before you can write a strong, on-brand video script. Each question is an object {id: short-slug, question: full sentence, hint: optional 1-line guidance}. Skip anything already in the brief or Hivemind facts. No preamble, no markdown fence.',
+            content: `${memberById('story-writer').voice}\n\nYou are running a 5-minute discovery call. Output ONLY a JSON array of 3-5 short, sharp questions that you MUST know before you can write a strong, on-brand video script. Each question is an object {id: short-slug, question: full sentence, hint: optional 1-line guidance}. Skip anything already in the brief or Hivemind facts. No preamble, no markdown fence.`,
           },
           {
             role: 'user',
@@ -586,6 +590,7 @@ export async function renderVideo(
         stage: 'hitl',
         gate: 'discovery',
         title: 'Discovery — answer a few quick questions before we write the script',
+        agent: gateAgent('discovery'),
         questions,
       });
       const reply = await waitForReply(ctx.projectId, 'discovery');
@@ -625,6 +630,7 @@ export async function renderVideo(
         stage: 'hitl',
         gate: 'script',
         title: 'Script ready — approve or request changes',
+        agent: gateAgent('script'),
         previewMarkdown: md,
       });
       const reply = await waitForReply(ctx.projectId, 'script');
@@ -681,7 +687,7 @@ export async function renderVideo(
     onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
     // Build per-subject spec JSON
     try {
-      const specSystem = `You are a casting + wardrobe director. Output ONLY a single valid JSON object matching the schema. No prose, no code fence. Pick concrete specific details (no placeholders). Same person will render consistently across many shots, so be specific.`;
+      const specSystem = `${memberById('director').voice}\n\nActing as casting + wardrobe director, output ONLY a single valid JSON object matching the schema. No prose, no code fence. Pick concrete specific details (no placeholders). Same person will render consistently across many shots, so be specific.`;
       const specUser = `Subject id: ${subj.id} (${subj.name || ''})
 Persona: ${subj.persona}
 
@@ -783,6 +789,7 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
         stage: 'hitl',
         gate: 'references',
         title: 'Reference sheets ready — approve or request changes',
+        agent: gateAgent('references'),
         previewImages,
       });
       const reply = await waitForReply(ctx.projectId, 'references');
@@ -886,7 +893,7 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
         const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
         const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
 
-        const prompt = `${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}${revisionBlock}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+        const prompt = `Shot framed by Kano, the crew Cinematographer — deliberate lens, lighting, and composition for emotional impact.\n\n${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}${revisionBlock}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
         const buf = await orImage(prompt, IMAGE_MODEL, refs);
         const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
         await fs.writeFile(p, buf);
@@ -910,6 +917,7 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
         stage: 'hitl',
         gate: 'frames',
         title: 'Shot frames ready — approve or request changes before video render',
+        agent: gateAgent('frames'),
         previewImages,
       });
       const reply = await waitForReply(ctx.projectId, 'frames');

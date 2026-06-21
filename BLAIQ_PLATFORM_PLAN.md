@@ -376,3 +376,15 @@ Verified live on prod: a real 2× "Product Hero / Studio" run produced two disti
 
 ![Format + mode + variant controls](docs/progress/genai-variant-presets.png)
 ![Two brand-locked variants in the compare grid](docs/progress/genai-variant-grid.png)
+
+**GenAI · Studio Crew — named creative team over the video pipeline** — the four HITL gates (discovery · script · references · frames) are now owned by named specialist agents, each with a persona voice injected at their stage:
+- **Soraya · Story Writer** — discovery + script (hook, through-line, narrative).
+- **Vera · Director** — casting, locations, shot direction (references gate).
+- **Kano · Cinematographer** — lens, light, composition, the frames.
+- **Felix · Editor** — pacing, cut, grade, final assembly.
+
+Each gate now announces *who* is presenting (avatar + role + an in-character note) and the LLM/image prompt at that stage is prepended with that member's voice — Brand DNA + Tone + Hivemind remain the substrate, so the whole ad stays on-brand. Built on the existing `hitl-store.ts` gate machinery (`apps/daemon/src/video/crew.ts` + `pipeline.ts`, surfaced in `VideoPipelinePanel`).
+
+Verified live on prod: a real video mission paused at the discovery gate presented by Soraya (Story Writer) with persona-voiced, brand-aware, crew-aware questions.
+
+![Studio Crew — Story Writer presents the discovery gate](docs/progress/genai-studio-crew-gate.png)

@@ -86,6 +86,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [hitl, setHitl] = useState<null | {
     gate: 'discovery' | 'script' | 'references' | 'frames';
     title: string;
+    agent?: { id: string; role: string; name: string; note: string };
     questions?: Array<{ id: string; question: string; hint?: string }>;
     previewMarkdown?: string;
     previewImages?: string[];
@@ -169,13 +170,14 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
     }
   }, [projectId, brief]);
 
-  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string; gate?: 'discovery' | 'script' | 'references' | 'frames'; title?: string; questions?: Array<{ id: string; question: string; hint?: string }>; previewMarkdown?: string; previewImages?: string[] }) => {
+  const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string; gate?: 'discovery' | 'script' | 'references' | 'frames'; title?: string; agent?: { id: string; role: string; name: string; note: string }; questions?: Array<{ id: string; question: string; hint?: string }>; previewMarkdown?: string; previewImages?: string[] }) => {
     if (evName === 'progress' && payload.stage) {
       const stage = payload.stage as StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl';
       if (stage === 'hitl' && payload.gate) {
         setHitl({
           gate: payload.gate,
           title: payload.title || 'Review',
+          ...(payload.agent ? { agent: payload.agent } : {}),
           ...(payload.questions ? { questions: payload.questions } : {}),
           ...(payload.previewMarkdown ? { previewMarkdown: payload.previewMarkdown } : {}),
           ...(payload.previewImages ? { previewImages: payload.previewImages } : {}),
@@ -568,10 +570,29 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       {hitl && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(17,17,17,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 24 }}>
           <div style={{ background: P.bg, border: `1px solid ${P.border}`, borderRadius: 12, width: '100%', maxWidth: 640, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ ...mono, fontSize: 9, color: P.accent }}>HITL · {hitl.gate.toUpperCase()}</div>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${P.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+              {hitl.agent ? (
+                <>
+                  <div style={{ width: 30, height: 30, borderRadius: '50%', background: P.accent, color: P.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                    {hitl.agent.name.slice(0, 1)}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontWeight: 700, color: P.ink }}>
+                      {hitl.agent.name} <span style={{ color: P.muted, fontWeight: 500 }}>· {hitl.agent.role}</span>
+                    </div>
+                    <div style={{ ...mono, fontSize: 8, color: P.accent }}>STUDIO CREW · HITL · {hitl.gate.toUpperCase()}</div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ ...mono, fontSize: 9, color: P.accent }}>HITL · {hitl.gate.toUpperCase()}</div>
+              )}
             </div>
             <div style={{ padding: '18px 20px' }}>
+              {hitl.agent?.note && (
+                <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 12, fontStyle: 'italic', color: P.muted, marginBottom: 10 }}>
+                  “{hitl.agent.note}”
+                </div>
+              )}
               <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 14, fontWeight: 700, color: P.ink, marginBottom: 14 }}>
                 {hitl.title}
               </div>
