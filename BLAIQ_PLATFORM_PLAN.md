@@ -365,3 +365,14 @@ Feasibility-first, value-first — each step unlocks the next:
 
 ![Admin Jobs — redesigned cards](docs/progress/ui-polish-admin-jobs.png)
 ![GenAI home — refined cards](docs/progress/ui-polish-genai-home.png)
+
+**GenAI · Variant engine + format/mode presets (Higgsfield parity #2 + #4)** — the image studio (`ImagePipelinePanel`) now matches Higgsfield's batch + ad-format pillars:
+- **Format presets** — IG Post · Story/Reel · LinkedIn · OOH Billboard · Product Hero. Each sets the aspect and a brand-locked composition scaffold.
+- **Mode presets** — Studio · CGI · UGC · Cinematic, prepended as a production-style directive.
+- **Variant engine** — 1 / 2 / 4×: N parallel renders from one brief (each nudged to a distinct composition), shown in a compare grid → click one to refine. Mask edits stay single. Live progress + partial-failure tolerant.
+- Everything folds into the prompt **before** the daemon brand-locks it (Brand DNA + Tone + Hivemind) — on-brand by construction.
+
+Verified live on prod: a real 2× "Product Hero / Studio" run produced two distinct on-brand key visuals in the grid.
+
+![Format + mode + variant controls](docs/progress/genai-variant-presets.png)
+![Two brand-locked variants in the compare grid](docs/progress/genai-variant-grid.png)

@@ -41,9 +41,9 @@ Screenshots captured 2026-06-20 (this folder): `home.png`, `marketing-studio-int
 ## Recommended build order (closing the gap)
 1. ✅✅ **Campaign orchestrator — SHIPPED + UNIFIED with Open Design.** It now **creates a real Open Design project and writes the assets into it** (`deck.html` + `campaign.md`) via the daemon trust bridge — so Studio output lives in OD's project/Artifacts system, editable in MissionBuilder. One system, not two. Optional `job_number` links a campaign to a POOOL job (Admin↔GenAI convergence). Verified: project `campaign-…` with `deck.html` + `campaign.md` visible in the real OD UI.
 1. ✅ **Campaign orchestrator (original) — SHIPPED** (`POST /api/copilot/campaign`, Studio "✦ Campaign"). One brief → concept (headline + big idea + key message + channels) + a brand-locked 5-slide deck + multi-platform social (with one-click post links) + image & video briefs. Verified live: "Launch our AI brand platform" → "Mensch × Maschine. Endlich eine Marke." with the dot motif, all on-brand. This is the "one prompt → campaign" headline.
-2. **Ad-format + mode presets** (UGC/CGI/cinematic × template library) — turns freeform missions into pick-a-format speed.
+2. ✅ **Ad-format + mode presets — SHIPPED** (ImagePipelinePanel). FORMAT chips (IG Post 1:1 · Story/Reel 9:16 · LinkedIn 16:9 · OOH Billboard 16:9 · Product Hero 1:1) set the aspect + a brand-locked composition scaffold; MODE chips (Studio · CGI · UGC · Cinematic) prepend a production-style directive. Both fold into the prompt before the daemon brand-locks it (Brand DNA + Tone + Hivemind).
 3. **URL/product intake** → product profile (matches "from link to ad").
-4. **Variant engine** — N brand variants per brief for A/B + channels.
+4. ✅ **Variant engine — SHIPPED** (ImagePipelinePanel). VARIANTS 1/2/4× fires N parallel brand-locked renders (each nudged to a distinct composition), shown in a compare grid → pick one to refine. Verified live: a 2× "Product Hero / Studio" run produced two distinct on-brand speaker key visuals. The agency volume play (A/B + channels).
 5. **Brand spokespersons** (avatars) + **reference-based** generation.
 6. **Image-preset apps** (billboard, bullet-time, relight, multi-angle, expand) — fast wins on top of the working image pipeline.
 7. **Hooks + virality scoring**; premium Higgsfield/Seedance video.

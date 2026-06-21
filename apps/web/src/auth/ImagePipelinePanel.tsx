@@ -18,6 +18,9 @@ import {
   Eraser,
   Download,
   RefreshCcw,
+  LayoutGrid,
+  Square,
+  Sparkles,
 } from 'lucide-react';
 
 const P = {
@@ -40,6 +43,24 @@ const mono: CSSProperties = {
   textTransform: 'uppercase',
 };
 
+// Pill toggle used by the format / mode / variant selectors.
+function chip(on: boolean): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '4px 9px',
+    background: on ? P.ink : P.white,
+    color: on ? P.white : P.ink,
+    border: `1px solid ${on ? P.ink : P.border}`,
+    borderRadius: 999,
+    cursor: 'pointer',
+    fontFamily: '"Inter", sans-serif',
+    fontSize: 10,
+    fontWeight: 600,
+    transition: 'background 140ms ease, border-color 140ms ease, color 140ms ease',
+  };
+}
+
 interface ImageVersion {
   version: number;
   url: string;
@@ -52,6 +73,35 @@ interface ImageModel {
   label: string;
   default?: boolean;
 }
+
+// ── Higgsfield-parity: format presets (ad-format templates) + mode presets.
+// A format sets the aspect and a brand-locked composition scaffold; a mode
+// prepends a production-style directive. Both are appended to the user's
+// prompt before the daemon brand-locks it (Brand DNA + Tone + Hivemind).
+interface FormatPreset { id: string; label: string; aspect: string; scaffold: string; }
+interface ModePreset { id: string; label: string; directive: string; }
+
+const FORMAT_PRESETS: FormatPreset[] = [
+  { id: 'ig-post', label: 'IG Post', aspect: '1:1', scaffold: 'Composed as a polished Instagram feed post — square 1:1, one clear focal subject, social-ready, room for a short caption overlay.' },
+  { id: 'ig-story', label: 'Story / Reel', aspect: '9:16', scaffold: 'Vertical 9:16 Instagram Story / Reel cover — bold full-bleed composition, thumb-stopping, safe margins top and bottom for UI.' },
+  { id: 'linkedin', label: 'LinkedIn', aspect: '16:9', scaffold: 'Professional LinkedIn visual — landscape 16:9, confident credible B2B tone, uncluttered, considered.' },
+  { id: 'billboard', label: 'OOH Billboard', aspect: '16:9', scaffold: 'Out-of-home billboard / poster — ultra high-impact, legible from a distance, one dominant idea, generous negative space for a headline.' },
+  { id: 'product-hero', label: 'Product Hero', aspect: '1:1', scaffold: 'Studio product hero shot on a clean seamless backdrop — controlled soft lighting, crisp reflections, premium e-commerce quality.' },
+];
+
+const MODE_PRESETS: ModePreset[] = [
+  { id: 'studio', label: 'Studio', directive: 'Clean studio aesthetic, controlled lighting, premium and precise.' },
+  { id: 'cgi', label: 'CGI', directive: 'Hyper-real 3D CGI render, art-directed materials and physics, dramatic.' },
+  { id: 'ugc', label: 'UGC', directive: 'Authentic user-generated-content look — candid, handheld, natural light, relatable.' },
+  { id: 'cinematic', label: 'Cinematic', directive: 'Cinematic film still — shallow depth of field, colour-graded, atmospheric.' },
+];
+
+const VARIANT_NOTES = [
+  'Variation A — distinct composition and crop.',
+  'Variation B — alternative angle and lighting.',
+  'Variation C — different focal treatment.',
+  'Variation D — bolder art direction.',
+];
 
 interface Props {
   projectId: string;
@@ -66,6 +116,15 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  // Higgsfield-parity controls: live aspect (presets can change it), format +
+  // mode presets, variant count (batch), and a grid view to compare a batch.
+  const [aspectState, setAspectState] = useState<string>(aspect);
+  const [formatId, setFormatId] = useState<string | null>(null);
+  const [modeId, setModeId] = useState<string | null>(null);
+  const [variantCount, setVariantCount] = useState<number>(1);
+  const [view, setView] = useState<'single' | 'grid'>('single');
+  const [lastBatch, setLastBatch] = useState<number[]>([]);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [drawMode, setDrawMode] = useState(false);
   const [useRef_, setUseRef] = useState(true);   // false = fresh gen ignoring active version
   const [strokes, setStrokes] = useState<Array<{ x: number; y: number; size: number; erase: boolean }[]>>([]);
@@ -261,52 +320,79 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     return composited.toDataURL('image/png');
   }, [strokes]);
 
+  // Compose the prompt actually sent: mode directive + user prompt + format
+  // scaffold (+ optional per-variant nudge). The daemon then brand-locks it.
+  const composePrompt = useCallback((base: string, variantNote?: string): string => {
+    const mode = MODE_PRESETS.find((m) => m.id === modeId)?.directive;
+    const fmt = FORMAT_PRESETS.find((f) => f.id === formatId)?.scaffold;
+    return [mode, base, fmt, variantNote].filter(Boolean).join('\n\n');
+  }, [modeId, formatId]);
+
+  // Render a single image and return the new version (throws on failure).
+  const renderOne = useCallback(async (promptText: string, refImage?: string): Promise<ImageVersion> => {
+    const body: Record<string, unknown> = {
+      project_id: projectId,
+      prompt: promptText,
+      model,
+      aspect: aspectState,
+    };
+    if (refImage) body.ref_image = refImage;
+    const r = await fetch('/api/v1/image/render', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || `render failed (${r.status})`);
+    return { version: d.version, url: d.file_path, prompt: promptText, model };
+  }, [projectId, model, aspectState]);
+
   const generate = useCallback(async () => {
     if (!prompt.trim() || !model || generating) return;
     setGenerating(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = {
-        project_id: projectId,
-        prompt: prompt.trim(),
-        model,
-        aspect,
-      };
-      // Three modes:
-      //   - Fresh: useRef_=false → no ref, no mask → daemon enriches prompt.
-      //   - Refine (no mask): useRef_=true, strokes=0 → send ref only.
-      //   - Masked edit: useRef_=true, strokes>0 → composite mask into ref
-      //     (black out edit region) and send the composited image as ref.
-      //     No separate mask image — models like gemini-flash-image paint the
-      //     mask in literally when sent as a second attachment.
+      // A mask edit is always a single, targeted render — variants don't apply.
+      const hasMask = useRef_ && !!activeImage && strokes.some((s) => s[0] && !s[0].erase);
+      // Build the ref image once; shared across a variant batch.
+      //   - Fresh: useRef_=false → no ref → daemon enriches prompt.
+      //   - Refine (no mask): send the active version as ref.
+      //   - Masked edit: composite the mask into the ref (black out the region).
+      let refImage: string | undefined;
       if (useRef_ && activeImage) {
-        if (strokes.some((s) => s[0] && !s[0].erase)) {
+        if (hasMask) {
           const refUri = await fetchAsDataUri(activeImage.url);
-          const masked = await buildMaskedRefDataUri(refUri);
-          body.ref_image = masked || refUri;
+          refImage = (await buildMaskedRefDataUri(refUri)) || refUri;
         } else {
-          body.ref_image = await fetchAsDataUri(activeImage.url);
+          refImage = await fetchAsDataUri(activeImage.url);
         }
       }
-      const r = await fetch('/api/v1/image/render', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const d = await r.json();
-      if (!r.ok || !d.ok) {
-        setError(d.error || `render failed (${r.status})`);
+
+      const n = hasMask ? 1 : Math.min(Math.max(variantCount, 1), 4);
+      const base = prompt.trim();
+      setProgress({ done: 0, total: n });
+
+      const settled = await Promise.allSettled(
+        Array.from({ length: n }, (_, i) =>
+          renderOne(composePrompt(base, n > 1 ? VARIANT_NOTES[i] : undefined), refImage)
+            .then((v) => { setProgress((p) => (p ? { ...p, done: p.done + 1 } : p)); return v; }),
+        ),
+      );
+      const made = settled.filter((s): s is PromiseFulfilledResult<ImageVersion> => s.status === 'fulfilled').map((s) => s.value);
+      const failed = settled.length - made.length;
+
+      if (made.length === 0) {
+        const firstErr = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
+        setError(firstErr ? String(firstErr.reason?.message || firstErr.reason) : 'render failed');
         return;
       }
-      const v: ImageVersion = {
-        version: d.version,
-        url: d.file_path,
-        prompt: prompt.trim(),
-        model,
-      };
-      setVersions((prev) => [...prev, v]);
-      setActiveVersion(v.version);
+      made.sort((a, b) => a.version - b.version);
+      setVersions((prev) => [...prev, ...made]);
+      setActiveVersion(made[0]!.version);
+      setLastBatch(made.map((v) => v.version));
+      setView(made.length > 1 ? 'grid' : 'single');
+      if (failed > 0) setError(`${failed} of ${n} variants failed — showing the ${made.length} that rendered.`);
       setPrompt('');
       setStrokes([]);
       setDrawMode(false);
@@ -314,8 +400,9 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       setError((err as Error).message);
     } finally {
       setGenerating(false);
+      setProgress(null);
     }
-  }, [prompt, model, generating, projectId, aspect, activeImage, strokes, useRef_, buildMaskedRefDataUri]);
+  }, [prompt, model, generating, activeImage, strokes, useRef_, variantCount, buildMaskedRefDataUri, composePrompt, renderOne]);
 
   // Keep generateRef pointing at the latest generate closure so the
   // event-listener effect (mounted once) always invokes the current one.
@@ -359,26 +446,49 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
             </div>
           </div>
         </div>
-        {activeImage && (
-          <a
-            href={activeImage.url}
-            download={`image_v${activeImage.version}.png`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              border: `1px solid ${P.border}`,
-              color: P.ink,
-              fontFamily: '"Inter", sans-serif',
-              fontSize: 11,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            <Download size={12} /> Download
-          </a>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {lastBatch.length > 1 && (
+            <div style={{ display: 'inline-flex', border: `1px solid ${P.border}`, borderRadius: 8, overflow: 'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setView('grid')}
+                title="Compare variants"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 9px', background: view === 'grid' ? P.ink : 'transparent', color: view === 'grid' ? P.white : P.ink, border: 'none', cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}
+              >
+                <LayoutGrid size={12} /> Grid
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('single')}
+                title="Single view"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 9px', background: view === 'single' ? P.ink : 'transparent', color: view === 'single' ? P.white : P.ink, border: 'none', borderLeft: `1px solid ${P.border}`, cursor: 'pointer', fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}
+              >
+                <Square size={12} /> Single
+              </button>
+            </div>
+          )}
+          {activeImage && (
+            <a
+              href={activeImage.url}
+              download={`image_v${activeImage.version}.png`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                border: `1px solid ${P.border}`,
+                borderRadius: 8,
+                color: P.ink,
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 11,
+                fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              <Download size={12} /> Download
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Version tabs */}
@@ -397,7 +507,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
               <button
                 key={v.version}
                 type="button"
-                onClick={() => { setActiveVersion(v.version); setStrokes([]); setDrawMode(false); }}
+                onClick={() => { setActiveVersion(v.version); setStrokes([]); setDrawMode(false); setView('single'); }}
                 title={v.prompt}
                 style={{
                   padding: '6px 12px',
@@ -436,8 +546,44 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
         </div>
       )}
 
+      {/* Variant grid — compare a batch, pick one to refine */}
+      {view === 'grid' && lastBatch.length > 0 && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
+          <div style={{ ...mono, color: P.muted, marginBottom: 14 }}>
+            {versions.filter((v) => lastBatch.includes(v.version)).length} VARIANTS · BRAND-LOCKED · PICK ONE TO REFINE
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            {versions.filter((v) => lastBatch.includes(v.version)).map((v) => {
+              const isActive = v.version === activeVersion;
+              return (
+                <button
+                  key={v.version}
+                  type="button"
+                  onClick={() => { setActiveVersion(v.version); setView('single'); setStrokes([]); setDrawMode(false); }}
+                  style={{
+                    position: 'relative',
+                    padding: 0,
+                    background: P.white,
+                    border: `2px solid ${isActive ? P.accent : P.border}`,
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                  }}
+                >
+                  <img src={v.url} alt={`v${v.version}`} style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', objectFit: 'cover' }} />
+                  <div style={{ ...mono, position: 'absolute', top: 8, left: 8, padding: '3px 7px', background: 'rgba(17,17,17,0.7)', color: P.white, borderRadius: 6, fontSize: 8 }}>
+                    v{v.version}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Canvas / sketch zone */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, position: 'relative' }}>
+      <div style={{ flex: 1, minHeight: 0, display: view === 'grid' && lastBatch.length > 0 ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, position: 'relative' }}>
         {activeImage ? (
           <div style={{ position: 'relative', maxWidth: '100%', maxHeight: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
             <img
@@ -558,6 +704,49 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
         background: P.card,
         flexShrink: 0,
       }}>
+        {/* Format presets — set aspect + a brand-locked composition scaffold */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, color: P.muted, marginRight: 2 }}>FORMAT</span>
+          {FORMAT_PRESETS.map((f) => {
+            const on = formatId === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                title={f.scaffold}
+                onClick={() => {
+                  if (on) { setFormatId(null); }
+                  else { setFormatId(f.id); setAspectState(f.aspect); }
+                }}
+                style={chip(on)}
+              >
+                {f.label}
+                <span style={{ ...mono, fontSize: 7, opacity: 0.6, marginLeft: 5 }}>{f.aspect}</span>
+              </button>
+            );
+          })}
+        </div>
+        {/* Mode presets — production-style directive */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, color: P.muted, marginRight: 2 }}>MODE</span>
+          {MODE_PRESETS.map((m) => {
+            const on = modeId === m.id;
+            return (
+              <button key={m.id} type="button" title={m.directive} onClick={() => setModeId(on ? null : m.id)} style={chip(on)}>
+                {m.label}
+              </button>
+            );
+          })}
+          <span style={{ ...mono, color: P.muted, marginLeft: 'auto', marginRight: 2 }}>VARIANTS</span>
+          {[1, 2, 4].map((n) => {
+            const on = variantCount === n;
+            return (
+              <button key={n} type="button" onClick={() => setVariantCount(n)} style={chip(on)}>
+                {n === 1 ? '1' : `${n}×`}
+              </button>
+            );
+          })}
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ ...mono, color: P.muted }}>MODEL</span>
           <select
@@ -578,7 +767,7 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
             ))}
           </select>
           <span style={{ ...mono, color: P.muted, marginLeft: 12 }}>ASPECT</span>
-          <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink }}>{aspect}</span>
+          <span style={{ fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink }}>{aspectState}</span>
           {activeImage && (
             <>
               <span style={{ ...mono, color: P.muted, marginLeft: 12 }}>MODE</span>
@@ -660,8 +849,10 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
           >
             {generating
               ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-              : <Send size={12} />}
-            {generating ? 'GENERATING…' : 'SEND'}
+              : variantCount > 1 ? <Sparkles size={12} /> : <Send size={12} />}
+            {generating
+              ? (progress ? `RENDERING ${progress.done}/${progress.total}…` : 'GENERATING…')
+              : variantCount > 1 ? `GENERATE ${variantCount}×` : 'SEND'}
           </button>
         </div>
       </div>
