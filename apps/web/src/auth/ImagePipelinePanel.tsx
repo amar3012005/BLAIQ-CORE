@@ -140,6 +140,9 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
   // Casting: an uploaded external reference ("an ad like this, in our brand").
   const [refUpload, setRefUpload] = useState<{ name: string; dataUri: string } | null>(null);
   const refFileRef = useRef<HTMLInputElement | null>(null);
+  // Pinned, tenant-level spokespersons reusable across projects.
+  const [spokespersons, setSpokespersons] = useState<Array<{ id: string; name: string; url: string }>>([]);
+  const [pinning, setPinning] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [useRef_, setUseRef] = useState(true);   // false = fresh gen ignoring active version
   const [strokes, setStrokes] = useState<Array<{ x: number; y: number; size: number; erase: boolean }[]>>([]);
@@ -471,6 +474,40 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     e.target.value = '';
   }, []);
 
+  // Tenant-level spokespersons: load, pin the active image, cast one as a ref.
+  const loadSpokespersons = useCallback(async () => {
+    try {
+      const r = await fetch('/api/v1/spokespersons', { credentials: 'include' });
+      if (!r.ok) return;
+      const d = await r.json();
+      setSpokespersons(Array.isArray(d.spokespersons) ? d.spokespersons : []);
+    } catch { /* noop */ }
+  }, []);
+
+  useEffect(() => { void loadSpokespersons(); }, [loadSpokespersons]);
+
+  const pinSpokesperson = useCallback(async () => {
+    if (!activeImage || pinning) return;
+    const name = window.prompt('Name this spokesperson — it becomes reusable across every project', 'Brand spokesperson');
+    if (name === null) return;
+    setPinning(true);
+    try {
+      const dataUri = await fetchAsDataUri(activeImage.url);
+      const r = await fetch('/api/v1/spokespersons', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name || 'Spokesperson', image_data: dataUri }),
+      });
+      if (r.ok) await loadSpokespersons();
+    } catch { /* noop */ } finally { setPinning(false); }
+  }, [activeImage, pinning, loadSpokespersons]);
+
+  const castSpokesperson = useCallback(async (sp: { id: string; name: string; url: string }) => {
+    try {
+      const dataUri = await fetchAsDataUri(sp.url);
+      setRefUpload({ name: sp.name, dataUri });
+    } catch { /* noop */ }
+  }, []);
+
   return (
     <div style={{
       position: 'relative',
@@ -768,6 +805,13 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
             style={chip(!!refUpload)}>
             {refUpload ? 'Reference ✓' : '+ Reference'}
           </button>
+          {activeImage && (
+            <button type="button" disabled={pinning} onClick={pinSpokesperson}
+              style={{ ...chip(false), color: P.muted, cursor: pinning ? 'wait' : 'pointer' }}
+              title="Pin the current image as a reusable spokesperson">
+              {pinning ? 'PINNING…' : '📌 Pin'}
+            </button>
+          )}
           {refUpload && (
             <button type="button" onClick={() => setRefUpload(null)}
               style={{ ...chip(false), color: P.muted }} title={refUpload.name}>
@@ -777,6 +821,23 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
           <input ref={refFileRef} type="file" accept="image/*" onChange={onRefFile} style={{ display: 'none' }} />
           {refUpload && <span style={{ ...mono, color: P.accent, fontSize: 8, marginLeft: 2 }}>↳ AN AD LIKE THIS, IN OUR BRAND</span>}
         </div>
+        {/* Pinned spokespersons — reusable across every project; click to cast as a reference */}
+        {spokespersons.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ ...mono, color: P.muted, marginRight: 2 }}>PINNED</span>
+            {spokespersons.map((sp) => {
+              const on = refUpload?.name === sp.name;
+              return (
+                <button key={sp.id} type="button" title={`Cast ${sp.name} as the reference`}
+                  onClick={() => { void castSpokesperson(sp); }}
+                  style={{ ...chip(on), display: 'inline-flex', alignItems: 'center', gap: 6, paddingLeft: 4 }}>
+                  <img src={sp.url} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                  {sp.name.slice(0, 20)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {/* Format presets — set aspect + a brand-locked composition scaffold */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ ...mono, color: P.muted, marginRight: 2 }}>FORMAT</span>

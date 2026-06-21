@@ -398,3 +398,10 @@ Verified live on prod: a real video mission paused at the discovery gate present
 ![Product intake — paste a link](docs/progress/genai-product-intake.png)
 ![Brand spokesperson — consistent, reusable](docs/progress/genai-spokesperson.png)
 ![Hooks + virality — the Editor's QA](docs/progress/genai-hooks-virality.png)
+
+**GenAI · Tenant-level spokesperson pinning + reuse** — a spokesperson is now a durable, reusable asset, not an ephemeral version:
+- Daemon store (`image-routes.ts`): `GET/POST /api/v1/spokespersons` + `GET /api/v1/spokespersons/:id/image`, tenant-scoped on disk (image + JSON registry under `OD_DATA_DIR/tenant-assets/<tenant>/`) — no DB migration.
+- ImagePipelinePanel: **📌 Pin** the active image → names it → saved tenant-wide; a **PINNED** row shows every spokesperson (with thumbnail) in *any* project; click one to cast it as the reference (reuses the `refUpload` path → "an ad like this, in our brand").
+- Verified live on prod: pinned a spokesperson, confirmed it lists + serves + appears in the panel on a fresh load (cross-project reuse).
+
+![Pinned spokesperson — reusable across projects](docs/progress/genai-spokesperson-pinned.png)
