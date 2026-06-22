@@ -440,3 +440,7 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 - Verified live on real `/admin`: surfaced the real spokesperson sheets, image variants, and campaign decks across projects.
 
 ![Artifacts library — all generated work in one place](docs/progress/genai-artifacts-library.png)
+
+**GenAI · Campaign export — client-ready one-pager kit** — turns a generated campaign into a shareable deliverable. The Studio CampaignView gains **↗ Campaign Kit** (open) + **⬇ Download Kit**: a self-contained, brand-styled HTML one-pager (dark + signature dot) with the concept, hero key visual, every social post, image/video briefs, and the deck reference — nothing external except the same-origin hero image. Verified live: built a campaign and opened the kit (full B&B-styled recap).
+
+![Campaign kit — client-ready one-pager](docs/progress/genai-campaign-kit.png)
