@@ -3,7 +3,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { listJobs, jobIsOverdue, getPooolSummary, type Job, type PooolStatus, type PooolSyncSummary } from './api';
 import { PAL, monoSmall, sansBold, sans, skeletonBar, emptyText } from './theme';
 import { ErrorBanner } from './JobBoard';
@@ -171,14 +171,24 @@ export default function FinanceBoard(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [poool, setPoool] = useState<PooolSyncSummary | null>(null);
 
-  useEffect(() => {
-    listJobs()
-      .then(j => setJobs(j))
-      .catch((e: Error) => setError(e.message));
+  const load = useCallback((): void => {
+    setError(null);
+    setJobs(null);
+    listJobs().then(j => setJobs(j)).catch((e: Error) => setError(e.message));
     getPooolSummary().then(setPoool).catch(() => setPoool(null));
   }, []);
 
-  if (error) return <div style={{ padding: 20 }}><ErrorBanner message={error} /></div>;
+  useEffect(() => { load(); }, [load]);
+
+  if (error) return (
+    <div style={{ padding: 20 }}>
+      <ErrorBanner message={error} />
+      <button type="button" onClick={load}
+        style={{ marginTop: 8, padding: '6px 14px', border: `1px solid ${PAL.divider}`, background: PAL.panel, color: PAL.ink, cursor: 'pointer', ...monoSmall, fontSize: 9, borderRadius: 6 }}>
+        ↺ RETRY
+      </button>
+    </div>
+  );
   if (!jobs) return (
     <div style={{ padding: 20 }}>
       <span style={skeletonBar('60%', 14)} />

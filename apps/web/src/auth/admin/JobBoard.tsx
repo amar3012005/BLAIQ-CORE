@@ -749,7 +749,9 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
       <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>NOTIFICATIONS</div>
       <div style={{ background: PAL.bg, border: `1px solid ${PAL.divider}`, padding: 14, marginBottom: 16 }}>
         {notifications === null && (
-          <span style={{ ...sans, fontSize: 11, color: PAL.muted }}>loading…</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {[1, 2].map(i => <span key={i} style={{ display: 'block', height: 22, background: PAL.panel, borderRadius: 4, animation: 'blaiqPulse 1.6s ease-in-out infinite', opacity: 0.5 }} />)}
+          </div>
         )}
         {notifications && notifications.length === 0 && (
           <span style={{ ...sans, fontSize: 11, color: PAL.muted, fontStyle: 'italic' }}>

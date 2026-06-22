@@ -5192,6 +5192,18 @@ export async function startServer({
     // SPA fallback: serve apps/web/out/index.html for any non-API GET
     // that didn't match a static file. The web app is a client-routed
     // SPA; the Next.js static export only emits index.html and the
+    // Global error handler — catches any unhandled errors thrown inside route handlers.
+    // In production, raw error details (stack traces, DB messages) are suppressed to
+    // prevent information leakage; only logged server-side.
+    const isProd = process.env.NODE_ENV === 'production' || !!process.env.OD_SESSION_SECRET;
+    app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error('[daemon] unhandled error:', msg, err instanceof Error ? err.stack : '');
+      if (res.headersSent) return;
+      res.status(500).json({ error: isProd ? 'Internal server error' : msg });
+    });
+
     // daemon must return it for deep links like /chat or /login.
     if (fs.existsSync(STATIC_DIR)) {
       const indexHtml = path.join(STATIC_DIR, 'index.html');

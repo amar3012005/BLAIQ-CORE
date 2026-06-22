@@ -167,9 +167,9 @@ export default function CopilotBoard(): JSX.Element {
               style={{
                 alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
                 maxWidth: '82%',
-                background: m.role === 'user' ? PAL.ink : (m.error ? 'rgba(220,38,38,0.06)' : (m.done ? '#E1F5EE' : PAL.panel)),
-                color: m.role === 'user' ? PAL.white : (m.error ? '#B91C1C' : (m.done ? '#0F6E56' : PAL.ink)),
-                border: m.role === 'user' ? 'none' : `1px solid ${m.error ? 'rgba(220,38,38,0.25)' : PAL.divider}`,
+                background: m.role === 'user' ? PAL.accentDim : (m.error ? 'rgba(220,38,38,0.06)' : (m.done ? 'rgba(16,185,129,0.08)' : PAL.panel)),
+                color: m.role === 'user' ? '#FFFFFF' : (m.error ? '#F87171' : (m.done ? '#34D399' : PAL.ink)),
+                border: m.role === 'user' ? `1px solid ${PAL.accentBright}44` : `1px solid ${m.error ? 'rgba(220,38,38,0.25)' : PAL.divider}`,
                 padding: '10px 14px',
                 borderRadius: 12,
                 ...sans,
