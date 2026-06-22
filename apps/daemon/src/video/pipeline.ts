@@ -530,6 +530,113 @@ function storyboardToMarkdown(sb: Storyboard, brief: VideoBrief): string {
   return lines.join('\n');
 }
 
+/** Build the per-shot reference-frame prompt + ref images. Shared by the main
+ * pipeline and the frames-gate variant engine so both frame the shot identically
+ * (Kano the Cinematographer's framing), differing only by the optional note. */
+function buildShotFramePrompt(
+  shot: Shot,
+  shotSubjects: SubjectDef[],
+  scenerySheetDataUri: string | undefined,
+  style: string,
+  aspect: string,
+  colorGrade: string,
+  extraNote: string,
+): { prompt: string; refs: string[] } {
+  const refs: string[] = [];
+  shotSubjects.forEach((s) => { if (s.sheetDataUri) refs.push(s.sheetDataUri); });
+  if (scenerySheetDataUri) refs.push(scenerySheetDataUri);
+
+  const subjectClauses: string[] = [];
+  shotSubjects.forEach((s, idx) => {
+    const ordinal = ['FIRST', 'SECOND', 'THIRD'][idx] || `#${idx + 1}`;
+    subjectClauses.push(`STRICT IDENTITY LOCK — subject "${s.id}" appears in this shot and is the SAME individual shown in the ${ordinal} attached reference image. Match face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.`);
+  });
+  if (scenerySheetDataUri) {
+    const ord = ['FIRST', 'SECOND', 'THIRD', 'FOURTH'][shotSubjects.length] || `#${shotSubjects.length + 1}`;
+    subjectClauses.push(`STRICT LOCATION LOCK — the environment is the SAME location shown in the ${ord} attached reference image. Match architecture, materials, color palette, props, signage, time of day, and lighting direction exactly.`);
+  }
+
+  const subjectSpecBlocks = shotSubjects
+    .filter((s) => s.specJson)
+    .map((s) => `# Locked spec for subject "${s.id}" (must match attached reference)\n${s.specJson}`)
+    .join('\n\n');
+
+  const narrationCue = shot.narration_chunk
+    ? `\n\n# Narration line for this shot (visual must match the emotional beat)\n"${shot.narration_chunk}"`
+    : '';
+  const revisionBlock = extraNote
+    ? `\n\n# User revision request — APPLY THIS to this shot frame\n${extraNote}`
+    : '';
+  const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
+  const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
+
+  const prompt = `Shot framed by Kano, the crew Cinematographer — deliberate lens, lighting, and composition for emotional impact.\n\n${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}${revisionBlock}\n\nStyle: ${style}. Color grade: ${colorGrade}. Aspect ${aspect}. Photoreal, cinematic, no text, no watermark.`;
+  return { prompt, refs };
+}
+
+// Per-variant art-direction nudges for the frames-gate variant engine.
+const SHOT_VARIANT_NOTES = [
+  'Variation A — alternative composition and crop.',
+  'Variation B — different camera angle and lens.',
+  'Variation C — different lighting setup and mood.',
+  'Variation D — bolder, more cinematic framing.',
+];
+
+/** Frames-gate variant engine: render N alternative key frames for ONE shot,
+ * reconstructing subjects + scenery from the project dir. Writes
+ * `ref_shot<N>_var<k>.png` and returns their basenames. */
+export async function renderShotVariants(
+  projectDir: string,
+  shotNumber: number,
+  count: number,
+  opts: { style: string; aspect: string },
+): Promise<string[]> {
+  const storyboard = JSON.parse(await fs.readFile(path.join(projectDir, 'storyboard.json'), 'utf8')) as Storyboard;
+  const shot = storyboard.shots.find((s) => s.shot === shotNumber);
+  if (!shot) throw new Error(`shot ${shotNumber} not found`);
+
+  const subjectsById = new Map<string, SubjectDef>();
+  for (const s of storyboard.subjects || []) {
+    try {
+      const buf = await fs.readFile(path.join(projectDir, `subject_${s.id}_sheet.png`));
+      s.sheetDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+    } catch { /* no sheet on disk */ }
+    try { s.specJson = await fs.readFile(path.join(projectDir, `subject_${s.id}_spec.json`), 'utf8'); } catch { /* no spec */ }
+    subjectsById.set(s.id, s);
+  }
+  let scenery: string | undefined;
+  try {
+    const buf = await fs.readFile(path.join(projectDir, 'scenery_sheet.png'));
+    scenery = `data:image/png;base64,${buf.toString('base64')}`;
+  } catch { /* no scenery */ }
+
+  const shotSubjects = (shot.subject_ids || [])
+    .map((id) => subjectsById.get(id))
+    .filter((s): s is SubjectDef => Boolean(s && s.sheetDataUri));
+
+  const n = Math.min(Math.max(count, 1), 4);
+  const out: string[] = [];
+  await Promise.all(Array.from({ length: n }, (_, k) => k).map(async (k) => {
+    const note = SHOT_VARIANT_NOTES[k] || `Variation ${k + 1}.`;
+    const { prompt, refs } = buildShotFramePrompt(shot, shotSubjects, scenery, opts.style, opts.aspect, storyboard.color_grade, note);
+    const buf = await orImage(prompt, IMAGE_MODEL, refs);
+    const fname = `ref_shot${shotNumber}_var${k + 1}.png`;
+    await fs.writeFile(path.join(projectDir, fname), buf);
+    out[k] = fname;
+  }));
+  return out.filter(Boolean);
+}
+
+/** Promote a chosen variant to be the shot's canonical reference frame, so the
+ * downstream i2v stage animates it. */
+export async function selectShotFrame(projectDir: string, shotNumber: number, variantFile: string): Promise<void> {
+  if (!new RegExp(`^ref_shot${shotNumber}_var\\d+\\.png$`).test(variantFile)) {
+    throw new Error('variant file does not match this shot');
+  }
+  const buf = await fs.readFile(path.join(projectDir, variantFile));
+  await fs.writeFile(path.join(projectDir, `ref_shot${shotNumber}.png`), buf);
+}
+
 /** Main pipeline. */
 export async function renderVideo(
   brief: VideoBrief,
@@ -885,36 +992,9 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
         const shotSubjects: SubjectDef[] = (shot.subject_ids || [])
           .map((id) => subjectsById.get(id))
           .filter((s): s is SubjectDef => Boolean(s && s.sheetDataUri));
-        const refs: string[] = [];
-        shotSubjects.forEach((s) => { if (s.sheetDataUri) refs.push(s.sheetDataUri); });
-        if (scenerySheetDataUri) refs.push(scenerySheetDataUri);
-
-        const subjectClauses: string[] = [];
-        shotSubjects.forEach((s, idx) => {
-          const ordinal = ['FIRST', 'SECOND', 'THIRD'][idx] || `#${idx + 1}`;
-          subjectClauses.push(`STRICT IDENTITY LOCK — subject "${s.id}" appears in this shot and is the SAME individual shown in the ${ordinal} attached reference image. Match face, skin tone, hair, build, height, age, AND wardrobe exactly from any of its four panels. Do NOT invent a different person, do NOT change wardrobe or hair.`);
-        });
-        if (scenerySheetDataUri) {
-          const ord = ['FIRST', 'SECOND', 'THIRD', 'FOURTH'][shotSubjects.length] || `#${shotSubjects.length + 1}`;
-          subjectClauses.push(`STRICT LOCATION LOCK — the environment is the SAME location shown in the ${ord} attached reference image. Match architecture, materials, color palette, props, signage, time of day, and lighting direction exactly.`);
-        }
-
-        const subjectSpecBlocks = shotSubjects
-          .filter((s) => s.specJson)
-          .map((s) => `# Locked spec for subject "${s.id}" (must match attached reference)\n${s.specJson}`)
-          .join('\n\n');
-
-        const narrationCue = shot.narration_chunk
-          ? `\n\n# Narration line for this shot (visual must match the emotional beat)\n"${shot.narration_chunk}"`
-          : '';
-        const revisionBlock = extraNote
-          ? `\n\n# User revision request — APPLY THIS to this shot frame\n${extraNote}`
-          : '';
-
-        const lockBlock = subjectClauses.length ? '\n\n' + subjectClauses.join('\n') : '';
-        const specBlock = subjectSpecBlocks ? '\n\n' + subjectSpecBlocks : '';
-
-        const prompt = `Shot framed by Kano, the crew Cinematographer — deliberate lens, lighting, and composition for emotional impact.\n\n${shot.image_prompt}${specBlock}${lockBlock}${narrationCue}${revisionBlock}\n\nStyle: ${brief.style}. Color grade: ${storyboard.color_grade}. Aspect ${brief.aspect}. Photoreal, cinematic, no text, no watermark.`;
+        const { prompt, refs } = buildShotFramePrompt(
+          shot, shotSubjects, scenerySheetDataUri, brief.style, brief.aspect, storyboard.color_grade, extraNote,
+        );
         const buf = await orImage(prompt, IMAGE_MODEL, refs);
         const p = path.join(projectDir, `ref_shot${shot.shot}.png`);
         await fs.writeFile(p, buf);

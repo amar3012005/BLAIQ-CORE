@@ -6,7 +6,7 @@ import { promises as fs } from 'node:fs';
 import type { AuthenticatedRequest } from '../db/tenant-context.js';
 import { getTenantBrand } from '../brand/brand-store.js';
 import { hivemindRecall } from '../brand/hivemind-client.js';
-import { renderVideo, type VideoBrief, type ProgressEvent } from './pipeline.js';
+import { renderVideo, renderShotVariants, selectShotFrame, type VideoBrief, type ProgressEvent } from './pipeline.js';
 import { submitReply, type HitlGate, type HitlReply } from './hitl-store.js';
 import { spokespersonDataUri } from '../image/spokesperson-store.js';
 
@@ -161,6 +161,45 @@ export function registerVideoRoutes(router: Router): void {
       return;
     }
     res.json({ ok: true });
+  });
+
+  // POST /api/v1/video/:projectId/shot-variants — frames-gate variant engine:
+  //   body { shot, count?, style?, aspect? } → render N alternative key frames
+  //   for one shot. Returns { variants: [basename] } (the Cinematographer's
+  //   "more options" at the frames gate).
+  router.post('/api/v1/video/:projectId/shot-variants', async (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
+    const projectId = req.params.projectId;
+    const body = (req.body ?? {}) as { shot?: number; count?: number; style?: string; aspect?: string };
+    if (!projectId || typeof body.shot !== 'number') { res.status(400).json({ error: 'projectId and shot required' }); return; }
+    try {
+      const variants = await renderShotVariants(
+        path.join(PROJECTS_DIR, projectId),
+        body.shot,
+        typeof body.count === 'number' ? body.count : 3,
+        { style: body.style || 'cinematic', aspect: body.aspect || '16:9' },
+      );
+      res.json({ ok: true, variants });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/v1/video/:projectId/shot-frame-select — promote a chosen variant
+  //   to be the shot's canonical reference frame for the i2v stage.
+  router.post('/api/v1/video/:projectId/shot-frame-select', async (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
+    const projectId = req.params.projectId;
+    const body = (req.body ?? {}) as { shot?: number; file?: string };
+    if (!projectId || typeof body.shot !== 'number' || !body.file) { res.status(400).json({ error: 'projectId, shot, file required' }); return; }
+    try {
+      await selectShotFrame(path.join(PROJECTS_DIR, projectId), body.shot, body.file);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
   });
 
   // POST /api/v1/video/:projectId/asset-edit

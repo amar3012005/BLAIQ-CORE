@@ -412,3 +412,13 @@ Verified live on prod: a real video mission paused at the discovery gate present
 - Verified live on prod: cast "Marken-Host" into a video → the references gate (Vera · Director) showed that exact face, and the project's `subject_spokesperson_sheet.png` is **byte-identical** (same MD5) to the pinned spokesperson — proving the cast face is used, not a fresh person.
 
 ![Pinned spokesperson cast into a video — references gate](docs/progress/genai-video-cast-spokesperson.png)
+
+**GenAI · Variant engine in the Cinematographer's frames gate — Studio Crew unification COMPLETE** — at the video `frames` HITL gate, each shot now offers pick-one key-frame variants:
+- `pipeline.ts`: extracted a shared `buildShotFramePrompt` (used by the main pass + variants); added `renderShotVariants` (reconstructs subjects/scenery from the project dir, renders N alternatives → `ref_shot<N>_var<k>.png`) + `selectShotFrame` (promotes a chosen variant to the canonical `ref_shot<N>.png` the i2v stage animates).
+- `video-routes.ts`: `POST /shot-variants` + `POST /shot-frame-select`.
+- VideoPipelinePanel frames gate: per-shot **✦ 3 options** → renders 3 brand-locked variants → click one to use (cache-busted preview).
+- Verified live on prod: drove a render through all four crew gates to the frames gate, generated 3 options for shot 1, selected var2 → `ref_shot1.png` became byte-identical (same MD5) to the chosen variant.
+
+With this, the standalone image-studio crew tools and the live video pipeline are one system: pin a face → cast it into video, and the Cinematographer offers frame options inside the gate.
+
+![Frames gate — per-shot variant options](docs/progress/genai-frames-variants.png)

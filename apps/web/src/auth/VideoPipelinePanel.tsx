@@ -95,6 +95,10 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [hitlNotes, setHitlNotes] = useState('');
   const [hitlSubmitting, setHitlSubmitting] = useState(false);
   const [editTarget, setEditTarget] = useState<{ fileName: string; url: string; label: string } | null>(null);
+  // Frames-gate variant engine: per-shot alternative key frames + cache-busting.
+  const [shotVariants, setShotVariants] = useState<Record<number, string[]>>({});
+  const [variantBusy, setVariantBusy] = useState<number | null>(null);
+  const [frameBust, setFrameBust] = useState<Record<string, number>>({});
   // Cast a pinned, tenant-level spokesperson as the video's primary subject.
   const [spokespersons, setSpokespersons] = useState<Array<{ id: string; name: string; url: string }>>([]);
   const [castId, setCastId] = useState<string | null>(null);
@@ -180,6 +184,33 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       setRunning(false);
     }
   }, [projectId, brief, castId]);
+
+  // Frames-gate variant engine: ask the Cinematographer for N options on a shot.
+  const genVariants = useCallback(async (shot: number) => {
+    if (variantBusy !== null) return;
+    setVariantBusy(shot);
+    try {
+      const r = await fetch(`/api/v1/video/${projectId}/shot-variants`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shot, count: 3, style: brief.style, aspect: brief.aspect }),
+      });
+      const d = await r.json();
+      if (r.ok && Array.isArray(d.variants)) setShotVariants((v) => ({ ...v, [shot]: d.variants }));
+    } catch { /* noop */ } finally { setVariantBusy(null); }
+  }, [projectId, brief, variantBusy]);
+
+  const pickVariant = useCallback(async (shot: number, file: string) => {
+    try {
+      const r = await fetch(`/api/v1/video/${projectId}/shot-frame-select`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shot, file }),
+      });
+      if (r.ok) {
+        setFrameBust((b) => ({ ...b, [`ref_shot${shot}.png`]: Date.now() }));
+        setShotVariants((v) => { const n = { ...v }; delete n[shot]; return n; });
+      }
+    } catch { /* noop */ }
+  }, [projectId]);
 
   const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string; gate?: 'discovery' | 'script' | 'references' | 'frames'; title?: string; agent?: { id: string; role: string; name: string; note: string }; questions?: Array<{ id: string; question: string; hint?: string }>; previewMarkdown?: string; previewImages?: string[] }) => {
     if (evName === 'progress' && payload.stage) {
@@ -642,11 +673,50 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
                 </div>
               )}
 
-              {hitl.previewImages && hitl.previewImages.length > 0 && (
+              {hitl.previewImages && hitl.previewImages.length > 0 && hitl.gate !== 'frames' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, marginBottom: 14 }}>
                   {hitl.previewImages.map((name) => (
                     <img key={name} src={`/api/projects/${projectId}/files/${name}`} alt={name} style={{ width: '100%', borderRadius: 6, border: `1px solid ${P.border}` }} />
                   ))}
+                </div>
+              )}
+
+              {/* Frames gate: each shot frame gets the Cinematographer's "options" */}
+              {hitl.previewImages && hitl.previewImages.length > 0 && hitl.gate === 'frames' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
+                  {hitl.previewImages.map((name) => {
+                    const shot = Number(name.match(/^ref_shot(\d+)\.png$/)?.[1] ?? 0);
+                    const bust = frameBust[name] ? `?t=${frameBust[name]}` : '';
+                    const variants = shotVariants[shot] || [];
+                    return (
+                      <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <img src={`/api/projects/${projectId}/files/${name}${bust}`} alt={name} style={{ width: 160, borderRadius: 6, border: `1px solid ${P.border}`, flexShrink: 0 }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <span style={{ ...mono, fontSize: 9, color: P.muted }}>SHOT {shot || '?'}</span>
+                            <button type="button" disabled={variantBusy !== null || !shot} onClick={() => { void genVariants(shot); }}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'transparent', border: `1px solid ${P.accent}`, color: P.accent, cursor: variantBusy !== null ? 'wait' : 'pointer', borderRadius: 6, fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600, width: 'fit-content' }}>
+                              {variantBusy === shot ? 'RENDERING…' : '✦ 3 options'}
+                            </button>
+                            {variants.length > 0 && <span style={{ ...mono, fontSize: 8, color: P.muted }}>pick one to use ↓</span>}
+                          </div>
+                        </div>
+                        {variants.length > 0 && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 4 }}>
+                            {variants.map((vf) => (
+                              <button key={vf} type="button" onClick={() => { void pickVariant(shot, vf); }}
+                                title="Use this option for the shot"
+                                style={{ padding: 0, border: `2px solid ${P.border}`, borderRadius: 6, cursor: 'pointer', background: 'none', lineHeight: 0 }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = P.accent; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = P.border; }}>
+                                <img src={`/api/projects/${projectId}/files/${vf}`} alt={vf} style={{ width: 96, borderRadius: 4, display: 'block' }} />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
