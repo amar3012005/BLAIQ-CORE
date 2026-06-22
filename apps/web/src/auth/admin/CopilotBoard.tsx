@@ -120,7 +120,7 @@ export default function CopilotBoard(): JSX.Element {
             <div
               key={i}
               style={{
-                alignSelf: 'flex-start', maxWidth: '88%', background: PAL.white,
+                alignSelf: "flex-start", maxWidth: "88%", background: PAL.panel,
                 border: `1px solid ${PAL.divider}`, borderLeft: '3px solid #818CF8',
                 padding: '12px 14px', borderRadius: 10,
               }}

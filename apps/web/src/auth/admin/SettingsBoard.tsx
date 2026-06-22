@@ -16,14 +16,16 @@ import { ErrorBanner, SkeletonList } from './JobBoard';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '7px 10px',
+  padding: '8px 12px',
   border: `1px solid ${PAL.divider}`,
-  background: PAL.white,
+  background: PAL.panel,
   ...sans,
   fontSize: 12,
   color: PAL.ink,
   outline: 'none',
   boxSizing: 'border-box',
+  borderRadius: 8,
+  transition: 'border-color 160ms ease, box-shadow 160ms ease',
 };
 
 function Toggle({
@@ -100,8 +102,8 @@ function ConnectRow({
           marginLeft: 'auto',
           border: 'none',
           background: connected ? 'transparent' : PAL.accent,
-          color: connected ? PAL.muted : PAL.white,
-          boxShadow: connected ? `inset 0 0 0 1px ${PAL.divider}` : 'none',
+          color: connected ? PAL.muted : '#fff',
+          boxShadow: connected ? `inset 0 0 0 1px ${PAL.divider}` : `0 2px 12px ${PAL.accentGlow}`,
           cursor: saving ? 'wait' : 'pointer',
           ...monoSmall,
           fontSize: 9,
@@ -129,9 +131,11 @@ function Card({ title, hint, children }: { title: string; hint: string; children
       style={{
         background: PAL.panel,
         border: `1px solid ${PAL.divider}`,
-        padding: 18,
+        borderRadius: 14,
+        padding: 20,
         marginBottom: 16,
         maxWidth: 560,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
       }}
     >
       <div style={{ ...sansBold, fontSize: 13, color: PAL.ink, marginBottom: 2 }}>{title}</div>
@@ -378,12 +382,15 @@ export default function SettingsBoard(): JSX.Element {
               onClick={() => { void save(); }}
               disabled={saving}
               style={{
-                padding: '8px 18px',
-                background: PAL.accent,
+                padding: '10px 24px',
+                background: `linear-gradient(135deg, ${PAL.accentDim} 0%, ${PAL.accentBright} 100%)`,
                 border: 'none',
+                borderRadius: 10,
                 cursor: saving ? 'wait' : 'pointer',
                 ...monoSmall,
-                color: PAL.white,
+                color: '#fff',
+                boxShadow: `0 4px 16px ${PAL.accentGlow}`,
+                transition: 'filter 200ms ease, transform 160ms ease',
               }}
             >
               {saving ? 'SAVING…' : 'SAVE'}

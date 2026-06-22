@@ -80,7 +80,7 @@ export default function BriefingBoard(): JSX.Element {
         {data && (
           <>
             {/* Headline */}
-            <div style={{ background: PAL.ink, color: PAL.white, borderRadius: 12, padding: '18px 20px' }}>
+            <div style={{ background: PAL.panelHover, color: PAL.ink, borderRadius: 12, padding: '18px 20px' }}>
               <div style={{ ...monoSmall, opacity: 0.6, marginBottom: 8 }}>BRIEFING · {data.generated_on}</div>
               <div style={{ ...sansBold, fontSize: 16, lineHeight: 1.5 }}>{data.headline}</div>
               {data.cash_watch ? (
@@ -94,7 +94,7 @@ export default function BriefingBoard(): JSX.Element {
             {data.insights.map((ins, i) => {
               const sev = SEV[ins.severity] ?? SEV_LOW;
               return (
-                <div key={i} style={{ background: PAL.white, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${sev.fg}`, borderRadius: 10, padding: '13px 16px' }}>
+                <div key={i} style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${sev.fg}`, borderRadius: 10, padding: '13px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     <span style={{ ...monoSmall, fontSize: 8, color: sev.fg, background: sev.bg, padding: '3px 7px', borderRadius: 4 }}>{sev.label}</span>
                     <span style={{ ...sansBold, fontSize: 13.5, color: PAL.ink }}>{ins.title}</span>
@@ -114,7 +114,7 @@ export default function BriefingBoard(): JSX.Element {
                           type="button"
                           disabled={acted[i] === 'running'}
                           onClick={() => { void runAction(i, ins.job_id!, ins.act_kind!); }}
-                          style={{ border: 'none', background: PAL.ink, color: PAL.white, cursor: acted[i] === 'running' ? 'wait' : 'pointer', ...monoSmall, fontSize: 9, padding: '6px 12px', borderRadius: 6 }}
+                          style={{ border: 'none', background: PAL.panelHover, color: PAL.ink, cursor: acted[i] === 'running' ? 'wait' : 'pointer', ...monoSmall, fontSize: 9, padding: '6px 12px', borderRadius: 6 }}
                         >
                           {acted[i] === 'running' ? 'RUNNING…' : `✓ ${(ins.act_label ?? 'DO IT').toUpperCase()}`}
                         </button>

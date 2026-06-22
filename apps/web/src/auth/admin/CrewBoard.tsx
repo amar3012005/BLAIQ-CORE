@@ -111,7 +111,7 @@ export default function CrewBoard(): JSX.Element {
           type="button"
           disabled={!!busy}
           onClick={() => { void sweep(); }}
-          style={{ padding: '8px 16px', background: PAL.ink, border: 'none', cursor: busy ? 'wait' : 'pointer', ...monoSmall, color: PAL.white, borderRadius: 6 }}
+          style={{ padding: '8px 16px', background: PAL.accentDim, border: 'none', cursor: busy ? 'wait' : 'pointer', ...monoSmall, color: PAL.white, borderRadius: 6 }}
         >
           {busy === 'sweep' ? 'SWEEPING…' : '⚡ SWEEP THE BOOK'}
         </button>
@@ -155,7 +155,7 @@ export default function CrewBoard(): JSX.Element {
               const key = `${delib.job_id}:${f.id}`;
               const st = state[key];
               return (
-                <div key={key} style={{ background: PAL.white, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '14px 16px' }}>
+                <div key={key} style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                     <span style={{ fontSize: 20 }}>{f.emoji}</span>
                     <span style={{ ...sansBold, fontSize: 13.5, color: PAL.ink }}>{f.agent}</span>

@@ -224,7 +224,7 @@ export default function FinanceBoard(): JSX.Element {
           {poool.connected && poool.recent_orders.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {poool.recent_orders.map(o => (
-                <span key={o.id} style={{ ...sans, fontSize: 11, color: PAL.ink, background: PAL.white, border: `1px solid ${PAL.divider}`, padding: '3px 8px' }}>
+                <span key={o.id} style={{ ...sans, fontSize: 11, color: PAL.ink, background: PAL.panel, border: `1px solid ${PAL.divider}`, padding: '3px 10px', borderRadius: 6 }}>
                   #{o.id} {o.title}{o.brutto != null ? ` · ${fmtEur(o.brutto)}` : ''}
                 </span>
               ))}

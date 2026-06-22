@@ -117,7 +117,7 @@ function Social(): JSX.Element {
       {err && <div style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.25)', color: '#B91C1C', padding: '10px 14px', borderRadius: 10, ...sans, fontSize: 13 }}>{err}</div>}
 
       {art && (
-        <div style={{ background: PAL.white, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '16px 18px' }}>
+        <div style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '16px 18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ ...monoSmall, fontSize: 8, color: PAL.accent }}>{art.platform.toUpperCase()}</span>
             <span style={{ ...sansBold, fontSize: 13.5, color: PAL.ink }}>{art.title}</span>
@@ -193,7 +193,7 @@ function Deck(): JSX.Element {
       {err && <div style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.25)', color: '#B91C1C', padding: '10px 14px', borderRadius: 10, ...sans, fontSize: 13 }}>{err}</div>}
 
       {deck && (
-        <div style={{ background: PAL.white, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '16px 18px' }}>
+        <div style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: 10, padding: '16px 18px' }}>
           <div style={{ ...sansBold, fontSize: 14, color: PAL.ink, marginBottom: 4 }}>{deck.title}</div>
           <div style={{ ...sans, fontSize: 12.5, color: PAL.muted, marginBottom: 14 }}>{deck.slide_count} slides · brand-locked · {deck.model}</div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -241,7 +241,7 @@ function Hooks(): JSX.Element {
     finally { setBusy(false); }
   };
 
-  const card: React.CSSProperties = { background: PAL.white, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 16px' };
+  const card: React.CSSProperties = { background: PAL.panel, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 16px' };
   const scoreColor = (s: number): string => (s >= 75 ? '#0F6E56' : s >= 50 ? '#B45309' : '#B91C1C');
 
   return (
@@ -265,7 +265,7 @@ function Hooks(): JSX.Element {
       {res && (
         <>
           {/* Virality score */}
-          <div style={{ background: PAL.ink, color: PAL.white, borderRadius: 12, padding: '18px 20px' }}>
+          <div style={{ background: PAL.panelHover, color: PAL.ink, borderRadius: 12, padding: '18px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
               <span style={{ ...sansBold, fontSize: 34, color: scoreColor(res.virality.score) }}>{res.virality.score}</span>
               <span style={{ ...monoSmall, opacity: 0.6 }}>/ 100 VIRALITY</span>
@@ -324,7 +324,7 @@ function CampaignView(): JSX.Element {
     finally { setBusy(false); }
   };
 
-  const card: React.CSSProperties = { background: PAL.white, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 16px' };
+  const card: React.CSSProperties = { background: PAL.panel, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 16px' };
   const lbl: React.CSSProperties = { ...monoSmall, fontSize: 8, color: PAL.accent, marginBottom: 6 };
 
   return (
@@ -349,7 +349,7 @@ function CampaignView(): JSX.Element {
       {c && (
         <>
           {/* Concept */}
-          <div style={{ background: PAL.ink, color: PAL.white, borderRadius: 12, padding: '18px 20px' }}>
+          <div style={{ background: PAL.panelHover, color: PAL.ink, borderRadius: 12, padding: '18px 20px' }}>
             <div style={{ ...monoSmall, opacity: 0.6, marginBottom: 8 }}>CAMPAIGN · {c.model}</div>
             <div style={{ ...sansBold, fontSize: 18, lineHeight: 1.3 }}>{c.headline}</div>
             <div style={{ ...sans, fontSize: 13.5, opacity: 0.9, marginTop: 10 }}>{c.big_idea}</div>

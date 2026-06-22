@@ -23,7 +23,7 @@ function fmtEur(v: number): string {
 
 function Stat({ label, value, color }: { label: string; value: string; color?: string }): JSX.Element {
   return (
-    <div style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, padding: '14px 18px', flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderRadius: 10, padding: '14px 18px', flex: '1 1 150px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
       <div style={{ ...monoSmall, color: PAL.muted }}>{label}</div>
       <div style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 18, fontWeight: 700, color: color ?? PAL.ink }}>{value}</div>
     </div>
@@ -120,7 +120,7 @@ export default function AnalyticsBoard(): JSX.Element {
       )}
 
       {usage !== null && (
-        <div style={{ marginTop: 28, border: `1px solid ${PAL.divider}`, padding: '14px 18px', maxWidth: 540 }}>
+        <div style={{ marginTop: 28, border: `1px solid ${PAL.divider}`, borderRadius: 12, padding: '18px 20px', maxWidth: 540, background: PAL.panel, boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
           <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>STUDIO AI SPEND — TODAY</div>
           <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
             <Stat label="TODAY (USD)" value={`$${usage.today_usd.toFixed(2)}`} color={usage.pct > 80 ? '#EF4444' : '#10B981'} />
@@ -128,7 +128,7 @@ export default function AnalyticsBoard(): JSX.Element {
             <Stat label="USED" value={`${usage.pct}%`} color={usage.pct > 80 ? '#EF4444' : PAL.ink} />
           </div>
           {/* spend gauge */}
-          <div style={{ height: 8, background: PAL.bg, border: `1px solid ${PAL.divider}`, marginBottom: 10 }}>
+          <div style={{ height: 8, background: PAL.surface, border: `1px solid ${PAL.divider}`, borderRadius: 4, marginBottom: 10, overflow: 'hidden' }}>
             <div style={{ width: `${Math.min(usage.pct, 100)}%`, height: '100%', background: usage.pct > 80 ? '#EF4444' : '#10B981', transition: 'width 0.3s' }} />
           </div>
           {usage.history.length > 0 && (

@@ -97,7 +97,7 @@ export default function SchedulerBoard(): JSX.Element {
       {schedules && schedules.length === 0 && <div style={{ ...emptyText, marginBottom: 20 }}>No schedules yet. Add one above.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
         {(schedules ?? []).map((s) => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: PAL.white, border: `1px solid ${PAL.divider}`, borderRadius: radius.md, boxShadow: shadow.sm, padding: '12px 14px', maxWidth: 860 }}>
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: PAL.panel, border: `1px solid ${PAL.divider}`, borderRadius: radius.md, boxShadow: shadow.sm, padding: '12px 14px', maxWidth: 860 }}>
             <span style={{ ...pill(s.enabled ? PAL.ok : PAL.muted) }}>{s.enabled ? 'ON' : 'PAUSED'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...sansBold, fontSize: 13, color: PAL.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.topic}</div>
@@ -124,7 +124,7 @@ export default function SchedulerBoard(): JSX.Element {
       {runs.length === 0 && <div style={emptyText}>Drafts appear here as schedules run (or hit “Run now”).</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 760 }}>
         {runs.map((r) => (
-          <div key={r.id} style={{ background: PAL.white, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: radius.md, boxShadow: shadow.sm, padding: '14px 16px' }}>
+          <div key={r.id} style={{ background: PAL.panel, border: `1px solid ${PAL.divider}`, borderLeft: `3px solid ${PAL.accent}`, borderRadius: radius.md, boxShadow: shadow.sm, padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ ...monoSmall, fontSize: 8, color: PAL.accent }}>{r.platform.toUpperCase()}</span>
               <span style={{ ...monoSmall, color: PAL.muted, marginLeft: 'auto', fontSize: 8 }}>{fmt(r.created_at)}</span>

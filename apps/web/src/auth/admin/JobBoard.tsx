@@ -111,14 +111,16 @@ function NewJobModal({ onCreated, onClose }: NewJobModalProps): JSX.Element {
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '7px 10px',
+    padding: '8px 12px',
     border: `1px solid ${PAL.divider}`,
-    background: PAL.bg,
+    background: PAL.panel,
     ...sans,
     fontSize: 12,
     color: PAL.ink,
     outline: 'none',
     boxSizing: 'border-box',
+    borderRadius: 8,
+    transition: 'border-color 160ms ease, box-shadow 160ms ease',
   };
 
   return (
@@ -126,19 +128,22 @@ function NewJobModal({ onCreated, onClose }: NewJobModalProps): JSX.Element {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.35)',
+        background: 'rgba(0,0,0,0.7)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 100,
+        backdropFilter: 'blur(4px)',
       }}
     >
       <div
         style={{
-          background: PAL.panel,
+          background: PAL.surface,
           border: `1px solid ${PAL.divider}`,
-          padding: 24,
-          width: 380,
+          borderRadius: 16,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+          padding: 28,
+          width: 400,
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
@@ -354,14 +359,15 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
   const DELIVERY_STATUSES: DeliveryStatus[] = ['in_progress', 'delivered', 'archived'];
 
   const costInput: React.CSSProperties = {
-    padding: '4px 6px',
+    padding: '4px 8px',
     border: `1px solid ${PAL.divider}`,
-    background: PAL.white,
+    background: PAL.panel,
     ...sans,
     fontSize: 11,
     color: PAL.ink,
     outline: 'none',
     boxSizing: 'border-box',
+    borderRadius: 6,
   };
 
   return (
@@ -893,16 +899,16 @@ export default function JobBoard(): JSX.Element {
                     )}
 
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 1 }}>
-                      <span style={{ ...pill(active ? PAL.white : pc) }}>
+                      <span style={{ ...pill(pc) }}>
                         {pooolLabel(job.poool_status)}
                       </span>
                       {overdue && job.poool_status !== 'overdue' && (
-                        <span style={{ ...pill(active ? PAL.white : PAL.danger) }}>overdue</span>
+                        <span style={{ ...pill(PAL.danger) }}>overdue</span>
                       )}
-                      <span style={{ ...pill(active ? 'rgba(255,255,255,0.5)' : PAL.muted) }}>
+                      <span style={{ ...pill(PAL.muted) }}>
                         {job.revision_count > 0 ? `rev ${job.revision_count}` : 'no revisions'}
                       </span>
-                      <span style={{ ...pill(active ? PAL.white : dc) }}>
+                      <span style={{ ...pill(dc) }}>
                         {deliveryLabel(job.delivery_status)}
                       </span>
                     </div>
@@ -912,7 +918,7 @@ export default function JobBoard(): JSX.Element {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
                     {job.quote_amount != null ? (
                       <>
-                        <span style={{ ...sansBold, fontSize: 14, color: active ? PAL.white : PAL.ink, whiteSpace: 'nowrap' }}>
+                        <span style={{ ...sansBold, fontSize: 14, color: PAL.ink, whiteSpace: 'nowrap' }}>
                           {fmtEur(job.quote_amount)}
                         </span>
                         <span style={{ ...monoSmall, color: active ? 'rgba(255,255,255,0.5)' : PAL.muted, fontSize: 7 }}>QUOTE</span>
@@ -921,7 +927,7 @@ export default function JobBoard(): JSX.Element {
                       <span style={{ ...monoSmall, color: active ? 'rgba(255,255,255,0.5)' : PAL.muted, fontSize: 8 }}>NO QUOTE</span>
                     )}
                     {overdue && (
-                      <span style={{ ...monoSmall, color: active ? PAL.white : PAL.danger, fontSize: 7, marginTop: 2 }}>● PAST DUE</span>
+                      <span style={{ ...monoSmall, color: PAL.danger, fontSize: 7, marginTop: 2 }}>● PAST DUE</span>
                     )}
                   </div>
                 </button>
