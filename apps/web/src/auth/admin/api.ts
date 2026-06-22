@@ -494,6 +494,8 @@ export interface OrgIntegrations {
   notify_smtp_pass_preview: string;
   notify_from: string;
   notify_redirect_to: string;
+  ops_daily_cap_usd: number;
+  studio_gen_per_hour: number;
 }
 
 export interface OrgIntegrationsUpdate {
@@ -512,6 +514,8 @@ export interface OrgIntegrationsUpdate {
   notify_smtp_pass?: string;
   notify_from?: string;
   notify_redirect_to?: string;
+  ops_daily_cap_usd?: number;
+  studio_gen_per_hour?: number;
 }
 
 function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
@@ -534,6 +538,8 @@ function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
     notify_smtp_pass_preview: typeof d.notify_smtp_pass_preview === 'string' ? d.notify_smtp_pass_preview : '',
     notify_from: typeof d.notify_from === 'string' ? d.notify_from : '',
     notify_redirect_to: typeof d.notify_redirect_to === 'string' ? d.notify_redirect_to : '',
+    ops_daily_cap_usd: typeof d.ops_daily_cap_usd === 'number' ? d.ops_daily_cap_usd : 100,
+    studio_gen_per_hour: typeof d.studio_gen_per_hour === 'number' ? d.studio_gen_per_hour : 20,
   };
 }
 
@@ -556,6 +562,8 @@ const previewIntegrations: OrgIntegrations = {
   notify_smtp_pass_preview: '',
   notify_from: '',
   notify_redirect_to: '',
+  ops_daily_cap_usd: 100,
+  studio_gen_per_hour: 20,
 };
 
 export async function getOrgIntegrations(): Promise<OrgIntegrations> {
@@ -1236,6 +1244,20 @@ export async function getActivity(): Promise<ActivityItem[]> {
   }
   const data = await request<unknown>('/api/copilot/activity');
   return asArray<ActivityItem>(data, 'data');
+}
+
+export interface UsageSummary {
+  today_usd: number;
+  cap_usd: number;
+  pct: number;
+  history: Array<{ day: string; spend_usd: number }>;
+}
+
+export async function getUsageSummary(): Promise<UsageSummary> {
+  if (PREVIEW) return { today_usd: 1.24, cap_usd: 100, pct: 1, history: [] };
+  const r = await fetch('/api/v1/admin/usage', { credentials: 'include' });
+  if (!r.ok) throw new Error(`usage: HTTP ${r.status}`);
+  return (await r.json()) as UsageSummary;
 }
 
 export async function getPooolSummary(): Promise<PooolSyncSummary> {

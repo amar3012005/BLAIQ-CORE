@@ -156,6 +156,9 @@ export default function SettingsBoard(): JSX.Element {
   const [hfUrl, setHfUrl] = useState('');
   const [hfKey, setHfKey] = useState(''); // only sent if non-empty
   const [hfEnabled, setHfEnabled] = useState(false);
+  // Usage guardrails
+  const [dailyCap, setDailyCap] = useState(100);
+  const [genPerHour, setGenPerHour] = useState(20);
   // SMTP notifications
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [smtpHost, setSmtpHost] = useState('');
@@ -175,6 +178,8 @@ export default function SettingsBoard(): JSX.Element {
     setHfUrl(d.higgsfield_url);
     setHfKey('');
     setHfEnabled(d.higgsfield_enabled);
+    setDailyCap(d.ops_daily_cap_usd);
+    setGenPerHour(d.studio_gen_per_hour);
     setNotifyEnabled(d.notify_email_enabled);
     setSmtpHost(d.notify_smtp_host);
     setSmtpPort(d.notify_smtp_port);
@@ -226,6 +231,8 @@ export default function SettingsBoard(): JSX.Element {
         notify_smtp_user: smtpUser.trim(),
         notify_from: notifyFrom.trim(),
         notify_redirect_to: notifyRedirect.trim(),
+        ops_daily_cap_usd: dailyCap,
+        studio_gen_per_hour: genPerHour,
       };
       if (pooolKey.trim()) body.poool_api_key = pooolKey.trim();
       if (hfKey.trim()) body.higgsfield_api_key = hfKey.trim();
@@ -317,6 +324,25 @@ export default function SettingsBoard(): JSX.Element {
                 placeholder={data.higgsfield_api_key_set ? 'Leave blank to keep current key' : 'Paste API key'}
               />
             </Field>
+          </Card>
+
+          <Card
+            title="Usage Guardrails"
+            hint="Protect against runaway LLM spend. The daily cap blocks new AI requests once the threshold is hit — existing in-progress tasks still complete."
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <Field label="Daily AI spend cap (USD)">
+                <input style={inputStyle} type="number" min={1} step={1} value={dailyCap} disabled={saving}
+                  onChange={(e) => setDailyCap(Number(e.target.value))} />
+              </Field>
+              <Field label="Studio generations / hour">
+                <input style={inputStyle} type="number" min={1} step={1} value={genPerHour} disabled={saving}
+                  onChange={(e) => setGenPerHour(Number(e.target.value))} />
+              </Field>
+            </div>
+            <div style={{ ...sans, fontSize: 11, color: PAL.muted }}>
+              Current defaults: $100/day · 20 gen/hr. Saved on "SAVE" below.
+            </div>
           </Card>
 
           <Card

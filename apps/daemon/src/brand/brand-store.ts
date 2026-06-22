@@ -24,6 +24,8 @@ export interface TenantBrand {
   notifySmtpPass: string;
   notifyFrom: string;
   notifyRedirectTo: string;
+  opsDailyCapUsd: number;
+  studioGenPerHour: number;
   updatedAt: number;
 }
 
@@ -87,6 +89,7 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
               clickup_enabled, clickup_list_id,
               notify_email_enabled, notify_smtp_host, notify_smtp_port,
               notify_smtp_user, notify_smtp_pass, notify_from, notify_redirect_to,
+              ops_daily_cap_usd, studio_gen_per_hour,
               updated_at
        FROM tenant_brand
        WHERE tenant_id = $1`,
@@ -122,6 +125,8 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
         notifySmtpPass: '',
         notifyFrom: '',
         notifyRedirectTo: '',
+        opsDailyCapUsd: 100,
+        studioGenPerHour: 20,
         updatedAt: now,
       };
     }
@@ -147,6 +152,8 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       notifySmtpPass: row.notify_smtp_pass ?? '',
       notifyFrom: row.notify_from ?? '',
       notifyRedirectTo: row.notify_redirect_to ?? '',
+      opsDailyCapUsd: Number(row.ops_daily_cap_usd ?? 100),
+      studioGenPerHour: Number(row.studio_gen_per_hour ?? 20),
       updatedAt: Number(row.updated_at),
     };
   });
@@ -242,6 +249,14 @@ export async function updateTenantBrand(
       params.push(patch.notifyRedirectTo);
       sets.push(`notify_redirect_to = $${params.length}`);
     }
+    if (patch.opsDailyCapUsd !== undefined) {
+      params.push(patch.opsDailyCapUsd);
+      sets.push(`ops_daily_cap_usd = $${params.length}`);
+    }
+    if (patch.studioGenPerHour !== undefined) {
+      params.push(patch.studioGenPerHour);
+      sets.push(`studio_gen_per_hour = $${params.length}`);
+    }
     await client.query(
       `UPDATE tenant_brand SET ${sets.join(', ')} WHERE tenant_id = $1`,
       params,
@@ -253,6 +268,7 @@ export async function updateTenantBrand(
               clickup_enabled, clickup_list_id,
               notify_email_enabled, notify_smtp_host, notify_smtp_port,
               notify_smtp_user, notify_smtp_pass, notify_from, notify_redirect_to,
+              ops_daily_cap_usd, studio_gen_per_hour,
               updated_at
        FROM tenant_brand WHERE tenant_id = $1`,
       [tenantId],
@@ -279,6 +295,8 @@ export async function updateTenantBrand(
       notifySmtpPass: row.notify_smtp_pass ?? '',
       notifyFrom: row.notify_from ?? '',
       notifyRedirectTo: row.notify_redirect_to ?? '',
+      opsDailyCapUsd: Number(row.ops_daily_cap_usd ?? 100),
+      studioGenPerHour: Number(row.studio_gen_per_hour ?? 20),
       updatedAt: Number(row.updated_at),
     };
   });

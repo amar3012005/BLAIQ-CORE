@@ -47,6 +47,8 @@ export function registerBrandRoutes(router: Router): void {
           : '',
         notify_from: brand.notifyFrom,
         notify_redirect_to: brand.notifyRedirectTo,
+        ops_daily_cap_usd: brand.opsDailyCapUsd,
+        studio_gen_per_hour: brand.studioGenPerHour,
         updated_at: brand.updatedAt,
       });
     } catch (err) {
@@ -83,6 +85,8 @@ export function registerBrandRoutes(router: Router): void {
       notify_smtp_pass?: string;
       notify_from?: string;
       notify_redirect_to?: string;
+      ops_daily_cap_usd?: number;
+      studio_gen_per_hour?: number;
     };
     const patch: Parameters<typeof updateTenantBrand>[2] = {};
     if (typeof body.brand_dna_md === 'string') patch.brandDnaMd = body.brand_dna_md;
@@ -105,6 +109,8 @@ export function registerBrandRoutes(router: Router): void {
     if (typeof body.notify_smtp_pass === 'string') patch.notifySmtpPass = body.notify_smtp_pass;
     if (typeof body.notify_from === 'string') patch.notifyFrom = body.notify_from;
     if (typeof body.notify_redirect_to === 'string') patch.notifyRedirectTo = body.notify_redirect_to;
+    if (typeof body.ops_daily_cap_usd === 'number') patch.opsDailyCapUsd = body.ops_daily_cap_usd;
+    if (typeof body.studio_gen_per_hour === 'number') patch.studioGenPerHour = body.studio_gen_per_hour;
     try {
       const brand = await updateTenantBrand(authed.tenantId, authed.user.userId, patch);
       res.status(200).json({
@@ -140,6 +146,8 @@ export function registerBrandRoutes(router: Router): void {
           : '',
         notify_from: brand.notifyFrom,
         notify_redirect_to: brand.notifyRedirectTo,
+        ops_daily_cap_usd: brand.opsDailyCapUsd,
+        studio_gen_per_hour: brand.studioGenPerHour,
         updated_at: brand.updatedAt,
       });
     } catch (err) {

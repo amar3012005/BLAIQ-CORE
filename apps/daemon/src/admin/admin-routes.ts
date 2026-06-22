@@ -35,7 +35,8 @@ const OPS_BRAIN_DASHBOARD_URL =
 const OPS_BRAIN_ENABLED =
   (process.env.BLAIQ_OPS_BRAIN_ENABLED || 'true').toLowerCase() !== 'false';
 
-const DAILY_CAP_USD = (() => {
+// Env var is the global floor; per-tenant cap stored in tenant_brand takes precedence.
+const ENV_DAILY_CAP_USD = (() => {
   const raw = process.env.BLAIQ_OPS_DAILY_CAP_USD;
   const parsed = raw ? Number(raw) : 100;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
@@ -63,14 +64,25 @@ function signTrust(tenantId: string): string {
     .digest('hex');
 }
 
-async function checkDailyCap(tenantId: string): Promise<number | null> {
-  if (!UUID_RE.test(tenantId)) return null;
+async function getTenantCapUsd(tenantId: string): Promise<number> {
   const pool = getPool();
   try {
-    // Use raw pool: ops.agent_activities is the sidecar's own table and
-    // may not exist yet (Track A creates it). The sidecar will own RLS on
-    // its tables; here we just need the aggregate. We pass tenant_id as a
-    // bound parameter so we can't read across tenants.
+    const r = await pool.query<{ ops_daily_cap_usd: string }>(
+      `SELECT ops_daily_cap_usd FROM tenant_brand WHERE tenant_id = $1`,
+      [tenantId],
+    );
+    const v = Number(r.rows[0]?.ops_daily_cap_usd);
+    return Number.isFinite(v) && v > 0 ? v : ENV_DAILY_CAP_USD;
+  } catch {
+    return ENV_DAILY_CAP_USD;
+  }
+}
+
+async function checkDailyCap(tenantId: string): Promise<{ spent: number | null; cap: number }> {
+  if (!UUID_RE.test(tenantId)) return { spent: null, cap: ENV_DAILY_CAP_USD };
+  const pool = getPool();
+  const cap = await getTenantCapUsd(tenantId);
+  try {
     const result = await pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(cost_usd), 0)::text AS total
          FROM ops.agent_activities
@@ -79,14 +91,13 @@ async function checkDailyCap(tenantId: string): Promise<number | null> {
       [tenantId],
     );
     const total = Number(result.rows[0]?.total ?? '0');
-    return Number.isFinite(total) ? total : 0;
+    return { spent: Number.isFinite(total) ? total : 0, cap };
   } catch (err) {
-    // Table missing or sidecar schema not deployed — skip the guard.
     const code = (err as { code?: string }).code;
-    if (code === '42P01' || code === '3F000') return null;
+    if (code === '42P01' || code === '3F000') return { spent: null, cap };
     // eslint-disable-next-line no-console
     console.warn('[admin-proxy] cost-cap query failed:', (err as Error).message);
-    return null;
+    return { spent: null, cap };
   }
 }
 
@@ -162,14 +173,14 @@ async function proxy(
 
   // Cost guardrail — only block new mutating work (not GETs).
   if (req.method === 'POST') {
-    const spent = await checkDailyCap(tenantId);
-    if (spent !== null && spent >= DAILY_CAP_USD) {
+    const { spent, cap } = await checkDailyCap(tenantId);
+    if (spent !== null && spent >= cap) {
       res
         .status(429)
         .json({
           error: 'daily ops cost cap reached',
           spent_usd: spent,
-          cap_usd: DAILY_CAP_USD,
+          cap_usd: cap,
         });
       return;
     }
@@ -235,6 +246,35 @@ async function proxy(
 }
 
 export function registerAdminRoutes(router: Router): void {
+  // Usage summary — served directly from daemon (no ops-brain needed).
+  router.get('/api/v1/admin/usage', async (req, res) => {
+    const authed = req as AuthenticatedRequest;
+    const tenantId = authed.tenantId;
+    if (!tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
+    const { spent, cap } = await checkDailyCap(tenantId);
+    const pool = getPool();
+    // 7-day spend history
+    let history: Array<{ day: string; spend_usd: number }> = [];
+    try {
+      const h = await pool.query<{ day: string; spend_usd: string }>(
+        `SELECT to_char(date_trunc('day', to_timestamp(created_at / 1000)), 'YYYY-MM-DD') AS day,
+                COALESCE(SUM(cost_usd), 0)::text AS spend_usd
+           FROM ops.agent_activities
+          WHERE tenant_id = $1
+            AND created_at > extract(epoch from now() - interval '7 days') * 1000
+          GROUP BY 1 ORDER BY 1`,
+        [tenantId],
+      );
+      history = h.rows.map((r) => ({ day: r.day, spend_usd: Number(r.spend_usd) }));
+    } catch { /* table may not exist yet */ }
+    res.json({
+      today_usd: spent ?? 0,
+      cap_usd: cap,
+      pct: cap > 0 ? Math.round(((spent ?? 0) / cap) * 100) : 0,
+      history,
+    });
+  });
+
   // JSON API surface → FastAPI
   router.use('/api/v1/admin', (req, res) => proxy(req, res, '/api/v1/admin', OPS_BRAIN_URL));
   // Iframe-embedded dashboard (HTML + JS + WS handshake) → Vite/static host

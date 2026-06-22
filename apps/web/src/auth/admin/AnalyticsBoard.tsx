@@ -7,10 +7,12 @@ import React, { useEffect, useState } from 'react';
 import {
   listJobs,
   getPooolSummary,
+  getUsageSummary,
   jobIsOverdue,
   costItemsTotal,
   type Job,
   type PooolSyncSummary,
+  type UsageSummary,
 } from './api';
 import { PAL, monoSmall, sansBold, sans, skeletonBar } from './theme';
 import { ErrorBanner } from './JobBoard';
@@ -45,11 +47,13 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
 export default function AnalyticsBoard(): JSX.Element {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [poool, setPoool] = useState<PooolSyncSummary | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     listJobs().then(setJobs).catch((e: Error) => setError(e.message));
     getPooolSummary().then(setPoool).catch(() => setPoool(null));
+    getUsageSummary().then(setUsage).catch(() => setUsage(null));
   }, []);
 
   if (error) return <div style={{ padding: 20 }}><ErrorBanner message={error} /></div>;
@@ -112,6 +116,40 @@ export default function AnalyticsBoard(): JSX.Element {
       {poool?.connected && (
         <div style={{ marginTop: 24, ...sans, fontSize: 12, color: PAL.muted }}>
           POOOL synced: <b style={{ color: PAL.ink }}>{poool.projects}</b> projects · <b style={{ color: PAL.ink }}>{poool.orders}</b> orders · <b style={{ color: PAL.ink }}>{poool.clients}</b> clients
+        </div>
+      )}
+
+      {usage !== null && (
+        <div style={{ marginTop: 28, border: `1px solid ${PAL.divider}`, padding: '14px 18px', maxWidth: 540 }}>
+          <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 10 }}>STUDIO AI SPEND — TODAY</div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+            <Stat label="TODAY (USD)" value={`$${usage.today_usd.toFixed(2)}`} color={usage.pct > 80 ? '#EF4444' : '#10B981'} />
+            <Stat label="DAILY CAP" value={`$${usage.cap_usd.toFixed(0)}`} />
+            <Stat label="USED" value={`${usage.pct}%`} color={usage.pct > 80 ? '#EF4444' : PAL.ink} />
+          </div>
+          {/* spend gauge */}
+          <div style={{ height: 8, background: PAL.bg, border: `1px solid ${PAL.divider}`, marginBottom: 10 }}>
+            <div style={{ width: `${Math.min(usage.pct, 100)}%`, height: '100%', background: usage.pct > 80 ? '#EF4444' : '#10B981', transition: 'width 0.3s' }} />
+          </div>
+          {usage.history.length > 0 && (
+            <>
+              <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 6, fontSize: 9 }}>7-DAY HISTORY</div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 40 }}>
+                {(() => {
+                  const maxSpend = Math.max(1, ...usage.history.map((h) => h.spend_usd));
+                  return usage.history.map((h) => (
+                    <div key={h.day} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <div style={{ width: '100%', background: PAL.accent, height: `${Math.round((h.spend_usd / maxSpend) * 32)}px`, minHeight: 2 }} title={`${h.day}: $${h.spend_usd.toFixed(2)}`} />
+                      <span style={{ ...monoSmall, fontSize: 7, color: PAL.muted }}>{h.day.slice(5)}</span>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </>
+          )}
+          {usage.history.length === 0 && (
+            <div style={{ ...sans, fontSize: 11, color: PAL.muted }}>No AI activity yet — use the studio to see spend tracking here.</div>
+          )}
         </div>
       )}
     </div>
