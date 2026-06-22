@@ -541,6 +541,25 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
     } catch { /* noop */ }
   }, []);
 
+  const renamePinned = useCallback(async (sp: { id: string; name: string }) => {
+    const name = window.prompt('Rename spokesperson', sp.name);
+    if (name === null || !name.trim()) return;
+    try {
+      const r = await fetch(`/api/v1/spokespersons/${sp.id}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+      });
+      if (r.ok) await loadSpokespersons();
+    } catch { /* noop */ }
+  }, [loadSpokespersons]);
+
+  const deletePinned = useCallback(async (sp: { id: string; name: string }) => {
+    if (!window.confirm(`Delete spokesperson "${sp.name}"? This can't be undone.`)) return;
+    try {
+      const r = await fetch(`/api/v1/spokespersons/${sp.id}`, { method: 'DELETE', credentials: 'include' });
+      if (r.ok) { setRefUpload((cur) => (cur?.name === sp.name ? null : cur)); await loadSpokespersons(); }
+    } catch { /* noop */ }
+  }, [loadSpokespersons]);
+
   return (
     <div style={{
       position: 'relative',
@@ -860,13 +879,17 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
             <span style={{ ...mono, color: P.muted, marginRight: 2 }}>PINNED</span>
             {spokespersons.map((sp) => {
               const on = refUpload?.name === sp.name;
+              const iconBtn: CSSProperties = { background: 'transparent', border: 'none', cursor: 'pointer', color: on ? 'rgba(255,255,255,0.7)' : P.muted, fontSize: 11, lineHeight: 1, padding: '0 5px' };
               return (
-                <button key={sp.id} type="button" title={`Cast ${sp.name} as the reference`}
-                  onClick={() => { void castSpokesperson(sp); }}
-                  style={{ ...chip(on), display: 'inline-flex', alignItems: 'center', gap: 6, paddingLeft: 4 }}>
-                  <img src={sp.url} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-                  {sp.name.slice(0, 20)}
-                </button>
+                <span key={sp.id} style={{ display: 'inline-flex', alignItems: 'center', border: `1px solid ${on ? P.ink : P.border}`, borderRadius: 999, background: on ? P.ink : P.white, overflow: 'hidden' }}>
+                  <button type="button" title={`Cast ${sp.name} as the reference`} onClick={() => { void castSpokesperson(sp); }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 6px 4px 4px', background: 'transparent', border: 'none', cursor: 'pointer', color: on ? P.white : P.ink, fontFamily: '"Inter", sans-serif', fontSize: 10, fontWeight: 600 }}>
+                    <img src={sp.url} alt="" style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                    {sp.name.slice(0, 18)}
+                  </button>
+                  <button type="button" title="Rename" onClick={() => { void renamePinned(sp); }} style={iconBtn}>✎</button>
+                  <button type="button" title="Delete" onClick={() => { void deletePinned(sp); }} style={{ ...iconBtn, paddingRight: 8 }}>✕</button>
+                </span>
               );
             })}
           </div>

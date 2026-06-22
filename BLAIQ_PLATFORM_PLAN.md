@@ -448,3 +448,10 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 **Admin↔GenAI · Campaign Kit from a Job** — extracted the kit builder into a shared `campaignKit` util (used by Studio + jobs). A job's "Create campaign for this job" now also exposes **↗ Campaign Kit** / **⬇ Kit**, so a POOOL job → full on-brand campaign → client-ready one-pager in one flow. Verified live (preview): job → campaign → kit popup rendered the branded recap.
 
 ![Job → campaign → client kit](docs/progress/genai-job-campaign-kit.png)
+
+**GenAI · Spokesperson roster management (rename + delete)** — the casting roster is now maintainable, not append-only:
+- Daemon store: `renameSpokesperson` + `deleteSpokesperson` (removes registry entry + image file); routes `PATCH /api/v1/spokespersons/:id` + `DELETE /api/v1/spokespersons/:id`.
+- ImagePipelinePanel PINNED chips gain inline **✎** (rename) + **✕** (delete, with confirm); a cast reference clears if its spokesperson is deleted.
+- Verified live: PATCH→200 (renamed "Marken-Host (Hero)"), POST temp → DELETE→200 → gone; roster clean.
+
+![Spokesperson roster — rename/delete controls](docs/progress/genai-spokesperson-manage.png)

@@ -80,3 +80,27 @@ export async function spokespersonDataUri(tenantId: string, id: string): Promise
   const buf = await readSpokespersonImage(tenantId, id);
   return buf ? `data:image/png;base64,${buf.toString('base64')}` : null;
 }
+
+// Rename a pinned spokesperson. Returns false if the id is unknown.
+export async function renameSpokesperson(tenantId: string, id: string, name: string): Promise<boolean> {
+  if (!isSpokespersonId(id)) return false;
+  const dir = spokesDir(tenantId);
+  const items = await readSpokesRegistry(dir);
+  const entry = items.find((e) => e.id === id);
+  if (!entry) return false;
+  entry.name = (name || 'Spokesperson').toString().trim().slice(0, 80) || 'Spokesperson';
+  await writeSpokesRegistry(dir, items);
+  return true;
+}
+
+// Delete a pinned spokesperson (registry entry + image file). Idempotent.
+export async function deleteSpokesperson(tenantId: string, id: string): Promise<boolean> {
+  if (!isSpokespersonId(id)) return false;
+  const dir = spokesDir(tenantId);
+  const items = await readSpokesRegistry(dir);
+  const next = items.filter((e) => e.id !== id);
+  if (next.length === items.length) return false;
+  await writeSpokesRegistry(dir, next);
+  try { await fs.unlink(path.join(dir, `${id}.png`)); } catch { /* already gone */ }
+  return true;
+}

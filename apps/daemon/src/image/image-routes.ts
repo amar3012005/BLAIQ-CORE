@@ -12,7 +12,7 @@ import { promises as fs } from 'node:fs';
 import type { AuthenticatedRequest } from '../db/tenant-context.js';
 import { getTenantBrand } from '../brand/brand-store.js';
 import { hivemindRecall } from '../brand/hivemind-client.js';
-import { listSpokespersons, saveSpokesperson, readSpokespersonImage } from './spokesperson-store.js';
+import { listSpokespersons, saveSpokesperson, readSpokespersonImage, renameSpokesperson, deleteSpokesperson } from './spokesperson-store.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = (): string => process.env.OPENROUTER_API_KEY || '';
@@ -307,5 +307,24 @@ export function registerImageRoutes(router: Router): void {
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'private, max-age=86400');
     res.end(buf);
+  });
+
+  // Rename a pinned spokesperson.
+  router.patch('/api/v1/spokespersons/:id', async (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
+    const body = (req.body ?? {}) as { name?: string };
+    const ok = await renameSpokesperson(authed.tenantId, String(req.params.id || ''), body.name || '');
+    if (!ok) { res.status(404).json({ error: 'not found' }); return; }
+    res.json({ ok: true });
+  });
+
+  // Delete a pinned spokesperson.
+  router.delete('/api/v1/spokespersons/:id', async (req: Request, res: Response) => {
+    const authed = req as AuthenticatedRequest;
+    if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
+    const ok = await deleteSpokesperson(authed.tenantId, String(req.params.id || ''));
+    if (!ok) { res.status(404).json({ error: 'not found' }); return; }
+    res.json({ ok: true });
   });
 }
