@@ -37,6 +37,16 @@ export function registerBrandRoutes(router: Router): void {
         poool_enabled: brand.pooolEnabled,
         clickup_enabled: brand.clickupEnabled,
         clickup_list_id: brand.clickupListId,
+        notify_email_enabled: brand.notifyEmailEnabled,
+        notify_smtp_host: brand.notifySmtpHost,
+        notify_smtp_port: brand.notifySmtpPort,
+        notify_smtp_user: brand.notifySmtpUser,
+        notify_smtp_pass_set: brand.notifySmtpPass.length > 0,
+        notify_smtp_pass_preview: brand.notifySmtpPass
+          ? `${brand.notifySmtpPass.slice(0, 2)}…`
+          : '',
+        notify_from: brand.notifyFrom,
+        notify_redirect_to: brand.notifyRedirectTo,
         updated_at: brand.updatedAt,
       });
     } catch (err) {
@@ -66,6 +76,13 @@ export function registerBrandRoutes(router: Router): void {
       poool_enabled?: boolean;
       clickup_enabled?: boolean;
       clickup_list_id?: string;
+      notify_email_enabled?: boolean;
+      notify_smtp_host?: string;
+      notify_smtp_port?: number;
+      notify_smtp_user?: string;
+      notify_smtp_pass?: string;
+      notify_from?: string;
+      notify_redirect_to?: string;
     };
     const patch: Parameters<typeof updateTenantBrand>[2] = {};
     if (typeof body.brand_dna_md === 'string') patch.brandDnaMd = body.brand_dna_md;
@@ -81,6 +98,13 @@ export function registerBrandRoutes(router: Router): void {
     if (typeof body.poool_enabled === 'boolean') patch.pooolEnabled = body.poool_enabled;
     if (typeof body.clickup_enabled === 'boolean') patch.clickupEnabled = body.clickup_enabled;
     if (typeof body.clickup_list_id === 'string') patch.clickupListId = body.clickup_list_id;
+    if (typeof body.notify_email_enabled === 'boolean') patch.notifyEmailEnabled = body.notify_email_enabled;
+    if (typeof body.notify_smtp_host === 'string') patch.notifySmtpHost = body.notify_smtp_host;
+    if (typeof body.notify_smtp_port === 'number') patch.notifySmtpPort = body.notify_smtp_port;
+    if (typeof body.notify_smtp_user === 'string') patch.notifySmtpUser = body.notify_smtp_user;
+    if (typeof body.notify_smtp_pass === 'string') patch.notifySmtpPass = body.notify_smtp_pass;
+    if (typeof body.notify_from === 'string') patch.notifyFrom = body.notify_from;
+    if (typeof body.notify_redirect_to === 'string') patch.notifyRedirectTo = body.notify_redirect_to;
     try {
       const brand = await updateTenantBrand(authed.tenantId, authed.user.userId, patch);
       res.status(200).json({
@@ -106,6 +130,16 @@ export function registerBrandRoutes(router: Router): void {
         poool_enabled: brand.pooolEnabled,
         clickup_enabled: brand.clickupEnabled,
         clickup_list_id: brand.clickupListId,
+        notify_email_enabled: brand.notifyEmailEnabled,
+        notify_smtp_host: brand.notifySmtpHost,
+        notify_smtp_port: brand.notifySmtpPort,
+        notify_smtp_user: brand.notifySmtpUser,
+        notify_smtp_pass_set: brand.notifySmtpPass.length > 0,
+        notify_smtp_pass_preview: brand.notifySmtpPass
+          ? `${brand.notifySmtpPass.slice(0, 2)}…`
+          : '',
+        notify_from: brand.notifyFrom,
+        notify_redirect_to: brand.notifyRedirectTo,
         updated_at: brand.updatedAt,
       });
     } catch (err) {

@@ -486,6 +486,14 @@ export interface OrgIntegrations {
   higgsfield_api_key_set: boolean;
   higgsfield_api_key_preview: string;
   higgsfield_enabled: boolean;
+  notify_email_enabled: boolean;
+  notify_smtp_host: string;
+  notify_smtp_port: number;
+  notify_smtp_user: string;
+  notify_smtp_pass_set: boolean;
+  notify_smtp_pass_preview: string;
+  notify_from: string;
+  notify_redirect_to: string;
 }
 
 export interface OrgIntegrationsUpdate {
@@ -497,6 +505,13 @@ export interface OrgIntegrationsUpdate {
   higgsfield_url?: string;
   higgsfield_api_key?: string;
   higgsfield_enabled?: boolean;
+  notify_email_enabled?: boolean;
+  notify_smtp_host?: string;
+  notify_smtp_port?: number;
+  notify_smtp_user?: string;
+  notify_smtp_pass?: string;
+  notify_from?: string;
+  notify_redirect_to?: string;
 }
 
 function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
@@ -511,6 +526,14 @@ function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
     higgsfield_api_key_set: Boolean(d.higgsfield_api_key_set),
     higgsfield_api_key_preview: typeof d.higgsfield_api_key_preview === 'string' ? d.higgsfield_api_key_preview : '',
     higgsfield_enabled: Boolean(d.higgsfield_enabled),
+    notify_email_enabled: Boolean(d.notify_email_enabled),
+    notify_smtp_host: typeof d.notify_smtp_host === 'string' ? d.notify_smtp_host : '',
+    notify_smtp_port: typeof d.notify_smtp_port === 'number' ? d.notify_smtp_port : 587,
+    notify_smtp_user: typeof d.notify_smtp_user === 'string' ? d.notify_smtp_user : '',
+    notify_smtp_pass_set: Boolean(d.notify_smtp_pass_set),
+    notify_smtp_pass_preview: typeof d.notify_smtp_pass_preview === 'string' ? d.notify_smtp_pass_preview : '',
+    notify_from: typeof d.notify_from === 'string' ? d.notify_from : '',
+    notify_redirect_to: typeof d.notify_redirect_to === 'string' ? d.notify_redirect_to : '',
   };
 }
 
@@ -525,6 +548,14 @@ const previewIntegrations: OrgIntegrations = {
   higgsfield_api_key_set: false,
   higgsfield_api_key_preview: '',
   higgsfield_enabled: false,
+  notify_email_enabled: false,
+  notify_smtp_host: '',
+  notify_smtp_port: 587,
+  notify_smtp_user: '',
+  notify_smtp_pass_set: false,
+  notify_smtp_pass_preview: '',
+  notify_from: '',
+  notify_redirect_to: '',
 };
 
 export async function getOrgIntegrations(): Promise<OrgIntegrations> {

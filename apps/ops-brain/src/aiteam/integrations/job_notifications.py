@@ -21,6 +21,42 @@ from sqlalchemy import text
 
 from aiteam.storage.connection import current_tenant_id, get_session
 
+
+async def _tenant_email_config(tenant_id: str) -> dict | None:
+    """Read SMTP config from tenant_brand (notify_* columns).
+    Returns None if email is not enabled or host/sender not set.
+    env vars take precedence when set.
+    """
+    # env vars win — honour existing override
+    if os.environ.get("BLAIQ_NOTIFY_EMAIL_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        return _email_config()
+    token = current_tenant_id.set(tenant_id)
+    try:
+        async with get_session() as session:
+            row = (await session.execute(
+                text(
+                    "SELECT notify_email_enabled, notify_smtp_host, notify_smtp_port, "
+                    "notify_smtp_user, notify_smtp_pass, notify_from, notify_redirect_to "
+                    "FROM tenant_brand WHERE tenant_id = CAST(:tid AS uuid)"
+                ),
+                {"tid": tenant_id},
+            )).first()
+    finally:
+        current_tenant_id.reset(token)
+    if row is None:
+        return None
+    enabled, host, port, user, pw, sender, redirect = row
+    if not enabled or not host or not sender:
+        return None
+    return {
+        "host": host,
+        "port": int(port or 587),
+        "user": user or "",
+        "password": pw or "",
+        "sender": sender,
+        "redirect_to": redirect or "",
+    }
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +128,9 @@ async def record_notification(
     whether called from a request or a background task.
     """
     status = "logged"
-    cfg = _email_config()
+    cfg = await _tenant_email_config(tenant_id)
+    if cfg is None:
+        cfg = _email_config()
     if cfg is not None:
         try:
             ok, info = await asyncio.get_event_loop().run_in_executor(

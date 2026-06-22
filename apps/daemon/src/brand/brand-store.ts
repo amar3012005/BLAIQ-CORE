@@ -17,6 +17,13 @@ export interface TenantBrand {
   pooolEnabled: boolean;
   clickupEnabled: boolean;
   clickupListId: string;
+  notifyEmailEnabled: boolean;
+  notifySmtpHost: string;
+  notifySmtpPort: number;
+  notifySmtpUser: string;
+  notifySmtpPass: string;
+  notifyFrom: string;
+  notifyRedirectTo: string;
   updatedAt: number;
 }
 
@@ -77,7 +84,10 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
               higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
-              clickup_enabled, clickup_list_id, updated_at
+              clickup_enabled, clickup_list_id,
+              notify_email_enabled, notify_smtp_host, notify_smtp_port,
+              notify_smtp_user, notify_smtp_pass, notify_from, notify_redirect_to,
+              updated_at
        FROM tenant_brand
        WHERE tenant_id = $1`,
       [tenantId],
@@ -105,6 +115,13 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
         pooolEnabled: false,
         clickupEnabled: false,
         clickupListId: '',
+        notifyEmailEnabled: false,
+        notifySmtpHost: '',
+        notifySmtpPort: 587,
+        notifySmtpUser: '',
+        notifySmtpPass: '',
+        notifyFrom: '',
+        notifyRedirectTo: '',
         updatedAt: now,
       };
     }
@@ -123,6 +140,13 @@ export async function getTenantBrand(tenantId: string): Promise<TenantBrand> {
       pooolEnabled: Boolean(row.poool_enabled),
       clickupEnabled: Boolean(row.clickup_enabled),
       clickupListId: row.clickup_list_id ?? '',
+      notifyEmailEnabled: Boolean(row.notify_email_enabled),
+      notifySmtpHost: row.notify_smtp_host ?? '',
+      notifySmtpPort: Number(row.notify_smtp_port ?? 587),
+      notifySmtpUser: row.notify_smtp_user ?? '',
+      notifySmtpPass: row.notify_smtp_pass ?? '',
+      notifyFrom: row.notify_from ?? '',
+      notifyRedirectTo: row.notify_redirect_to ?? '',
       updatedAt: Number(row.updated_at),
     };
   });
@@ -190,6 +214,34 @@ export async function updateTenantBrand(
       params.push(patch.clickupListId);
       sets.push(`clickup_list_id = $${params.length}`);
     }
+    if (patch.notifyEmailEnabled !== undefined) {
+      params.push(patch.notifyEmailEnabled);
+      sets.push(`notify_email_enabled = $${params.length}`);
+    }
+    if (patch.notifySmtpHost !== undefined) {
+      params.push(patch.notifySmtpHost);
+      sets.push(`notify_smtp_host = $${params.length}`);
+    }
+    if (patch.notifySmtpPort !== undefined) {
+      params.push(patch.notifySmtpPort);
+      sets.push(`notify_smtp_port = $${params.length}`);
+    }
+    if (patch.notifySmtpUser !== undefined) {
+      params.push(patch.notifySmtpUser);
+      sets.push(`notify_smtp_user = $${params.length}`);
+    }
+    if (patch.notifySmtpPass !== undefined) {
+      params.push(patch.notifySmtpPass);
+      sets.push(`notify_smtp_pass = $${params.length}`);
+    }
+    if (patch.notifyFrom !== undefined) {
+      params.push(patch.notifyFrom);
+      sets.push(`notify_from = $${params.length}`);
+    }
+    if (patch.notifyRedirectTo !== undefined) {
+      params.push(patch.notifyRedirectTo);
+      sets.push(`notify_redirect_to = $${params.length}`);
+    }
     await client.query(
       `UPDATE tenant_brand SET ${sets.join(', ')} WHERE tenant_id = $1`,
       params,
@@ -198,7 +250,10 @@ export async function updateTenantBrand(
       `SELECT brand_dna_md, brand_tone_md, hivemind_url, hivemind_api_key,
               hivemind_enabled, higgsfield_url, higgsfield_api_key,
               higgsfield_enabled, poool_url, poool_api_key, poool_enabled,
-              clickup_enabled, clickup_list_id, updated_at
+              clickup_enabled, clickup_list_id,
+              notify_email_enabled, notify_smtp_host, notify_smtp_port,
+              notify_smtp_user, notify_smtp_pass, notify_from, notify_redirect_to,
+              updated_at
        FROM tenant_brand WHERE tenant_id = $1`,
       [tenantId],
     );
@@ -217,6 +272,13 @@ export async function updateTenantBrand(
       pooolEnabled: Boolean(row.poool_enabled),
       clickupEnabled: Boolean(row.clickup_enabled),
       clickupListId: row.clickup_list_id ?? '',
+      notifyEmailEnabled: Boolean(row.notify_email_enabled),
+      notifySmtpHost: row.notify_smtp_host ?? '',
+      notifySmtpPort: Number(row.notify_smtp_port ?? 587),
+      notifySmtpUser: row.notify_smtp_user ?? '',
+      notifySmtpPass: row.notify_smtp_pass ?? '',
+      notifyFrom: row.notify_from ?? '',
+      notifyRedirectTo: row.notify_redirect_to ?? '',
       updatedAt: Number(row.updated_at),
     };
   });

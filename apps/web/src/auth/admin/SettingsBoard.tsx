@@ -156,6 +156,14 @@ export default function SettingsBoard(): JSX.Element {
   const [hfUrl, setHfUrl] = useState('');
   const [hfKey, setHfKey] = useState(''); // only sent if non-empty
   const [hfEnabled, setHfEnabled] = useState(false);
+  // SMTP notifications
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState(''); // only sent if non-empty
+  const [notifyFrom, setNotifyFrom] = useState('');
+  const [notifyRedirect, setNotifyRedirect] = useState('');
 
   const hydrate = (d: OrgIntegrations): void => {
     setData(d);
@@ -167,6 +175,13 @@ export default function SettingsBoard(): JSX.Element {
     setHfUrl(d.higgsfield_url);
     setHfKey('');
     setHfEnabled(d.higgsfield_enabled);
+    setNotifyEnabled(d.notify_email_enabled);
+    setSmtpHost(d.notify_smtp_host);
+    setSmtpPort(d.notify_smtp_port);
+    setSmtpUser(d.notify_smtp_user);
+    setSmtpPass('');
+    setNotifyFrom(d.notify_from);
+    setNotifyRedirect(d.notify_redirect_to);
   };
 
   useEffect(() => {
@@ -205,9 +220,16 @@ export default function SettingsBoard(): JSX.Element {
         clickup_list_id: clickupListId.trim(),
         higgsfield_url: hfUrl.trim(),
         higgsfield_enabled: hfEnabled,
+        notify_email_enabled: notifyEnabled,
+        notify_smtp_host: smtpHost.trim(),
+        notify_smtp_port: smtpPort,
+        notify_smtp_user: smtpUser.trim(),
+        notify_from: notifyFrom.trim(),
+        notify_redirect_to: notifyRedirect.trim(),
       };
       if (pooolKey.trim()) body.poool_api_key = pooolKey.trim();
       if (hfKey.trim()) body.higgsfield_api_key = hfKey.trim();
+      if (smtpPass.trim()) body.notify_smtp_pass = smtpPass.trim();
       const updated = await updateOrgIntegrations(body);
       hydrate(updated);
       setSavedAt(Date.now());
@@ -294,6 +316,33 @@ export default function SettingsBoard(): JSX.Element {
                 onChange={(e) => setHfKey(e.target.value)}
                 placeholder={data.higgsfield_api_key_set ? 'Leave blank to keep current key' : 'Paste API key'}
               />
+            </Field>
+          </Card>
+
+          <Card
+            title="Notifications · SMTP"
+            hint="When enabled, delivery confirmations and payment-overdue alerts are emailed. Set Redirect-to to an operator inbox during testing — every notification goes there instead of the client."
+          >
+            <ConnectRow connected={notifyEnabled} saving={saving} onToggle={(n) => { setNotifyEnabled(n); }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 8 }}>
+              <Field label="SMTP Host">
+                <input style={inputStyle} value={smtpHost} disabled={saving} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" />
+              </Field>
+              <Field label="Port">
+                <input style={inputStyle} type="number" value={smtpPort} disabled={saving} onChange={(e) => setSmtpPort(Number(e.target.value))} />
+              </Field>
+            </div>
+            <Field label="SMTP User">
+              <input style={inputStyle} value={smtpUser} disabled={saving} onChange={(e) => setSmtpUser(e.target.value)} placeholder="user@firma.de" />
+            </Field>
+            <Field label={data.notify_smtp_pass_set ? `Password (set · ${data.notify_smtp_pass_preview})` : 'Password'}>
+              <input style={inputStyle} type="password" value={smtpPass} disabled={saving} onChange={(e) => setSmtpPass(e.target.value)} placeholder={data.notify_smtp_pass_set ? 'Leave blank to keep current' : 'App password or SMTP password'} />
+            </Field>
+            <Field label="From address">
+              <input style={inputStyle} value={notifyFrom} disabled={saving} onChange={(e) => setNotifyFrom(e.target.value)} placeholder="BLAIQ <noreply@firma.de>" />
+            </Field>
+            <Field label="Redirect-to (operator inbox — leave blank in production)">
+              <input style={inputStyle} value={notifyRedirect} disabled={saving} onChange={(e) => setNotifyRedirect(e.target.value)} placeholder="operator@firma.de" />
             </Field>
           </Card>
 
