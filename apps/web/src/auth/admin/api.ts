@@ -1063,6 +1063,81 @@ export async function listArtifacts(): Promise<ArtifactItem[]> {
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
+// ── Content scheduling/automation — recurring on-brand content ──
+
+export interface ContentSchedule {
+  id: string;
+  platform: string;
+  topic: string;
+  lang: string;
+  cadence: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  runs: number;
+}
+export interface ContentRun {
+  id: string;
+  schedule_id: string | null;
+  platform: string;
+  title: string;
+  body: string;
+  hashtags: string[];
+  share_url: string | null;
+  created_at: string | null;
+}
+
+let previewSchedules: ContentSchedule[] = [];
+let previewRuns: ContentRun[] = [];
+
+export async function listSchedules(): Promise<ContentSchedule[]> {
+  if (PREVIEW) return previewSchedules.map(s => ({ ...s }));
+  return asArray<ContentSchedule>(await request<unknown>('/api/copilot/schedules'), 'data');
+}
+
+export async function createSchedule(input: { platform: string; topic: string; lang?: string; cadence: string }): Promise<ContentSchedule> {
+  if (PREVIEW) {
+    const s: ContentSchedule = { id: `sch_${previewSchedules.length + 1}`, platform: input.platform, topic: input.topic, lang: input.lang || '', cadence: input.cadence, enabled: true, last_run_at: null, next_run_at: new Date().toISOString(), runs: 0 };
+    previewSchedules = [s, ...previewSchedules];
+    return s;
+  }
+  const d = await request<{ data: ContentSchedule }>('/api/copilot/schedules', { method: 'POST', body: JSON.stringify(input) });
+  return d.data;
+}
+
+export async function updateSchedule(id: string, patch: { enabled?: boolean; topic?: string; platform?: string; lang?: string; cadence?: string }): Promise<ContentSchedule> {
+  if (PREVIEW) {
+    previewSchedules = previewSchedules.map(s => s.id === id ? { ...s, ...patch } : s);
+    return previewSchedules.find(s => s.id === id)!;
+  }
+  const d = await request<{ data: ContentSchedule }>(`/api/copilot/schedules/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+  return d.data;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  if (PREVIEW) { previewSchedules = previewSchedules.filter(s => s.id !== id); return; }
+  await request(`/api/copilot/schedules/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function runScheduleNow(id: string): Promise<ContentRun | null> {
+  if (PREVIEW) {
+    const s = previewSchedules.find(x => x.id === id);
+    if (!s) return null;
+    const tags = s.platform === 'report' ? [] : ['#SinnFürMarken', '#KI'];
+    const run: ContentRun = { id: `run_${previewRuns.length + 1}`, schedule_id: id, platform: s.platform, title: s.topic, body: `Mensch × Maschine = Marke.\n\n${s.topic}: auf den Punkt, auf Marke.${s.lang === 'en' ? ' (EN)' : ''}`, hashtags: tags, share_url: previewShareUrl(s.platform, s.topic, tags), created_at: new Date().toISOString() };
+    previewRuns = [run, ...previewRuns];
+    previewSchedules = previewSchedules.map(x => x.id === id ? { ...x, runs: x.runs + 1, last_run_at: new Date().toISOString() } : x);
+    return run;
+  }
+  const d = await request<{ data: ContentRun | null }>(`/api/copilot/schedules/${encodeURIComponent(id)}/run-now`, { method: 'POST' });
+  return d.data;
+}
+
+export async function listContentRuns(): Promise<ContentRun[]> {
+  if (PREVIEW) return previewRuns.map(r => ({ ...r }));
+  return asArray<ContentRun>(await request<unknown>('/api/copilot/content-runs'), 'data');
+}
+
 // ── Clients rollup (per-client view of the book) ──
 
 export interface ClientRollup {

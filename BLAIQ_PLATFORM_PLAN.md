@@ -463,3 +463,12 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 **GenAI · Multi-language content (localization)** — serve multilingual clients: the Studio Social + Campaign generators take a language selector (Brand default · DE · EN · FR · ES · IT · NL). A `_lang_directive` in the ops-brain `/social` + `/campaign` endpoints overrides the output language while keeping the Brand Tone intact. Verified live: same brief produced German (default), English, and French posts — all on-brand (the Mensch × Maschine motif carried across languages).
 
 ![Studio language selector](docs/progress/genai-localization.png)
+
+**GenAI · Phase 3 — Content scheduling/automation (recurring on-brand content)** — set it once, the studio produces a brand-locked draft on your cadence:
+- **Storage**: `ops.content_schedules` + `ops.content_runs` (tenant-scoped, RLS mirrors `ops.jobs`; applied via `deploy/scripts/content_schedules.sql`).
+- **Runner**: per-tenant `poll_content_schedules` loop in ops-brain (alongside the POOOL/ClickUp pollers; env `BLAIQ_CONTENT_SCHED_ENABLED`/`_INTERVAL_S`) fires due schedules → generates a brand-locked social draft (shared `generate_social_artifact`) → stores it in `content_runs`.
+- **API**: `/api/copilot/schedules` (list/create/patch/delete), `/schedules/:id/run-now`, `/content-runs`.
+- **UI**: Admin → Studio → **Scheduler** — create (platform · topic · language · cadence), manage (pause/resume/run-now/delete), and a drafts feed with one-click post + copy.
+- Verified live: created a weekly EN schedule, run-now produced a real on-brand English draft stored + surfaced; background poller registered.
+
+![Content scheduler — recurring on-brand drafts](docs/progress/genai-scheduler.png)

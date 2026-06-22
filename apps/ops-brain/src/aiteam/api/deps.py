@@ -89,6 +89,7 @@ class TenantState:
     clickup_poller_task: asyncio.Task[None] | None = None
     poool_sync_task: asyncio.Task[None] | None = None
     payment_check_task: asyncio.Task[None] | None = None
+    content_sched_task: asyncio.Task[None] | None = None
 
     def touch(self) -> None:
         """Bump the LRU timestamp; called on every dependency lookup."""
@@ -354,6 +355,29 @@ async def _start_background_tasks(state: TenantState) -> None:
 
             state.payment_check_task = asyncio.create_task(
                 _bound_payment_check(), name=f"payment-check:{state.tenant_id}"
+            )
+
+        # Content scheduler — generates recurring on-brand drafts for any
+        # ops.content_schedules the tenant defines. No-op until schedules exist.
+        if os.environ.get("BLAIQ_CONTENT_SCHED_ENABLED", "true").lower() != "false":
+            from aiteam.integrations.scheduler import poll_content_schedules
+
+            try:
+                _sched_interval = float(os.environ.get("BLAIQ_CONTENT_SCHED_INTERVAL_S", "300") or 300)
+            except ValueError:
+                _sched_interval = 300.0
+
+            async def _bound_content_sched(
+                tid: str = state.tenant_id, interval: float = _sched_interval
+            ) -> None:
+                token_inner = set_current_tenant(tid)
+                try:
+                    await poll_content_schedules(tid, interval_s=interval)
+                finally:
+                    reset_current_tenant(token_inner)
+
+            state.content_sched_task = asyncio.create_task(
+                _bound_content_sched(), name=f"content-sched:{state.tenant_id}"
             )
 
         state.background_started = True

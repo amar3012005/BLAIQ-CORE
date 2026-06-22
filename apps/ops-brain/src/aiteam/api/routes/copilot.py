@@ -1257,6 +1257,42 @@ def _social_share_url(platform: str, body: str, hashtags: list[str]) -> str | No
     return None
 
 
+async def generate_social_artifact(
+    db: AsyncSession, tenant_id: str, platform: str, topic: str, lang: str | None = None,
+) -> SocialArtifact:
+    """Brand-locked social post generation. Shared by the /social endpoint and
+    the content scheduler. Raises RuntimeError on LLM failure."""
+    platform = (platform or "linkedin").lower().strip()
+    guidance = _SOCIAL_GUIDANCE.get(platform, _SOCIAL_GUIDANCE["linkedin"])
+    dna, tone = await _load_brand_md(db, tenant_id)
+    prompt = (
+        f"BRAND TONE (voice — follow exactly):\n{tone or '(confident, concise, professional)'}\n\n"
+        f"BRAND DNA (for context):\n{dna or '(none)'}\n\n"
+        f"PLATFORM: {platform}\nFORMAT: {guidance}\n\nTOPIC: {topic}{_lang_directive(lang)}"
+    )
+    result = await chat(
+        [{"role": "system", "content": _SOCIAL_SYSTEM}, {"role": "user", "content": prompt}],
+        max_tokens=800, temperature=0.5,
+    )
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error") or "social generation unavailable")
+    try:
+        spec = _parse_briefing_json(result.get("text") or "")
+    except (ValueError, TypeError):
+        spec = {"title": topic, "body": (result.get("text") or "").strip(), "hashtags": []}
+    text_body = str(spec.get("body") or "").strip()
+    tags = [str(h).strip() for h in (spec.get("hashtags") or []) if str(h).strip()]
+    return SocialArtifact(
+        platform=platform,
+        title=str(spec.get("title") or topic).strip(),
+        body=text_body,
+        hashtags=tags,
+        share_url=_social_share_url(platform, text_body, tags),
+        char_count=len(text_body),
+        model=result.get("model") or copilot_model(),
+    )
+
+
 @router.post("/social", response_model=APIResponse[SocialArtifact])
 async def generate_social(
     body: SocialRequest,
@@ -1267,40 +1303,168 @@ async def generate_social(
         raise HTTPException(status_code=401, detail="missing tenant")
     if not body.topic.strip():
         raise HTTPException(status_code=400, detail="empty topic")
-    platform = (body.platform or "linkedin").lower().strip()
-    guidance = _SOCIAL_GUIDANCE.get(platform, _SOCIAL_GUIDANCE["linkedin"])
-
-    dna, tone = await _load_brand_md(db, tenant_id)
-    prompt = (
-        f"BRAND TONE (voice — follow exactly):\n{tone or '(confident, concise, professional)'}\n\n"
-        f"BRAND DNA (for context):\n{dna or '(none)'}\n\n"
-        f"PLATFORM: {platform}\nFORMAT: {guidance}\n\nTOPIC: {body.topic}{_lang_directive(body.lang)}"
-    )
-    result = await chat(
-        [{"role": "system", "content": _SOCIAL_SYSTEM}, {"role": "user", "content": prompt}],
-        max_tokens=800, temperature=0.5,
-    )
-    if not result.get("ok"):
-        raise HTTPException(status_code=503, detail=result.get("error") or "social generation unavailable")
     try:
-        spec = _parse_briefing_json(result.get("text") or "")
-    except (ValueError, TypeError):
-        spec = {"title": body.topic, "body": (result.get("text") or "").strip(), "hashtags": []}
+        art = await generate_social_artifact(db, tenant_id, body.platform, body.topic, body.lang)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return APIResponse(data=art, message="ok")
 
-    text_body = str(spec.get("body") or "").strip()
-    tags = [str(h).strip() for h in (spec.get("hashtags") or []) if str(h).strip()]
-    return APIResponse(
-        data=SocialArtifact(
-            platform=platform,
-            title=str(spec.get("title") or body.topic).strip(),
-            body=text_body,
-            hashtags=tags,
-            share_url=_social_share_url(platform, text_body, tags),
-            char_count=len(text_body),
-            model=result.get("model") or copilot_model(),
-        ),
-        message="ok",
+
+# ──────────────────────────────────────────────
+# GenAI · Content scheduling/automation — recurring on-brand content. The
+# tenant scheduler (deps.py) runs due schedules; these endpoints manage them and
+# surface the generated drafts for review + one-click posting.
+# ──────────────────────────────────────────────
+
+class ScheduleCreate(BaseModel):
+    platform: str = "linkedin"
+    topic: str
+    lang: str | None = None
+    cadence: str = "weekly"
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: bool | None = None
+    topic: str | None = None
+    platform: str | None = None
+    lang: str | None = None
+    cadence: str | None = None
+
+
+class ContentSchedule(BaseModel):
+    id: str
+    platform: str
+    topic: str
+    lang: str = ""
+    cadence: str
+    enabled: bool
+    last_run_at: str | None = None
+    next_run_at: str | None = None
+    runs: int = 0
+
+
+class ContentRun(BaseModel):
+    id: str
+    schedule_id: str | None = None
+    platform: str
+    title: str = ""
+    body: str = ""
+    hashtags: list[str] = Field(default_factory=list)
+    share_url: str | None = None
+    created_at: str | None = None
+
+
+def _iso(v) -> str | None:
+    return v.isoformat() if v is not None else None
+
+
+def _schedule_dto(r) -> ContentSchedule:
+    return ContentSchedule(
+        id=str(r.id), platform=r.platform, topic=r.topic, lang=r.lang or "",
+        cadence=r.cadence, enabled=bool(r.enabled), runs=int(r.runs),
+        last_run_at=_iso(r.last_run_at), next_run_at=_iso(r.next_run_at),
     )
+
+
+@router.get("/schedules", response_model=APIResponse[list[ContentSchedule]])
+async def list_schedules(db: AsyncSession = Depends(_get_db)) -> APIResponse[list[ContentSchedule]]:
+    rows = (await db.execute(text(
+        "SELECT id, platform, topic, lang, cadence, enabled, last_run_at, next_run_at, runs "
+        "FROM ops.content_schedules ORDER BY created_at DESC"
+    ))).all()
+    return APIResponse(data=[_schedule_dto(r) for r in rows], message="ok")
+
+
+@router.post("/schedules", response_model=APIResponse[ContentSchedule])
+async def create_schedule(body: ScheduleCreate, db: AsyncSession = Depends(_get_db)) -> APIResponse[ContentSchedule]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    if not body.topic.strip():
+        raise HTTPException(status_code=400, detail="empty topic")
+    import uuid as _u
+    cadence = body.cadence if body.cadence in ("daily", "weekly") else "weekly"
+    sid = str(_u.uuid4())
+    await db.execute(text(
+        "INSERT INTO ops.content_schedules (id, tenant_id, platform, topic, lang, cadence, next_run_at) "
+        "VALUES (CAST(:id AS uuid), CAST(:t AS uuid), :p, :topic, :lang, :cad, NOW())"
+    ), {"id": sid, "t": tenant_id, "p": (body.platform or "linkedin").lower().strip(),
+        "topic": body.topic.strip(), "lang": (body.lang or "").strip(), "cad": cadence})
+    await db.commit()
+    row = (await db.execute(text(
+        "SELECT id, platform, topic, lang, cadence, enabled, last_run_at, next_run_at, runs "
+        "FROM ops.content_schedules WHERE id = CAST(:id AS uuid)"
+    ), {"id": sid})).first()
+    return APIResponse(data=_schedule_dto(row), message="ok")
+
+
+@router.patch("/schedules/{schedule_id}", response_model=APIResponse[ContentSchedule])
+async def update_schedule(schedule_id: str, body: ScheduleUpdate, db: AsyncSession = Depends(_get_db)) -> APIResponse[ContentSchedule]:
+    sets, params = [], {"id": schedule_id}
+    if body.enabled is not None:
+        sets.append("enabled = :enabled"); params["enabled"] = body.enabled
+    if body.topic is not None:
+        sets.append("topic = :topic"); params["topic"] = body.topic.strip()
+    if body.platform is not None:
+        sets.append("platform = :p"); params["p"] = body.platform.lower().strip()
+    if body.lang is not None:
+        sets.append("lang = :lang"); params["lang"] = body.lang.strip()
+    if body.cadence is not None and body.cadence in ("daily", "weekly"):
+        sets.append("cadence = :cad"); params["cad"] = body.cadence
+    if not sets:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    row = (await db.execute(text(
+        f"UPDATE ops.content_schedules SET {', '.join(sets)} WHERE id = CAST(:id AS uuid) "
+        "RETURNING id, platform, topic, lang, cadence, enabled, last_run_at, next_run_at, runs"
+    ), params)).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    await db.commit()
+    return APIResponse(data=_schedule_dto(row), message="ok")
+
+
+@router.delete("/schedules/{schedule_id}", response_model=APIResponse[dict])
+async def delete_schedule(schedule_id: str, db: AsyncSession = Depends(_get_db)) -> APIResponse[dict]:
+    res = await db.execute(text("DELETE FROM ops.content_schedules WHERE id = CAST(:id AS uuid)"), {"id": schedule_id})
+    await db.commit()
+    return APIResponse(data={"deleted": res.rowcount or 0}, message="ok")
+
+
+@router.post("/schedules/{schedule_id}/run-now", response_model=APIResponse[ContentRun | None])
+async def run_schedule_now_endpoint(schedule_id: str, db: AsyncSession = Depends(_get_db)) -> APIResponse[ContentRun | None]:
+    tenant_id = current_tenant_id.get("")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="missing tenant")
+    from aiteam.integrations.scheduler import run_schedule_now
+    try:
+        run_id = await run_schedule_now(db, tenant_id, schedule_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not run_id:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    row = (await db.execute(text(
+        "SELECT id, schedule_id, platform, title, body, hashtags, share_url, created_at "
+        "FROM ops.content_runs WHERE id = CAST(:id AS uuid)"
+    ), {"id": run_id})).first()
+    return APIResponse(data=_run_dto(row) if row else None, message="ok")
+
+
+def _run_dto(r) -> ContentRun:
+    tags = r.hashtags if isinstance(r.hashtags, list) else (r.hashtags or [])
+    return ContentRun(
+        id=str(r.id), schedule_id=str(r.schedule_id) if r.schedule_id else None,
+        platform=r.platform, title=r.title or "", body=r.body or "",
+        hashtags=[str(t) for t in tags], share_url=r.share_url, created_at=_iso(r.created_at),
+    )
+
+
+@router.get("/content-runs", response_model=APIResponse[list[ContentRun]])
+async def list_content_runs(db: AsyncSession = Depends(_get_db)) -> APIResponse[list[ContentRun]]:
+    rows = (await db.execute(text(
+        "SELECT id, schedule_id, platform, title, body, hashtags, share_url, created_at "
+        "FROM ops.content_runs ORDER BY created_at DESC LIMIT 40"
+    ))).all()
+    return APIResponse(data=[_run_dto(r) for r in rows], message="ok")
 
 
 # ──────────────────────────────────────────────

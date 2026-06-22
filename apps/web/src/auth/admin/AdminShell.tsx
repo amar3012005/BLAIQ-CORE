@@ -19,6 +19,7 @@ import StudioBoard from './StudioBoard';
 import IntakeBoard from './IntakeBoard';
 import ClientsBoard from './ClientsBoard';
 import ArtifactsBoard from './ArtifactsBoard';
+import SchedulerBoard from './SchedulerBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
 
@@ -33,6 +34,7 @@ type TabId =
   | 'finance'
   | 'work'
   | 'artifacts'
+  | 'scheduler'
   | 'activity'
   | 'analytics'
   | 'settings';
@@ -66,6 +68,7 @@ const SECTIONS: Section[] = [
     heading: 'Studio',
     items: [
       { id: 'artifacts', label: 'Artifacts', hint: 'Every image, video, deck' },
+      { id: 'scheduler', label: 'Scheduler', hint: 'Recurring on-brand content' },
     ],
   },
   {
@@ -192,6 +195,7 @@ export default function AdminShell(): JSX.Element {
           {tab === 'finance' && <FinanceBoard />}
           {tab === 'work' && <TasksWall />}
           {tab === 'artifacts' && <ArtifactsBoard />}
+          {tab === 'scheduler' && <SchedulerBoard />}
           {tab === 'activity' && <ActivityFeed />}
           {tab === 'analytics' && <AnalyticsBoard />}
           {tab === 'settings' && <SettingsBoard />}
