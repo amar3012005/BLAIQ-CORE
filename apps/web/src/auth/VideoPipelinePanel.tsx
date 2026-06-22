@@ -95,6 +95,16 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
   const [hitlNotes, setHitlNotes] = useState('');
   const [hitlSubmitting, setHitlSubmitting] = useState(false);
   const [editTarget, setEditTarget] = useState<{ fileName: string; url: string; label: string } | null>(null);
+  // Cast a pinned, tenant-level spokesperson as the video's primary subject.
+  const [spokespersons, setSpokespersons] = useState<Array<{ id: string; name: string; url: string }>>([]);
+  const [castId, setCastId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/v1/spokespersons', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { spokespersons: [] }))
+      .then((d) => setSpokespersons(Array.isArray(d.spokespersons) ? d.spokespersons : []))
+      .catch(() => { /* noop */ });
+  }, []);
 
   const start = useCallback(async () => {
     setRunning(true);
@@ -134,6 +144,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
           aspect: brief.aspect,
           length: brief.length,
           user_prompt: brief.userPrompt,
+          spokesperson_id: castId || undefined,
         }),
       });
       if (!r.body) throw new Error('no response stream');
@@ -168,7 +179,7 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       setError((err as Error).message);
       setRunning(false);
     }
-  }, [projectId, brief]);
+  }, [projectId, brief, castId]);
 
   const handleEvent = useCallback((evName: string, payload: { stage?: StageKey | 'error' | 'chat-script' | 'video-error' | 'subject-sheet' | 'scenery-sheet' | 'hitl'; status?: string; shot?: number; path?: string; chars?: number; storyboard?: { title?: string; narration?: string; shots?: Array<{ shot: number; image_prompt?: string; narration_chunk?: string }> }; final_path?: string; message?: string; markdown?: string; subjectId?: string; gate?: 'discovery' | 'script' | 'references' | 'frames'; title?: string; agent?: { id: string; role: string; name: string; note: string }; questions?: Array<{ id: string; question: string; hint?: string }>; previewMarkdown?: string; previewImages?: string[] }) => {
     if (evName === 'progress' && payload.stage) {
@@ -299,6 +310,17 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
             </div>
           </div>
         </div>
+        {spokespersons.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>
+            <span style={{ ...mono, color: P.muted, fontSize: 9 }}>CAST</span>
+            <select value={castId ?? ''} disabled={running} onChange={(e) => setCastId(e.target.value || null)}
+              title="Cast a pinned spokesperson as the video's presenter"
+              style={{ padding: '6px 8px', background: P.white, border: `1px solid ${castId ? P.accent : P.border}`, fontFamily: '"Inter", sans-serif', fontSize: 11, color: P.ink, cursor: 'pointer', borderRadius: 6 }}>
+              <option value="">No spokesperson</option>
+              {spokespersons.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            </select>
+          </div>
+        )}
         <button
           type="button"
           onClick={start}

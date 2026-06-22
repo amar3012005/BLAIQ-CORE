@@ -542,6 +542,7 @@ export async function renderVideo(
     projectId: string;
     hitlEnabled?: boolean;
     higgsfield?: { url: string; apiKey: string };
+    spokespersonDataUri?: string; // a pinned spokesperson cast as the primary subject
   },
   onProgress: ProgressCallback,
 ): Promise<{ finalPath: string; storyboard: Storyboard }> {
@@ -665,6 +666,23 @@ export async function renderVideo(
         : []);
   storyboard.subjects = subjects;
 
+  // Cast a pinned spokesperson as the primary subject — its image IS the
+  // reference sheet, so the same on-brand face is locked across the video and
+  // that subject's sheet generation is skipped (the Director's casting).
+  const castSubjectIds = new Set<string>();
+  if (ctx.spokespersonDataUri && subjects.length > 0) {
+    const m = ctx.spokespersonDataUri.match(/^data:image\/[a-z+]+;base64,(.+)$/i);
+    if (m && m[1]) {
+      const primary = subjects[0]!;
+      const p = path.join(projectDir, `subject_${primary.id}_sheet.png`);
+      await fs.writeFile(p, Buffer.from(m[1], 'base64'));
+      primary.sheetPath = p;
+      primary.sheetDataUri = ctx.spokespersonDataUri;
+      castSubjectIds.add(primary.id);
+      onProgress({ stage: 'subject-sheet', status: 'done', path: p, subjectId: primary.id });
+    }
+  }
+
   const specSchema = `{
   "subject": {
     "gender": "<>", "age": "<specific>", "aesthetic": "<3-5 adjectives>",
@@ -684,6 +702,8 @@ export async function renderVideo(
   // Parallelize per-subject spec + sheet gen so 3 subjects do not block
   // sequentially for ~90s. Each subject independent.
   await Promise.all(subjects.map(async (subj) => {
+    // A cast (pinned) spokesperson already has its sheet — skip generation.
+    if (castSubjectIds.has(subj.id)) return;
     onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
     // Build per-subject spec JSON
     try {
@@ -798,6 +818,7 @@ Color grade: ${storyboard.color_grade}. Style: ${brief.style}. Wide angle, photo
       const note = reply.notes || 'improve realism, match brand tone better';
       // Regenerate subject sheets with the note appended to each spec/persona.
       for (const subj of subjects) {
+        if (castSubjectIds.has(subj.id)) continue; // keep the pinned spokesperson locked
         onProgress({ stage: 'subject-sheet', status: 'start', subjectId: subj.id });
         const subjectPrompt = `Subject reference sheet for "${subj.id}" — 4-photo grid collage (2x2), smartphone-photography style, neutral light-grey seamless studio backdrop, soft diffused lighting.
 

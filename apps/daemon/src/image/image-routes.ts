@@ -9,10 +9,10 @@
 import type { Request, Response, Router } from 'express';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import type { AuthenticatedRequest } from '../db/tenant-context.js';
 import { getTenantBrand } from '../brand/brand-store.js';
 import { hivemindRecall } from '../brand/hivemind-client.js';
+import { listSpokespersons, saveSpokesperson, readSpokespersonImage } from './spokesperson-store.js';
 
 const OR_BASE = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
 const OR_KEY = (): string => process.env.OPENROUTER_API_KEY || '';
@@ -153,40 +153,6 @@ async function generateImage(
   throw new Error('openrouter image: no image in response');
 }
 
-// ── Tenant-level spokesperson store ───────────────────────────────
-// A "pinned" spokesperson is a reusable on-brand presenter the crew can cast
-// into any project. Stored tenant-scoped on disk (image file + a JSON registry)
-// so it survives across projects — no DB migration required.
-
-const TENANT_ASSETS_DIR = process.env.OD_DATA_DIR
-  ? path.join(process.env.OD_DATA_DIR, 'tenant-assets')
-  : path.join(process.cwd(), '.od', 'tenant-assets');
-
-interface SpokespersonEntry { id: string; name: string; file: string; created_at: number; }
-
-function spokesDir(tenantId: string): string {
-  return path.join(TENANT_ASSETS_DIR, tenantId, 'spokespersons');
-}
-
-async function readSpokesRegistry(dir: string): Promise<SpokespersonEntry[]> {
-  try {
-    const raw = await fs.readFile(path.join(dir, 'registry.json'), 'utf8');
-    const parsed = JSON.parse(raw) as { items?: SpokespersonEntry[] };
-    return Array.isArray(parsed.items) ? parsed.items : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeSpokesRegistry(dir: string, items: SpokespersonEntry[]): Promise<void> {
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, 'registry.json'), JSON.stringify({ items }, null, 2));
-}
-
-function spokesDto(e: SpokespersonEntry): { id: string; name: string; url: string; created_at: number } {
-  return { id: e.id, name: e.name, url: `/api/v1/spokespersons/${e.id}/image`, created_at: e.created_at };
-}
-
 async function nextVersion(projectDir: string): Promise<number> {
   try {
     const files = await fs.readdir(projectDir);
@@ -316,8 +282,7 @@ export function registerImageRoutes(router: Router): void {
   router.get('/api/v1/spokespersons', async (req: Request, res: Response) => {
     const authed = req as AuthenticatedRequest;
     if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
-    const items = await readSpokesRegistry(spokesDir(authed.tenantId));
-    res.json({ spokespersons: items.map(spokesDto) });
+    res.json({ spokespersons: await listSpokespersons(authed.tenantId) });
   });
 
   // Pin a new spokesperson from a rendered image (data URI).
@@ -325,38 +290,22 @@ export function registerImageRoutes(router: Router): void {
     const authed = req as AuthenticatedRequest;
     if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
     const body = (req.body ?? {}) as { name?: string; image_data?: string };
-    const m = (body.image_data || '').match(/^data:image\/[a-z+]+;base64,(.+)$/i);
-    if (!m || !m[1]) { res.status(400).json({ error: 'image_data (png/jpeg data URI) required' }); return; }
-    const dir = spokesDir(authed.tenantId);
-    const id = randomUUID();
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, `${id}.png`), Buffer.from(m[1], 'base64'));
-    const items = await readSpokesRegistry(dir);
-    const entry: SpokespersonEntry = {
-      id,
-      name: (body.name || 'Spokesperson').toString().trim().slice(0, 80) || 'Spokesperson',
-      file: `${id}.png`,
-      created_at: Date.now(),
-    };
-    items.unshift(entry);
-    await writeSpokesRegistry(dir, items.slice(0, 50));
-    res.json({ ok: true, spokesperson: spokesDto(entry) });
+    try {
+      const entry = await saveSpokesperson(authed.tenantId, body.name || '', body.image_data || '');
+      res.json({ ok: true, spokesperson: { id: entry.id, name: entry.name, url: `/api/v1/spokespersons/${entry.id}/image`, created_at: entry.created_at } });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
   });
 
   // Serve a pinned spokesperson's image.
   router.get('/api/v1/spokespersons/:id/image', async (req: Request, res: Response) => {
     const authed = req as AuthenticatedRequest;
     if (!authed.tenantId) { res.status(401).json({ error: 'not authenticated' }); return; }
-    const id = String(req.params.id || '');
-    if (!/^[0-9a-fA-F-]{36}$/.test(id)) { res.status(400).json({ error: 'bad id' }); return; }
-    const file = path.join(spokesDir(authed.tenantId), `${id}.png`);
-    try {
-      const buf = await fs.readFile(file);
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'private, max-age=86400');
-      res.end(buf);
-    } catch {
-      res.status(404).json({ error: 'not found' });
-    }
+    const buf = await readSpokespersonImage(authed.tenantId, String(req.params.id || ''));
+    if (!buf) { res.status(404).json({ error: 'not found' }); return; }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.end(buf);
   });
 }

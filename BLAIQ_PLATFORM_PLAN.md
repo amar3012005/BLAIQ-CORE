@@ -405,3 +405,10 @@ Verified live on prod: a real video mission paused at the discovery gate present
 - Verified live on prod: pinned a spokesperson, confirmed it lists + serves + appears in the panel on a fresh load (cross-project reuse).
 
 ![Pinned spokesperson — reusable across projects](docs/progress/genai-spokesperson-pinned.png)
+
+**GenAI · Pinned spokesperson cast into the live video pipeline** — the same on-brand face now flows from the image studio into video (the Director's casting, unified):
+- Shared `spokesperson-store.ts` (image + video both read it). Video render accepts `spokesperson_id`; the daemon loads that pinned image and, in `pipeline.ts`, writes it as the **primary subject's reference sheet** (generation skipped) and keeps it locked through the references gate.
+- VideoPipelinePanel: a **CAST** picker lists the tenant's pinned spokespersons; pick one before START RENDER.
+- Verified live on prod: cast "Marken-Host" into a video → the references gate (Vera · Director) showed that exact face, and the project's `subject_spokesperson_sheet.png` is **byte-identical** (same MD5) to the pinned spokesperson — proving the cast face is used, not a fresh person.
+
+![Pinned spokesperson cast into a video — references gate](docs/progress/genai-video-cast-spokesperson.png)

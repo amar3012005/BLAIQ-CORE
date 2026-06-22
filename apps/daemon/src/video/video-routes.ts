@@ -8,6 +8,7 @@ import { getTenantBrand } from '../brand/brand-store.js';
 import { hivemindRecall } from '../brand/hivemind-client.js';
 import { renderVideo, type VideoBrief, type ProgressEvent } from './pipeline.js';
 import { submitReply, type HitlGate, type HitlReply } from './hitl-store.js';
+import { spokespersonDataUri } from '../image/spokesperson-store.js';
 
 const PROJECTS_DIR = process.env.OD_DATA_DIR
   ? path.join(process.env.OD_DATA_DIR, 'projects')
@@ -29,6 +30,7 @@ export function registerVideoRoutes(router: Router): void {
       aspect?: string;
       length?: number;
       user_prompt?: string;
+      spokesperson_id?: string;
     };
     if (!body.project_id || !body.subject) {
       res.status(400).json({ error: 'project_id and subject required' });
@@ -95,6 +97,7 @@ export function registerVideoRoutes(router: Router): void {
         projectId: string;
         hitlEnabled?: boolean;
         higgsfield?: { url: string; apiKey: string };
+        spokespersonDataUri?: string;
       } = {
         brandTone: brand.brandToneMd || '',
         brandDna: brand.brandDnaMd || '',
@@ -103,6 +106,12 @@ export function registerVideoRoutes(router: Router): void {
         hitlEnabled: true,
       };
       if (voiceMatch) ctxOpts.voice = voiceMatch;
+      // Cast a pinned spokesperson: its image becomes the primary subject's
+      // reference sheet so the same on-brand face flows into the video.
+      if (body.spokesperson_id) {
+        const sp = await spokespersonDataUri(authed.tenantId, body.spokesperson_id);
+        if (sp) ctxOpts.spokespersonDataUri = sp;
+      }
       if (brand.higgsfieldEnabled && brand.higgsfieldApiKey) {
         ctxOpts.higgsfield = {
           url: brand.higgsfieldUrl || 'https://higgsfield.ai/mcp',
