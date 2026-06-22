@@ -165,6 +165,39 @@ export default function ImagePipelinePanel({ projectId, aspect = '1:1' }: Props)
       .catch(() => { /* noop */ });
   }, []);
 
+  // Rehydrate prior versions from disk so a reopened project resumes where it
+  // left off (artifacts persist on the volume; this restores the version tabs).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, { credentials: 'include' });
+        if (!r.ok) return;
+        const d = await r.json();
+        const names: string[] = (Array.isArray(d.files) ? d.files : []).map((f: { name?: string }) => f?.name || '');
+        const vers = names
+          .map((n) => ({ n, v: Number(n.match(/^image_v(\d+)\.png$/)?.[1] ?? NaN) }))
+          .filter((x) => Number.isFinite(x.v))
+          .sort((a, b) => a.v - b.v);
+        if (cancelled || vers.length === 0) return;
+        const restored: ImageVersion[] = [];
+        for (const { n, v } of vers) {
+          let p = '', mdl = '';
+          try {
+            const mr = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/image_v${v}.meta.json`, { credentials: 'include' });
+            if (mr.ok) { const meta = await mr.json(); p = meta.prompt || ''; mdl = meta.model || ''; }
+          } catch { /* ignore meta */ }
+          restored.push({ version: v, url: `/api/projects/${encodeURIComponent(projectId)}/files/${n}`, prompt: p, model: mdl });
+        }
+        if (cancelled) return;
+        // Don't clobber a live session.
+        setVersions((prev) => (prev.length ? prev : restored));
+        setActiveVersion((prev) => (prev != null ? prev : restored[restored.length - 1]!.version));
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   const activeImage = activeVersion != null
     ? versions.find((v) => v.version === activeVersion)
     : null;

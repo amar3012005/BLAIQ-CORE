@@ -422,3 +422,14 @@ Verified live on prod: a real video mission paused at the discovery gate present
 With this, the standalone image-studio crew tools and the live video pipeline are one system: pin a face → cast it into video, and the Cinematographer offers frame options inside the gate.
 
 ![Frames gate — per-shot variant options](docs/progress/genai-frames-variants.png)
+
+**GenAI · Project resume (rehydrate artifacts on reopen)** — closes the "continue any project" gap. Storage was already durable (Postgres + `/data` on named Docker volumes survive rebuilds); this restores the *UI* state from disk:
+- **Image panel**: on mount, lists the project dir, rebuilds the version tabs from `image_v*.png` (+ `.meta.json` for prompt/model) and shows the latest. Reopen → resumes at v4/4 instead of "New canvas".
+- **Video panel**: rehydrates storyboard title, script (`script.md`), subject + scenery sheets, all shot frames (`ref_shot*.png`), clips, and `final.mp4`; auto-opens the most advanced tab.
+- Both guard against clobbering a live session.
+- Verified live: reopened an image project (4 versions restored) and a video project (storyboard + 5 shot frames restored).
+
+**Persistence guarantee (verified):** Postgres → volume `open_design_pg`; all artifacts (`/data`: projects, decks, images, videos, spokespersons) → volume `open_design_data`. `docker compose up -d --build` reattaches them — data is never lost. The ONLY footgun is `docker compose down -v` (deletes volumes) — never run it.
+
+![Image project resumed — version tabs restored](docs/progress/genai-resume-image.png)
+![Video project resumed — storyboard + shot frames restored](docs/progress/genai-resume-video.png)

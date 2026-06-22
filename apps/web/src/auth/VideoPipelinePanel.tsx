@@ -110,6 +110,69 @@ export default function VideoPipelinePanel({ projectId, brief, onScript }: Props
       .catch(() => { /* noop */ });
   }, []);
 
+  // Rehydrate a reopened video project from disk — restore the script, sheets,
+  // shot frames, clips, and final video so the work resumes (artifacts persist
+  // on the volume; this re-surfaces them in the panel).
+  useEffect(() => {
+    let cancelled = false;
+    const pid = encodeURIComponent(projectId);
+    (async () => {
+      try {
+        const r = await fetch(`/api/projects/${pid}/files`, { credentials: 'include' });
+        if (!r.ok) return;
+        const d = await r.json();
+        const names: string[] = (Array.isArray(d.files) ? d.files : []).map((f: { name?: string }) => f?.name || '');
+        if (cancelled || names.length === 0) return;
+        const has = new Set(names);
+        const fileUrl = (n: string): string => `/api/projects/${pid}/files/${n}`;
+
+        // Subject sheets + scenery
+        const sheets = names
+          .map((n) => ({ n, m: n.match(/^subject_(.+)_sheet\.png$/) }))
+          .filter((x) => x.m)
+          .map((x) => ({ id: x.m![1]!, url: fileUrl(x.n) }));
+        if (sheets.length) setSubjectSheets((prev) => (prev.length ? prev : sheets));
+        if (has.has('scenery_sheet.png')) setScenerySheet((prev) => prev ?? fileUrl('scenery_sheet.png'));
+
+        // Script + storyboard → shots (with any rendered frames / clips)
+        if (has.has('storyboard.json')) {
+          try {
+            const sb = await (await fetch(fileUrl('storyboard.json'), { credentials: 'include' })).json();
+            if (!cancelled && sb && Array.isArray(sb.shots)) {
+              setStoryboardTitle((prev) => prev || (sb.title ?? ''));
+              setShots((prev) => prev.length ? prev : sb.shots.map((s: { shot: number; image_prompt?: string; narration_chunk?: string }) => ({
+                shot: s.shot,
+                imagePrompt: s.image_prompt,
+                narration: s.narration_chunk,
+                refFrame: has.has(`ref_shot${s.shot}.png`) ? fileUrl(`ref_shot${s.shot}.png`) : undefined,
+                videoClip: has.has(`shot${s.shot}.mp4`) ? fileUrl(`shot${s.shot}.mp4`) : undefined,
+              })));
+            }
+          } catch { /* ignore storyboard */ }
+        }
+        if (has.has('script.md')) {
+          try {
+            const md = await (await fetch(fileUrl('script.md'), { credentials: 'include' })).text();
+            if (!cancelled && md) setScriptMd((prev) => prev || md);
+          } catch { /* ignore script */ }
+        }
+        if (has.has('final.mp4')) setFinalUrl((prev) => prev ?? fileUrl('final.mp4'));
+
+        // Open the most advanced tab that has content.
+        if (!cancelled) {
+          setActiveTab((prev) => {
+            if (prev !== 'script') return prev; // user already navigated
+            if (has.has('final.mp4')) return 'final';
+            if (names.some((n) => /^ref_shot\d+\.png$/.test(n))) return 'shots';
+            if (sheets.length || has.has('scenery_sheet.png')) return 'references';
+            return 'script';
+          });
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   const start = useCallback(async () => {
     setRunning(true);
     setError(null);
