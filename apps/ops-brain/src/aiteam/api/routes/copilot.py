@@ -1212,9 +1212,25 @@ Respond with ONLY a JSON object:
 - hashtags: [] for reports. Output JSON only."""
 
 
+# Localization — serve multilingual brands. When a lang is set, output is
+# written in that language while keeping the Brand Tone (voice) intact.
+_LANG_NAMES = {"de": "German", "en": "English", "fr": "French", "es": "Spanish", "it": "Italian", "nl": "Dutch", "pt": "Portuguese"}
+
+
+def _lang_directive(lang: str | None) -> str:
+    if not lang or not lang.strip():
+        return ""
+    name = _LANG_NAMES.get(lang.lower().strip(), lang.strip())
+    return (
+        f"\n\nLANGUAGE OVERRIDE: Write ALL output in {name}, regardless of the brand's "
+        f"default language. Keep the Brand Tone (voice, attitude, rhythm) intact — just in {name}."
+    )
+
+
 class SocialRequest(BaseModel):
     platform: str = "linkedin"
     topic: str
+    lang: str | None = None
 
 
 class SocialArtifact(BaseModel):
@@ -1258,7 +1274,7 @@ async def generate_social(
     prompt = (
         f"BRAND TONE (voice — follow exactly):\n{tone or '(confident, concise, professional)'}\n\n"
         f"BRAND DNA (for context):\n{dna or '(none)'}\n\n"
-        f"PLATFORM: {platform}\nFORMAT: {guidance}\n\nTOPIC: {body.topic}"
+        f"PLATFORM: {platform}\nFORMAT: {guidance}\n\nTOPIC: {body.topic}{_lang_directive(body.lang)}"
     )
     result = await chat(
         [{"role": "system", "content": _SOCIAL_SYSTEM}, {"role": "user", "content": prompt}],
@@ -1614,6 +1630,7 @@ def _campaign_markdown(spec: dict, social: list, video_brief: str, image_brief: 
 
 class CampaignRequest(BaseModel):
     brief: str
+    lang: str | None = None          # optional language override (e.g. "en", "fr")
     platforms: list[str] = Field(default_factory=lambda: ["linkedin", "instagram"])
     deck: bool = True
     job_number: str | None = None   # optional: link the campaign to a POOOL job (Track C)
@@ -1657,7 +1674,7 @@ async def generate_campaign(
     concept_prompt = (
         f"BRAND TONE:\n{tone or '(confident, concise)'}\n\n"
         f"BRAND DNA:\n{dna or '(none)'}\n\n"
-        f"PLATFORMS: {', '.join(platforms)}\n\nCAMPAIGN BRIEF: {body.brief}"
+        f"PLATFORMS: {', '.join(platforms)}\n\nCAMPAIGN BRIEF: {body.brief}{_lang_directive(body.lang)}"
     )
     res = await chat(
         [{"role": "system", "content": _CAMPAIGN_SYSTEM}, {"role": "user", "content": concept_prompt}],

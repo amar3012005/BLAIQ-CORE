@@ -459,3 +459,7 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 **GenAI · Premium video key in Admin Settings (closes roadmap #7's last bit)** — the daemon already routes i2v through Higgsfield/Seedance when `ctx.higgsfield` is set, but there was no UI to configure it. Admin Settings now has a **Premium video · Higgsfield / Seedance** card (CONNECT toggle + MCP URL + write-only API key, masked preview) persisting to `tenant_brand`. Off by default → uses the included OpenRouter i2v; connect a key → premium engine with tighter identity lock. Verified live: card renders + saves.
 
 ![Premium video settings — Higgsfield/Seedance](docs/progress/genai-premium-video-settings.png)
+
+**GenAI · Multi-language content (localization)** — serve multilingual clients: the Studio Social + Campaign generators take a language selector (Brand default · DE · EN · FR · ES · IT · NL). A `_lang_directive` in the ops-brain `/social` + `/campaign` endpoints overrides the output language while keeping the Brand Tone intact. Verified live: same brief produced German (default), English, and French posts — all on-brand (the Mensch × Maschine motif carried across languages).
+
+![Studio language selector](docs/progress/genai-localization.png)

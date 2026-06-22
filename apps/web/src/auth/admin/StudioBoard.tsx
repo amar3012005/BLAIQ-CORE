@@ -10,6 +10,26 @@ import { generateSocial, generateDeck, generateCampaign, generateHooks, type Soc
 import { PAL, monoSmall, sansBold, sans } from './theme';
 import { openCampaignKit } from './campaignKit';
 
+const LANGS: { id: string; label: string }[] = [
+  { id: '', label: 'Brand default' },
+  { id: 'de', label: 'Deutsch' },
+  { id: 'en', label: 'English' },
+  { id: 'fr', label: 'Français' },
+  { id: 'es', label: 'Español' },
+  { id: 'it', label: 'Italiano' },
+  { id: 'nl', label: 'Nederlands' },
+];
+
+function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled: boolean }): JSX.Element {
+  return (
+    <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+      title="Output language"
+      style={{ padding: '9px 10px', border: `1px solid ${PAL.divider}`, background: PAL.bg, ...sans, fontSize: 12.5, color: PAL.ink, outline: 'none', borderRadius: 6, cursor: 'pointer' }}>
+      {LANGS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+    </select>
+  );
+}
+
 const PLATFORMS: { id: SocialPlatform; label: string; canPost: boolean }[] = [
   { id: 'linkedin', label: 'LinkedIn', canPost: true },
   { id: 'instagram', label: 'Instagram', canPost: false },
@@ -47,6 +67,7 @@ export default function StudioBoard(): JSX.Element {
 function Social(): JSX.Element {
   const [platform, setPlatform] = useState<SocialPlatform>('linkedin');
   const [topic, setTopic] = useState('');
+  const [lang, setLang] = useState('');
   const [busy, setBusy] = useState(false);
   const [art, setArt] = useState<SocialArtifact | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -55,7 +76,7 @@ function Social(): JSX.Element {
   const run = async (): Promise<void> => {
     if (!topic.trim() || busy) return;
     setBusy(true); setErr(null); setArt(null); setCopied(false);
-    try { setArt(await generateSocial(platform, topic.trim())); }
+    try { setArt(await generateSocial(platform, topic.trim(), lang)); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -86,6 +107,7 @@ function Social(): JSX.Element {
           onKeyDown={e => { if (e.key === 'Enter') void run(); }}
           placeholder={`What should the ${platform} post be about?`}
           style={{ flex: 1, padding: '9px 12px', border: `1px solid ${PAL.divider}`, background: PAL.bg, ...sans, fontSize: 13, color: PAL.ink, outline: 'none', borderRadius: 6 }} />
+        <LangSelect value={lang} onChange={setLang} disabled={busy} />
         <button type="button" disabled={busy || !topic.trim()} onClick={() => { void run(); }}
           style={{ padding: '9px 16px', background: PAL.accent, border: 'none', cursor: busy ? 'wait' : 'pointer', ...monoSmall, color: PAL.white, borderRadius: 6 }}>
           {busy ? 'WRITING…' : '✦ GENERATE'}
@@ -289,6 +311,7 @@ function Hooks(): JSX.Element {
 
 function CampaignView(): JSX.Element {
   const [brief, setBrief] = useState('');
+  const [lang, setLang] = useState('');
   const [busy, setBusy] = useState(false);
   const [c, setC] = useState<Campaign | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -296,7 +319,7 @@ function CampaignView(): JSX.Element {
   const run = async (): Promise<void> => {
     if (!brief.trim() || busy) return;
     setBusy(true); setErr(null); setC(null);
-    try { setC(await generateCampaign(brief.trim(), ['linkedin', 'instagram'])); }
+    try { setC(await generateCampaign(brief.trim(), ['linkedin', 'instagram'], true, lang)); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -314,6 +337,7 @@ function CampaignView(): JSX.Element {
           onKeyDown={e => { if (e.key === 'Enter') void run(); }}
           placeholder="Campaign brief — e.g. Launch our new AI brand platform"
           style={{ flex: 1, padding: '9px 12px', border: `1px solid ${PAL.divider}`, background: PAL.bg, ...sans, fontSize: 13, color: PAL.ink, outline: 'none', borderRadius: 6 }} />
+        <LangSelect value={lang} onChange={setLang} disabled={busy} />
         <button type="button" disabled={busy || !brief.trim()} onClick={() => { void run(); }}
           style={{ padding: '9px 18px', background: PAL.accent, border: 'none', cursor: busy ? 'wait' : 'pointer', ...monoSmall, color: PAL.white, borderRadius: 6 }}>
           {busy ? 'ORCHESTRATING…' : '✦ BUILD CAMPAIGN'}

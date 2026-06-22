@@ -883,7 +883,7 @@ function previewShareUrl(platform: string, body: string, hashtags: string[]): st
   return null;
 }
 
-export async function generateSocial(platform: SocialPlatform, topic: string): Promise<SocialArtifact> {
+export async function generateSocial(platform: SocialPlatform, topic: string, lang?: string): Promise<SocialArtifact> {
   if (PREVIEW) {
     const tags = platform === 'report' ? [] : ['#SinnFürMarken', '#Markenagentur', '#KI'];
     const body = platform === 'report'
@@ -894,7 +894,7 @@ export async function generateSocial(platform: SocialPlatform, topic: string): P
     return { platform, title: topic, body, hashtags: tags, share_url: previewShareUrl(platform, body, tags), char_count: body.length, model: 'preview' };
   }
   const data = await request<{ data: SocialArtifact }>('/api/copilot/social', {
-    method: 'POST', body: JSON.stringify({ platform, topic }),
+    method: 'POST', body: JSON.stringify({ platform, topic, lang: lang || undefined }),
   });
   return data.data;
 }
@@ -919,7 +919,7 @@ export interface Campaign {
   model: string;
 }
 
-export async function generateCampaign(brief: string, platforms: SocialPlatform[] = ['linkedin', 'instagram'], deck = true): Promise<Campaign> {
+export async function generateCampaign(brief: string, platforms: SocialPlatform[] = ['linkedin', 'instagram'], deck = true, lang?: string): Promise<Campaign> {
   if (PREVIEW) {
     const mk = (platform: string, body: string, tags: string[]): SocialArtifact =>
       ({ platform, title: 'Mensch × Maschine. Endlich eine Marke.', body, hashtags: tags, share_url: previewShareUrl(platform, body, tags), char_count: body.length, model: 'preview' });
@@ -945,7 +945,7 @@ export async function generateCampaign(brief: string, platforms: SocialPlatform[
     };
   }
   const data = await request<{ data: Campaign }>('/api/copilot/campaign', {
-    method: 'POST', body: JSON.stringify({ brief, platforms, deck }),
+    method: 'POST', body: JSON.stringify({ brief, platforms, deck, lang: lang || undefined }),
   });
   return data.data;
 }
