@@ -723,7 +723,11 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
           <button
             type="button"
             disabled={saving}
-            onClick={() => { void setDelivery('delivered'); }}
+            onClick={() => {
+              if (window.confirm(`Mark "${job.title}" as delivered? This cannot be undone.`)) {
+                void setDelivery('delivered');
+              }
+            }}
             style={{
               marginTop: 6,
               width: '100%',
@@ -850,7 +854,21 @@ export default function JobBoard(): JSX.Element {
           </button>
         </div>
 
-        {error && <ErrorBanner message={error} />}
+        {error && (
+          <div>
+            <ErrorBanner message={error} />
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                listJobs().then(j => setJobs(j)).catch((e: Error) => setError(e.message));
+              }}
+              style={{ marginTop: 8, padding: '6px 14px', border: `1px solid ${PAL.divider}`, background: PAL.panel, color: PAL.ink, cursor: 'pointer', ...monoSmall, fontSize: 9, borderRadius: 6 }}
+            >
+              ↺ TRY AGAIN
+            </button>
+          </div>
+        )}
         {!jobs && !error && <SkeletonList />}
         {jobs && jobs.length === 0 && (
           <div style={emptyText}>No jobs yet. Create one to get started.</div>

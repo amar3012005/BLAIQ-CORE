@@ -336,12 +336,12 @@ export default function SettingsBoard(): JSX.Element {
           >
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <Field label="Daily AI spend cap (USD)">
-                <input style={inputStyle} type="number" min={1} step={1} value={dailyCap} disabled={saving}
-                  onChange={(e) => setDailyCap(Number(e.target.value))} />
+                <input style={inputStyle} type="number" min={1} max={10000} step={1} value={dailyCap} disabled={saving}
+                  onChange={(e) => setDailyCap(Math.min(10000, Math.max(1, Number(e.target.value))))} />
               </Field>
               <Field label="Studio generations / hour">
-                <input style={inputStyle} type="number" min={1} step={1} value={genPerHour} disabled={saving}
-                  onChange={(e) => setGenPerHour(Number(e.target.value))} />
+                <input style={inputStyle} type="number" min={1} max={500} step={1} value={genPerHour} disabled={saving}
+                  onChange={(e) => setGenPerHour(Math.min(500, Math.max(1, Number(e.target.value))))} />
               </Field>
             </div>
             <div style={{ ...sans, fontSize: 11, color: PAL.muted }}>
@@ -359,7 +359,8 @@ export default function SettingsBoard(): JSX.Element {
                 <input style={inputStyle} value={smtpHost} disabled={saving} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" />
               </Field>
               <Field label="Port">
-                <input style={inputStyle} type="number" value={smtpPort} disabled={saving} onChange={(e) => setSmtpPort(Number(e.target.value))} />
+                <input style={inputStyle} type="number" min={1} max={65535} value={smtpPort} disabled={saving}
+                  onChange={(e) => setSmtpPort(Math.min(65535, Math.max(1, Number(e.target.value))))} />
               </Field>
             </div>
             <Field label="SMTP User">

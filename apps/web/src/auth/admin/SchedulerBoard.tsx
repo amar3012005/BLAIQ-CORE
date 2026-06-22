@@ -93,7 +93,11 @@ export default function SchedulerBoard(): JSX.Element {
 
       {/* Schedules */}
       <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 8 }}>SCHEDULES {schedules ? `· ${schedules.length}` : ''}</div>
-      {!schedules && !error && <div style={emptyText}>Loading…</div>}
+      {!schedules && !error && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {[1, 2].map(i => <span key={i} style={{ display: 'block', height: 54, background: PAL.panel, borderRadius: 8, animation: 'blaiqPulse 1.6s ease-in-out infinite', opacity: 0.5 }} />)}
+        </div>
+      )}
       {schedules && schedules.length === 0 && <div style={{ ...emptyText, marginBottom: 20 }}>No schedules yet. Add one above.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
         {(schedules ?? []).map((s) => (

@@ -257,6 +257,7 @@ import { registerDeployRoutes, registerDeploymentCheckRoutes } from './deploy-ro
 import { registerMediaRoutes } from './media-routes.js';
 import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './project-routes.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
+import { getPool } from './db/pool.js';
 import { registerChatRoutes } from './chat-routes.js';
 import { registerStaticResourceRoutes } from './static-resource-routes.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routine-routes.js';
@@ -2386,9 +2387,19 @@ export async function startServer({
     app.use(express.static(STATIC_DIR));
   }
 
-  app.get('/api/health', async (_req, res) => {
+  app.get('/api/health', async (req, res) => {
     const versionInfo = await readCurrentAppVersionInfo();
-    res.json({ ok: true, version: versionInfo.version });
+    if (req.query['deep'] === '1') {
+      try {
+        const pool = getPool();
+        await pool.query('SELECT 1');
+        res.json({ ok: true, version: versionInfo.version, db: 'ok' });
+      } catch (err) {
+        res.status(503).json({ ok: false, version: versionInfo.version, db: 'error', detail: (err as Error).message });
+      }
+    } else {
+      res.json({ ok: true, version: versionInfo.version });
+    }
   });
 
   app.get('/api/version', async (_req, res) => {
@@ -2734,10 +2745,18 @@ export async function startServer({
   app.post('/api/memory', async (req, res) => {
     try {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
+      if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+        res.status(400).json({ error: 'name is required' });
+        return;
+      }
+      if (!body.body && !body.content) {
+        res.status(400).json({ error: 'body or content is required' });
+        return;
+      }
       const entry = await upsertMemoryEntry(RUNTIME_DATA_DIR, body);
       res.json({ entry });
     } catch (err) {
-      res.status(400).json({ error: String((err && err.message) || err) });
+      res.status(400).json({ error: String((err as Error)?.message || err) });
     }
   });
 

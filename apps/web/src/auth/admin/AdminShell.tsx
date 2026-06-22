@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useState, type CSSProperties, type ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react';
 import { PAL, monoSmall, sansBold, THEME_CSS, ACCENT_GRADIENT } from './theme';
 import JobBoard from './JobBoard';
 import FinanceBoard from './FinanceBoard';
@@ -108,8 +108,38 @@ const SECTIONS: Section[] = [
 
 const NAV_WIDTH = 228;
 
+const VALID_TABS = new Set<TabId>([
+  'briefing', 'copilot', 'crew', 'studio',
+  'intake', 'jobs', 'clients', 'finance', 'work',
+  'artifacts', 'scheduler', 'activity', 'analytics', 'settings',
+]);
+
+function getInitialTab(): TabId {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.slice(1) as TabId;
+    if (VALID_TABS.has(hash)) return hash;
+  }
+  return 'briefing';
+}
+
 export default function AdminShell(): JSX.Element {
-  const [tab, setTab] = useState<TabId>('briefing');
+  const [tab, setTab] = useState<TabId>(getInitialTab);
+
+  const navigate = useCallback((id: TabId) => {
+    setTab(id);
+    if (typeof window !== 'undefined') {
+      window.location.hash = id;
+    }
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = (): void => {
+      const hash = window.location.hash.slice(1) as TabId;
+      if (VALID_TABS.has(hash)) setTab(hash);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', background: PAL.bg }}>
@@ -172,7 +202,7 @@ export default function AdminShell(): JSX.Element {
                     key={item.id}
                     type="button"
                     className={`bq-nav${active ? ' is-active' : ''}`}
-                    onClick={() => setTab(item.id)}
+                    onClick={() => navigate(item.id)}
                     style={navItemStyle(active)}
                   >
                     {/* Active indicator bar */}

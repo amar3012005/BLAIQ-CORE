@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { copilotAct, runProposedAction, type CopilotTurn, type ProposedAction } from './api';
 import NextActions from './NextActions';
 import { PAL, monoSmall, sansBold, sans } from './theme';
@@ -30,10 +30,17 @@ export default function CopilotBoard(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [runningIdx, setRunningIdx] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, busy]);
+
+  const cancel = useCallback((): void => {
+    abortRef.current?.abort();
+    setBusy(false);
+    setMessages(prev => [...prev, { role: 'assistant', content: 'Cancelled.', error: false }]);
+  }, []);
 
   const send = async (text: string): Promise<void> => {
     const q = text.trim();
@@ -44,6 +51,8 @@ export default function CopilotBoard(): JSX.Element {
       .map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, { role: 'user', content: q }]);
     setBusy(true);
+    abortRef.current = new AbortController();
+    const timeoutId = setTimeout(() => abortRef.current?.abort(), 90_000);
     try {
       const reply = await copilotAct(q, history);
       if (reply.proposed) {
@@ -52,8 +61,12 @@ export default function CopilotBoard(): JSX.Element {
         setMessages(prev => [...prev, { role: 'assistant', content: reply.answer ?? '' }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Copilot unavailable: ${(e as Error).message}`, error: true }]);
+      const msg = (e as Error).name === 'AbortError'
+        ? 'Request timed out — the copilot took too long. Try a simpler question.'
+        : `Copilot unavailable: ${(e as Error).message}`;
+      setMessages(prev => [...prev, { role: 'assistant', content: msg, error: true }]);
     } finally {
+      clearTimeout(timeoutId);
       setBusy(false);
     }
   };
@@ -171,8 +184,10 @@ export default function CopilotBoard(): JSX.Element {
         ))}
 
         {busy && (
-          <div style={{ alignSelf: 'flex-start', ...monoSmall, color: PAL.muted, padding: '6px 4px' }}>
-            THINKING…
+          <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px' }}>
+            <div style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${PAL.divider}`, borderTopColor: PAL.accent, animation: 'bq-spin 0.8s linear infinite', flexShrink: 0 }} />
+            <span style={{ ...monoSmall, color: PAL.muted }}>THINKING…</span>
+            <button type="button" onClick={cancel} style={{ border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '3px 8px', borderRadius: 4 }}>CANCEL</button>
           </div>
         )}
       </div>

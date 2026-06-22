@@ -171,8 +171,8 @@ async function proxy(
     return;
   }
 
-  // Cost guardrail — only block new mutating work (not GETs).
-  if (req.method === 'POST') {
+  // Cost guardrail — block all state-mutating requests (POST/PUT/PATCH), not just POSTs.
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
     const { spent, cap } = await checkDailyCap(tenantId);
     if (spent !== null && spent >= cap) {
       res

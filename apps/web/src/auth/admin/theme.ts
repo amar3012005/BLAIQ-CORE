@@ -181,6 +181,9 @@ export const THEME_CSS = `
     0%, 100% { box-shadow: 0 0 12px ${PAL.accentGlow}; }
     50%       { box-shadow: 0 0 24px ${PAL.accent}44; }
   }
+  @keyframes bq-spin {
+    to { transform: rotate(360deg); }
+  }
 
   /* Scrollbars */
   ::-webkit-scrollbar { width: 4px; height: 4px; }

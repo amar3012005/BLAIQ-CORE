@@ -6,7 +6,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getBriefing, executeNextAction, type Briefing } from './api';
 import { PAL, monoSmall, sansBold, sans } from './theme';
 
@@ -25,15 +25,23 @@ export default function BriefingBoard(): JSX.Element {
   // per-insight action lifecycle, keyed by index
   const [acted, setActed] = useState<Record<number, 'running' | 'done'>>({});
 
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const load = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     setActed({});
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setBusy(false);
+      setError('Briefing is taking too long — the AI ops sidecar may be starting up. Try refreshing in a moment.');
+    }, 45_000);
     try {
       setData(await getBriefing());
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
       setBusy(false);
     }
   };
@@ -74,7 +82,10 @@ export default function BriefingBoard(): JSX.Element {
         )}
 
         {busy && !data && (
-          <div style={{ margin: 'auto', ...sans, fontSize: 13, color: PAL.muted }}>Pulling today's briefing together…</div>
+          <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${PAL.divider}`, borderTopColor: PAL.accent, animation: 'bq-spin 0.8s linear infinite' }} />
+            <span style={{ ...sans, fontSize: 13, color: PAL.muted }}>Pulling today's briefing together…</span>
+          </div>
         )}
 
         {data && (
