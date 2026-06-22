@@ -18,6 +18,7 @@ import BriefingBoard from './BriefingBoard';
 import StudioBoard from './StudioBoard';
 import IntakeBoard from './IntakeBoard';
 import ClientsBoard from './ClientsBoard';
+import ArtifactsBoard from './ArtifactsBoard';
 import ErrorBoundary from './ErrorBoundary';
 import AnalyticsBoard from './AnalyticsBoard';
 
@@ -31,6 +32,7 @@ type TabId =
   | 'clients'
   | 'finance'
   | 'work'
+  | 'artifacts'
   | 'activity'
   | 'analytics'
   | 'settings';
@@ -58,6 +60,12 @@ const SECTIONS: Section[] = [
       { id: 'clients', label: 'Clients', hint: 'Per-client book' },
       { id: 'finance', label: 'Finance', hint: 'POOOL · quotes, invoices, payments' },
       { id: 'work', label: 'Work', hint: 'ClickUp · tickets + revision rounds' },
+    ],
+  },
+  {
+    heading: 'Studio',
+    items: [
+      { id: 'artifacts', label: 'Artifacts', hint: 'Every image, video, deck' },
     ],
   },
   {
@@ -183,6 +191,7 @@ export default function AdminShell(): JSX.Element {
           {tab === 'clients' && <ClientsBoard />}
           {tab === 'finance' && <FinanceBoard />}
           {tab === 'work' && <TasksWall />}
+          {tab === 'artifacts' && <ArtifactsBoard />}
           {tab === 'activity' && <ActivityFeed />}
           {tab === 'analytics' && <AnalyticsBoard />}
           {tab === 'settings' && <SettingsBoard />}

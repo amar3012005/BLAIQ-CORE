@@ -990,6 +990,58 @@ export async function productIntake(url: string): Promise<ProductProfile> {
   return data.data;
 }
 
+// ── Artifacts library — every generated asset across the tenant's projects ──
+// Composes the (already tenant-scoped) daemon routes /api/projects and
+// /api/projects/:id/files — no new server code, no isolation risk.
+
+export type ArtifactKind = 'image' | 'video' | 'deck' | 'spokesperson';
+export interface ArtifactItem {
+  project_id: string;
+  project_name: string;
+  kind: ArtifactKind;
+  name: string;
+  url: string;
+  mtime: number;
+}
+
+function classifyArtifact(name: string): ArtifactKind | null {
+  if (/^image_v\d+\.png$/.test(name)) return 'image';
+  if (name === 'final.mp4') return 'video';
+  if (name === 'deck.html') return 'deck';
+  if (/^subject_.+_sheet\.png$/.test(name)) return 'spokesperson';
+  return null;
+}
+
+export async function listArtifacts(): Promise<ArtifactItem[]> {
+  if (PREVIEW) return [];
+  const pr = await fetch('/api/projects', { credentials: 'include' });
+  if (!pr.ok) throw new Error(`list projects failed: HTTP ${pr.status}`);
+  const pd = await pr.json() as { projects?: Array<{ id: string; name?: string }> };
+  const projects = (pd.projects ?? []).slice(0, 40);
+  const out: ArtifactItem[] = [];
+  await Promise.all(projects.map(async (p) => {
+    try {
+      const fr = await fetch(`/api/projects/${encodeURIComponent(p.id)}/files`, { credentials: 'include' });
+      if (!fr.ok) return;
+      const fd = await fr.json() as { files?: Array<{ name?: string; mtime?: number }> };
+      for (const f of fd.files ?? []) {
+        const nm = f?.name || '';
+        const kind = classifyArtifact(nm);
+        if (!kind) continue;
+        out.push({
+          project_id: p.id,
+          project_name: p.name || p.id,
+          kind,
+          name: nm,
+          url: `/api/projects/${encodeURIComponent(p.id)}/files/${nm}`,
+          mtime: f.mtime || 0,
+        });
+      }
+    } catch { /* skip unreadable project */ }
+  }));
+  return out.sort((a, b) => b.mtime - a.mtime);
+}
+
 // ── Clients rollup (per-client view of the book) ──
 
 export interface ClientRollup {

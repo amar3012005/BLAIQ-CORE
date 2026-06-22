@@ -433,3 +433,10 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 
 ![Image project resumed — version tabs restored](docs/progress/genai-resume-image.png)
 ![Video project resumed — storyboard + shot frames restored](docs/progress/genai-resume-video.png)
+
+**GenAI · Artifacts library (Admin → Studio → Artifacts)** — one gallery of every asset the agency has generated, across all projects:
+- Aggregates the tenant-scoped `/api/projects` + `/api/projects/:id/files` (no new server code, no isolation risk) and classifies files into images / videos / decks / spokespersons.
+- Grid with thumbnails (image/video/spokesperson) + kind pills, filter chips per type, sorted newest-first, click to open. New "Studio" nav section in Admin.
+- Verified live on real `/admin`: surfaced the real spokesperson sheets, image variants, and campaign decks across projects.
+
+![Artifacts library — all generated work in one place](docs/progress/genai-artifacts-library.png)
