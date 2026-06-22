@@ -27,6 +27,7 @@ import {
   type DeliveryStatus,
 } from './api';
 import { PAL, monoSmall, sansBold, sans, pill, skeletonBar, emptyText, card, title } from './theme';
+import { openCampaignKit } from './campaignKit';
 
 // ──────────────────────────────────────────────────────────────
 // Status colour map
@@ -617,12 +618,22 @@ function DetailPanel({ job, onUpdate, onClose }: DetailPanelProps): JSX.Element 
             <div style={{ color: PAL.muted, marginTop: 4 }}>
               {campaign.deck_slides} slides · {campaign.social.length} posts · key visual · brand-locked
             </div>
-            {campaign.od_project_url && (
-              <a href={campaign.od_project_url} target="_blank" rel="noreferrer"
-                style={{ display: 'inline-block', marginTop: 8, background: PAL.accent, color: PAL.white, textDecoration: 'none', ...monoSmall, fontSize: 8, padding: '5px 10px' }}>
-                ↗ OPEN IN OPEN DESIGN
-              </a>
-            )}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              {campaign.od_project_url && (
+                <a href={campaign.od_project_url} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-block', background: PAL.accent, color: PAL.white, textDecoration: 'none', ...monoSmall, fontSize: 8, padding: '5px 10px', borderRadius: 6 }}>
+                  ↗ OPEN IN OPEN DESIGN
+                </a>
+              )}
+              <button type="button" onClick={() => openCampaignKit(campaign, false)}
+                style={{ border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.ink, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '5px 10px', borderRadius: 6 }}>
+                ↗ CAMPAIGN KIT
+              </button>
+              <button type="button" onClick={() => openCampaignKit(campaign, true)}
+                style={{ border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.ink, cursor: 'pointer', ...monoSmall, fontSize: 8, padding: '5px 10px', borderRadius: 6 }}>
+                ⬇ KIT
+              </button>
+            </div>
           </div>
         )}
         {campaignErr && <div style={{ ...sans, fontSize: 11, color: '#B45309', marginTop: 6 }}>{campaignErr}</div>}

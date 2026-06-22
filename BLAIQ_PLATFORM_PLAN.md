@@ -444,3 +444,7 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 **GenAI · Campaign export — client-ready one-pager kit** — turns a generated campaign into a shareable deliverable. The Studio CampaignView gains **↗ Campaign Kit** (open) + **⬇ Download Kit**: a self-contained, brand-styled HTML one-pager (dark + signature dot) with the concept, hero key visual, every social post, image/video briefs, and the deck reference — nothing external except the same-origin hero image. Verified live: built a campaign and opened the kit (full B&B-styled recap).
 
 ![Campaign kit — client-ready one-pager](docs/progress/genai-campaign-kit.png)
+
+**Admin↔GenAI · Campaign Kit from a Job** — extracted the kit builder into a shared `campaignKit` util (used by Studio + jobs). A job's "Create campaign for this job" now also exposes **↗ Campaign Kit** / **⬇ Kit**, so a POOOL job → full on-brand campaign → client-ready one-pager in one flow. Verified live (preview): job → campaign → kit popup rendered the branded recap.
+
+![Job → campaign → client kit](docs/progress/genai-job-campaign-kit.png)
