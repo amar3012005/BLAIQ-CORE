@@ -153,6 +153,9 @@ export default function SettingsBoard(): JSX.Element {
   const [pooolEnabled, setPooolEnabled] = useState(false);
   const [clickupEnabled, setClickupEnabled] = useState(false);
   const [clickupListId, setClickupListId] = useState('');
+  const [hfUrl, setHfUrl] = useState('');
+  const [hfKey, setHfKey] = useState(''); // only sent if non-empty
+  const [hfEnabled, setHfEnabled] = useState(false);
 
   const hydrate = (d: OrgIntegrations): void => {
     setData(d);
@@ -161,6 +164,9 @@ export default function SettingsBoard(): JSX.Element {
     setPooolEnabled(d.poool_enabled);
     setClickupEnabled(d.clickup_enabled);
     setClickupListId(d.clickup_list_id);
+    setHfUrl(d.higgsfield_url);
+    setHfKey('');
+    setHfEnabled(d.higgsfield_enabled);
   };
 
   useEffect(() => {
@@ -168,14 +174,16 @@ export default function SettingsBoard(): JSX.Element {
   }, []);
 
   // One-click connect/disconnect for an integration.
-  const connectOne = async (which: 'poool' | 'clickup', enable: boolean): Promise<void> => {
+  const connectOne = async (which: 'poool' | 'clickup' | 'higgsfield', enable: boolean): Promise<void> => {
     setSaving(true);
     setError(null);
     try {
       const body: OrgIntegrationsUpdate =
         which === 'poool'
           ? { poool_enabled: enable, poool_url: pooolUrl.trim() || undefined }
-          : { clickup_enabled: enable, clickup_list_id: clickupListId.trim() || undefined };
+          : which === 'higgsfield'
+            ? { higgsfield_enabled: enable, higgsfield_url: hfUrl.trim() || undefined }
+            : { clickup_enabled: enable, clickup_list_id: clickupListId.trim() || undefined };
       const updated = await updateOrgIntegrations(body);
       hydrate(updated);
       setSavedAt(Date.now());
@@ -195,8 +203,11 @@ export default function SettingsBoard(): JSX.Element {
         poool_enabled: pooolEnabled,
         clickup_enabled: clickupEnabled,
         clickup_list_id: clickupListId.trim(),
+        higgsfield_url: hfUrl.trim(),
+        higgsfield_enabled: hfEnabled,
       };
       if (pooolKey.trim()) body.poool_api_key = pooolKey.trim();
+      if (hfKey.trim()) body.higgsfield_api_key = hfKey.trim();
       const updated = await updateOrgIntegrations(body);
       hydrate(updated);
       setSavedAt(Date.now());
@@ -256,6 +267,32 @@ export default function SettingsBoard(): JSX.Element {
                 disabled={saving}
                 onChange={(e) => setClickupListId(e.target.value)}
                 placeholder="e.g. 901234567"
+              />
+            </Field>
+          </Card>
+
+          <Card
+            title="Premium video · Higgsfield / Seedance"
+            hint="Optional. When connected, the video pipeline routes image-to-video through Higgsfield/Seedance (tighter identity lock + character consistency) instead of the default OpenRouter i2v. Leave off to use the included engine."
+          >
+            <ConnectRow connected={hfEnabled} saving={saving} onToggle={(n) => { setHfEnabled(n); void connectOne('higgsfield', n); }} />
+            <Field label="MCP URL">
+              <input
+                style={inputStyle}
+                value={hfUrl}
+                disabled={saving}
+                onChange={(e) => setHfUrl(e.target.value)}
+                placeholder="https://higgsfield.ai/mcp"
+              />
+            </Field>
+            <Field label={data.higgsfield_api_key_set ? `API Key (set · ${data.higgsfield_api_key_preview})` : 'API Key'}>
+              <input
+                style={inputStyle}
+                type="password"
+                value={hfKey}
+                disabled={saving}
+                onChange={(e) => setHfKey(e.target.value)}
+                placeholder={data.higgsfield_api_key_set ? 'Leave blank to keep current key' : 'Paste API key'}
               />
             </Field>
           </Card>

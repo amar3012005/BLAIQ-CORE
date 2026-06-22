@@ -482,6 +482,10 @@ export interface OrgIntegrations {
   poool_enabled: boolean;
   clickup_enabled: boolean;
   clickup_list_id: string;
+  higgsfield_url: string;
+  higgsfield_api_key_set: boolean;
+  higgsfield_api_key_preview: string;
+  higgsfield_enabled: boolean;
 }
 
 export interface OrgIntegrationsUpdate {
@@ -490,6 +494,9 @@ export interface OrgIntegrationsUpdate {
   poool_enabled?: boolean;
   clickup_enabled?: boolean;
   clickup_list_id?: string;
+  higgsfield_url?: string;
+  higgsfield_api_key?: string;
+  higgsfield_enabled?: boolean;
 }
 
 function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
@@ -500,6 +507,10 @@ function toIntegrations(d: Record<string, unknown>): OrgIntegrations {
     poool_enabled: Boolean(d.poool_enabled),
     clickup_enabled: Boolean(d.clickup_enabled),
     clickup_list_id: typeof d.clickup_list_id === 'string' ? d.clickup_list_id : '',
+    higgsfield_url: typeof d.higgsfield_url === 'string' ? d.higgsfield_url : '',
+    higgsfield_api_key_set: Boolean(d.higgsfield_api_key_set),
+    higgsfield_api_key_preview: typeof d.higgsfield_api_key_preview === 'string' ? d.higgsfield_api_key_preview : '',
+    higgsfield_enabled: Boolean(d.higgsfield_enabled),
   };
 }
 
@@ -510,6 +521,10 @@ const previewIntegrations: OrgIntegrations = {
   poool_enabled: false,
   clickup_enabled: false,
   clickup_list_id: '',
+  higgsfield_url: 'https://higgsfield.ai/mcp',
+  higgsfield_api_key_set: false,
+  higgsfield_api_key_preview: '',
+  higgsfield_enabled: false,
 };
 
 export async function getOrgIntegrations(): Promise<OrgIntegrations> {
@@ -529,6 +544,12 @@ export async function updateOrgIntegrations(body: OrgIntegrationsUpdate): Promis
     if (body.poool_enabled !== undefined) previewIntegrations.poool_enabled = body.poool_enabled;
     if (body.clickup_enabled !== undefined) previewIntegrations.clickup_enabled = body.clickup_enabled;
     if (body.clickup_list_id !== undefined) previewIntegrations.clickup_list_id = body.clickup_list_id;
+    if (body.higgsfield_url !== undefined) previewIntegrations.higgsfield_url = body.higgsfield_url;
+    if (body.higgsfield_api_key) {
+      previewIntegrations.higgsfield_api_key_set = true;
+      previewIntegrations.higgsfield_api_key_preview = `${body.higgsfield_api_key.slice(0, 4)}…${body.higgsfield_api_key.slice(-4)}`;
+    }
+    if (body.higgsfield_enabled !== undefined) previewIntegrations.higgsfield_enabled = body.higgsfield_enabled;
     return { ...previewIntegrations };
   }
   const r = await fetch(ORG_BRAND, {

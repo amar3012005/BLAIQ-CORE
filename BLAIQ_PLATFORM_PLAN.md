@@ -455,3 +455,7 @@ With this, the standalone image-studio crew tools and the live video pipeline ar
 - Verified live: PATCH→200 (renamed "Marken-Host (Hero)"), POST temp → DELETE→200 → gone; roster clean.
 
 ![Spokesperson roster — rename/delete controls](docs/progress/genai-spokesperson-manage.png)
+
+**GenAI · Premium video key in Admin Settings (closes roadmap #7's last bit)** — the daemon already routes i2v through Higgsfield/Seedance when `ctx.higgsfield` is set, but there was no UI to configure it. Admin Settings now has a **Premium video · Higgsfield / Seedance** card (CONNECT toggle + MCP URL + write-only API key, masked preview) persisting to `tenant_brand`. Off by default → uses the included OpenRouter i2v; connect a key → premium engine with tighter identity lock. Verified live: card renders + saves.
+
+![Premium video settings — Higgsfield/Seedance](docs/progress/genai-premium-video-settings.png)
