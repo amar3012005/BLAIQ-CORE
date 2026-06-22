@@ -57,6 +57,29 @@ const TRUST_TOKEN: string = (() => {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// In-memory rate limiter for expensive AI endpoints (copilot, studio gen).
+// Keyed by `tenantId:minuteBucket` — resets automatically as buckets expire.
+const _rateBuckets = new Map<string, number>();
+const AI_PATHS = ['/api/copilot', '/api/briefing', '/api/crew', '/api/v1/studio'];
+const AI_RATE_PER_MIN = 15; // max LLM calls per tenant per minute
+
+function checkAiRateLimit(tenantId: string, path: string): boolean {
+  if (!AI_PATHS.some(p => path.startsWith(p))) return true; // not an AI path
+  const minute = Math.floor(Date.now() / 60_000);
+  const key = `${tenantId}:${minute}`;
+  const count = (_rateBuckets.get(key) ?? 0) + 1;
+  _rateBuckets.set(key, count);
+  // Prune stale buckets (keep memory bounded).
+  if (_rateBuckets.size > 500) {
+    const cutoff = minute - 2;
+    for (const k of _rateBuckets.keys()) {
+      const m = Number(k.split(':')[1]);
+      if (m < cutoff) _rateBuckets.delete(k);
+    }
+  }
+  return count <= AI_RATE_PER_MIN;
+}
+
 function signTrust(tenantId: string): string {
   return crypto
     .createHmac('sha256', TRUST_TOKEN)
@@ -189,6 +212,13 @@ async function proxy(
   const upstreamPath = req.originalUrl.startsWith(stripPrefix)
     ? req.originalUrl.slice(stripPrefix.length) || '/'
     : req.originalUrl;
+
+  // Per-tenant per-minute rate limit on expensive AI endpoints.
+  if (req.method === 'POST' && !checkAiRateLimit(tenantId, upstreamPath)) {
+    res.status(429).json({ error: 'too many AI requests — please wait a moment before trying again' });
+    return;
+  }
+
   const target = new URL(upstreamPath, upstreamBase);
   const userId = authed.user?.userId || '';
   const headers = buildUpstreamHeaders(req, tenantId, userId);

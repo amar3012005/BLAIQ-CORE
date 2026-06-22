@@ -105,16 +105,21 @@ def create_app() -> FastAPI:
     # in reverse order of registration (last added = outermost).
     app.add_middleware(TenantMiddleware)
 
-    # CORS middleware
+    # CORS middleware — origins configurable via CORS_ORIGINS env var (comma-separated).
+    # Defaults to localhost dev origins only. In production the daemon proxies all
+    # requests to ops-brain, so direct browser access should be blocked at the network
+    # level; this header is a secondary defence.
+    _cors_env = os.environ.get("CORS_ORIGINS", "")
+    _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:5173",
-        ],
+        allow_origins=_cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-Tenant-Id", "X-User-Id", "X-Ops-Trust", "Accept"],
     )
 
     # Register routes

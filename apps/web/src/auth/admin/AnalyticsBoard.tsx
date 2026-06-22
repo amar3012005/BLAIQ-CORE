@@ -47,16 +47,30 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
 export default function AnalyticsBoard(): JSX.Element {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [poool, setPoool] = useState<PooolSyncSummary | null>(null);
+  const [pooolErr, setPooolErr] = useState(false);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = (): void => {
+    setError(null);
+    setJobs(null);
+    setPooolErr(false);
     listJobs().then(setJobs).catch((e: Error) => setError(e.message));
-    getPooolSummary().then(setPoool).catch(() => setPoool(null));
+    getPooolSummary().then(setPoool).catch(() => { setPoool(null); setPooolErr(true); });
     getUsageSummary().then(setUsage).catch(() => setUsage(null));
-  }, []);
+  };
 
-  if (error) return <div style={{ padding: 20 }}><ErrorBanner message={error} /></div>;
+  useEffect(() => { load(); }, []);
+
+  if (error) return (
+    <div style={{ padding: 20 }}>
+      <ErrorBanner message={error} />
+      <button type="button" onClick={load}
+        style={{ marginTop: 8, padding: '6px 14px', border: `1px solid ${PAL.divider}`, background: PAL.panel, color: PAL.ink, cursor: 'pointer', ...monoSmall, fontSize: 9, borderRadius: 6 }}>
+        ↺ RETRY
+      </button>
+    </div>
+  );
   if (!jobs) return (
     <div style={{ padding: 20 }}><span style={skeletonBar('60%', 14)} /><span style={skeletonBar('80%', 14)} /></div>
   );
@@ -81,7 +95,15 @@ export default function AnalyticsBoard(): JSX.Element {
 
   return (
     <div style={{ padding: 20, height: '100%', overflowY: 'auto' }}>
-      <div style={{ ...monoSmall, color: PAL.muted, marginBottom: 16 }}>ANALYTICS — KPIs &amp; TRENDS</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span style={{ ...monoSmall, color: PAL.muted }}>ANALYTICS — KPIs &amp; TRENDS</span>
+        {pooolErr && (
+          <span style={{ ...monoSmall, fontSize: 8, color: PAL.warn, background: PAL.warnBg, padding: '2px 8px', borderRadius: 4, border: `1px solid ${PAL.warn}44` }}>
+            POOOL SYNC UNAVAILABLE
+          </span>
+        )}
+        <button type="button" onClick={load} style={{ marginLeft: 'auto', padding: '4px 10px', border: `1px solid ${PAL.divider}`, background: 'transparent', color: PAL.muted, cursor: 'pointer', ...monoSmall, fontSize: 8, borderRadius: 4 }}>↺ REFRESH</button>
+      </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
         <Stat label="JOBS" value={String(jobs.length)} />
